@@ -9,10 +9,11 @@
  *
  */
 
+#include <driver/clock.h>
 #include <kstdio.h>
 #include <kstring.h>
 #include <log.h>
-#include <sbi.h>
+#include <trap/trap.h>
 
 extern char stext[], etext[];
 extern char sdata[], edata[];
@@ -22,14 +23,21 @@ void clean_bss()
 {
 	memset(sbss, 0, ebss - sbss);
 }
-void kernel_start(void)
+void kernel_start()
 {
 	clean_bss();
-	kprintf("%s\n\n", message);
+	kputc('\n');
+	trap_init();
+	clock_init();
+	interrupt_enable();
+	kprintf("%s\n", message);
 	debugf("stext: %p\tetext: %p", stext, etext);
 	debugf("sdata: %p\tedata: %p", sdata, edata);
 	debugf("sbss: %p\tebss: %p", sbss, ebss);
-	panic("ALL DONE");
+	kputc('\n');
+	for (int8_t i = 0;; i++) /* waiting for interrupt */
+		/*kprintf("i = %d\n", i)*/;
 
+	panic("ALL DONE");
 	kprintf("will never step here");
 }

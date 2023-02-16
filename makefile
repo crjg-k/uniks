@@ -13,17 +13,16 @@ OBJDUMP = ${CROSS_PREFIX}objdump
 SRC_KERNEL_DIR = kernel
 INC_DIR = \
 	./include \
-	./${SRC_KERNEL_DIR}/driver \
-	./${SRC_KERNEL_DIR}/mm \
-	./${SRC_KERNEL_DIR}/platform
+	./${SRC_KERNEL_DIR}
 SRC_FILES = \
 	./${SRC_KERNEL_DIR}/init/* \
 	./${SRC_KERNEL_DIR}/driver/* \
 	./${SRC_KERNEL_DIR}/platform/* \
+	./${SRC_KERNEL_DIR}/trap/* \
 	./libs/*
 LINKER = ./script/kernel.ld
 TARGET = ./bin/kernel.elf
-OSNAME = kos
+OSNAME = kos.bin
 OSBIN = ./bin/${OSNAME}
 
 CFLAGS = \

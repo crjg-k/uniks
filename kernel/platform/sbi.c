@@ -9,7 +9,7 @@
  *
  */
 
-#include <sbi.h>
+#include "sbi.h"
 
 // SBI number
 #define SBI_SET_TIMER	    0
@@ -19,7 +19,7 @@
 #define SBI_SEND_IPI	    4
 #define SBI_SHUTDOWN	    8
 
-int64_t __always_inline static sbi_call(uint64_t sbi_type, uint64_t arg0,
+static int64_t __always_inline sbi_call(uint64_t sbi_type, uint64_t arg0,
 					uint64_t arg1, uint64_t arg2)
 {
 	register uint64_t a0 asm("a0") = arg0;
@@ -43,12 +43,12 @@ int64_t sbi_console_putchar(char ch)
 	return sbi_call(SBI_CONSOLE_PUTCHAR, ch, 0, 0);
 }
 
-int64_t sbi_console_getchar(void)
+int64_t sbi_console_getchar()
 {
 	return sbi_call(SBI_CONSOLE_GETCHAR, 0, 0, 0);
 }
 
-void sbi_shutdown(void)
+void sbi_shutdown()
 {
 	sbi_call(SBI_SHUTDOWN, 0, 0, 0);
 }

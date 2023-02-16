@@ -6,7 +6,7 @@
 
 int64_t sbi_set_timer(uint64_t stime_value);
 int64_t sbi_console_putchar(char ch);
-int64_t sbi_console_getchar(void);
-void sbi_shutdown(void);
+int64_t sbi_console_getchar();
+void sbi_shutdown();
 
 #endif /* !__KERNEL_PLATFORM_SBI_H__ */

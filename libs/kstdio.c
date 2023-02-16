@@ -9,7 +9,7 @@
  * 
  */
 
-#include <console.h>
+#include <driver/console.h>
 #include <kstdio.h>
 
 /* HIGH level console I/O */

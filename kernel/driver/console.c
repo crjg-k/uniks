@@ -9,13 +9,14 @@
  *
  */
 
-#include <console.h>
-#include <sbi.h>
+#include "console.h"
+#include <platform/sbi.h>
 
 int64_t console_putchar(char c)
 {
 	return sbi_console_putchar(c);
 }
-int64_t console_getchar(void){
+int64_t console_getchar()
+{
 	return sbi_console_getchar();
 }

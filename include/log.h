@@ -1,13 +1,15 @@
 #ifndef __LOG_H__
 #define __LOG_H__
 
+#include <defs.h>
+
 extern void kprintf(const char *fmt, ...);
 static uint64_t __always_inline r_mhartid()
 {
 	uint64_t x = 0;
 	return x;
 }
-extern void sbi_shutdown(void);
+extern void sbi_shutdown();
 
 #if defined(LOG_LEVEL_ERROR)
 
@@ -58,66 +60,66 @@ enum LOG_COLOR {
 };
 
 #if defined(USE_LOG_ERROR)
-	#define errorf(fmt, ...)                                         \
-		({                                                       \
-			int64_t tid = r_mhartid();                       \
+	#define errorf(fmt, ...) \
+		({ \
+			int64_t tid = r_mhartid(); \
 			kprintf("\x1b[%dm[%s %d] " fmt "\x1b[0m\n", RED, \
-				"ERROR", tid, ##__VA_ARGS__);            \
+				"ERROR", tid, ##__VA_ARGS__); \
 		})
 #else
 	#define errorf(fmt, ...)
 #endif	 // USE_LOG_ERROR
 
 #if defined(USE_LOG_WARN)
-	#define warnf(fmt, ...)                                             \
-		({                                                          \
-			int64_t tid = r_mhartid();                          \
+	#define warnf(fmt, ...) \
+		({ \
+			int64_t tid = r_mhartid(); \
 			kprintf("\x1b[%dm[%s %d] " fmt "\x1b[0m\n", YELLOW, \
-				"WARN", tid, ##__VA_ARGS__);                \
+				"WARN", tid, ##__VA_ARGS__); \
 		})
 #else
 	#define warnf(fmt, ...)
 #endif	 // USE_LOG_WARN
 
 #if defined(USE_LOG_INFO)
-	#define infof(fmt, ...)                                           \
-		({                                                        \
-			int64_t tid = r_mhartid();                        \
+	#define infof(fmt, ...) \
+		({ \
+			int64_t tid = r_mhartid(); \
 			kprintf("\x1b[%dm[%s %d] " fmt "\x1b[0m\n", BLUE, \
-				"INFO", tid, ##__VA_ARGS__);              \
+				"INFO", tid, ##__VA_ARGS__); \
 		})
 #else
 	#define infof(fmt, ...)
 #endif	 // USE_LOG_INFO
 
 #if defined(USE_LOG_DEBUG)
-	#define debugf(fmt, ...)                                           \
-		({                                                         \
-			int64_t tid = r_mhartid();                         \
+	#define debugf(fmt, ...) \
+		({ \
+			int64_t tid = r_mhartid(); \
 			kprintf("\x1b[%dm[%s %d] " fmt "\x1b[0m\n", GREEN, \
-				"DEBUG", tid, ##__VA_ARGS__);              \
+				"DEBUG", tid, ##__VA_ARGS__); \
 		})
 #else
 	#define debugf(fmt, ...)
 #endif	 // USE_LOG_DEBUG
 
 #if defined(USE_LOG_TRACE)
-	#define tracef(fmt, ...)                                          \
-		({                                                        \
-			int64_t tid = r_mhartid();                        \
+	#define tracef(fmt, ...) \
+		({ \
+			int64_t tid = r_mhartid(); \
 			kprintf("\x1b[%dm[%s %d] " fmt "\x1b[0m\n", GRAY, \
-				"TRACE", tid, ##__VA_ARGS__);             \
+				"TRACE", tid, ##__VA_ARGS__); \
 		})
 #else
 	#define tracef(fmt, ...)
 #endif	 // USE_LOG_TRACE
 
-#define panic(fmt, ...)                                                   \
-	({                                                                \
-		int64_t tid = r_mhartid();                                \
-		kprintf("\x1b[%dm[%s %d] %s:%d: " fmt "\x1b[0m\n", RED,   \
+#define panic(fmt, ...) \
+	({ \
+		int64_t tid = r_mhartid(); \
+		kprintf("\x1b[%dm[%s %d] %s:%d: " fmt "\x1b[0m\n", RED, \
 			"PANIC", tid, __FILE__, __LINE__, ##__VA_ARGS__); \
-		sbi_shutdown();                                           \
+		sbi_shutdown(); \
 	})
 
 #endif	 //! __LOG_H__

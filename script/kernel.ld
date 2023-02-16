@@ -13,35 +13,34 @@ SECTIONS
 	PROVIDE(stext = .);
 	.text : {
 		*(.text.kernel_entry)
-		*(.text .stub .text.* .gnu.linkonce.t.*)
+		*(.text .text.*)
 	}
 	PROVIDE(etext = .);
 
 	/*read only data */
 	.rodata : {
-		*(.rodata .rodata.* .gnu.linkonce.r.*)
+		. = ALIGN(16);
+		*(.srodata .srodata.*) /* do not need to distinguish this from .rodata */
+		. = ALIGN(16);
+		*(.rodata .rodata.*)
 	}
 
 	. = ALIGN(0x1000);	/* align the addr to next page */
 	PROVIDE(sdata = .);
 	.data : {
-		*(.data)
-		*(.data.*)
+		. = ALIGN(16);
+		*(.sdata .sdata.*) /* do not need to distinguish this from .data */
+		. = ALIGN(16);
+		*(.data .data.*)
 	}
 	PROVIDE(edata = .);
 
-	/* small data section, generally is char, short etc. */
-	.sdata : {
-		*(.sdata)
-		*(.sdata.*)
-	}
-
-	/* initial bss seg with 0 */
 	PROVIDE(sbss = .);
 	.bss : {
-		*(.bss)
-		*(.bss.*)
-		*(.sbss*)
+		. = ALIGN(16);
+		*(.sbss .sbss.*) /* do not need to distinguish this from .bss */
+		. = ALIGN(16);
+		*(.bss .bss.*)
 	}
 	PROVIDE(ebss = .);
 

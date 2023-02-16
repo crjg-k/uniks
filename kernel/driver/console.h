@@ -4,6 +4,6 @@
 #include <defs.h>
 
 int64_t console_putchar(char c);
-int64_t console_getchar(void);
+int64_t console_getchar();
 
 #endif /* !__KERNEL_DRIVER_CONSOLE_H__ */
