@@ -1,0 +1,12 @@
+{
+	"tasks": [
+		{
+			"label": "make-debug",
+			"command": "make",
+			"args": ["debug-vscode"],
+			"isBackground": true,
+			"problemMatcher": "$gcc"
+		}
+	],
+	"version": "2.0.0"
+}

@@ -3,18 +3,19 @@
 OUTPUT_ARCH(riscv) /* specific the ISA of output files which run in RV */
 ENTRY(kernel_entry)  /* specific entry of OS defined in asm file */
 
-BASE_ADDRESS = 0x80200000; /* OS start addr */
+KERNEL_BASE_ADDR = 0x80200000; /* OS start addr */
 
 
 SECTIONS
 {
 	/* Load the kernel at this address */
-	. = BASE_ADDRESS;
+	. = KERNEL_BASE_ADDR;
 	PROVIDE(stext = .);
 	.text : {
 		*(.text.kernel_entry)
 		*(.text .text.*)
 	}
+	. = ALIGN(0x1000);
 	PROVIDE(etext = .);
 
 	/*read only data */
@@ -25,7 +26,7 @@ SECTIONS
 		*(.rodata .rodata.*)
 	}
 
-	. = ALIGN(0x1000);	/* align the addr to next page */
+	. = ALIGN(0x1000);
 	PROVIDE(sdata = .);
 	.data : {
 		. = ALIGN(16);
@@ -48,4 +49,6 @@ SECTIONS
 	/DISCARD/ : {
 		*(.eh_frame .note.GNU-stack)
 	}
+
+	PROVIDE(end = .);
 }

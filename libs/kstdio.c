@@ -1,14 +1,15 @@
 /**
  * @file kstdio.c
  * @author crjg-k (crjg-k@qq.com)
- * @brief 
+ * @brief
  * @version 0.1
  * @date 2023-01-29 18:00:08
- * 
+ *
  * @copyright Copyright (c) 2023 crjg-k
- * 
+ *
  */
 
+#include <defs.h>
 #include <driver/console.h>
 #include <kstdio.h>
 
@@ -39,7 +40,7 @@ static void printint(int32_t xx, int32_t base, int32_t sgn)
 	uint32_t x;
 
 	neg = 0;
-	if (sgn && xx < 0) {
+	if (sgn and xx < 0) {
 		neg = 1;
 		x = -xx;
 	} else {
@@ -98,7 +99,8 @@ static void vkprintf(const char *fmt, va_list ap)
 			} else if (c == '%') {
 				kputc(c);
 			} else {
-				// Unknown % sequence.  Print it to draw attention.
+				// Unknown % sequence.  Print it to draw
+				// attention.
 				kputc('%');
 				kputc(c);
 			}

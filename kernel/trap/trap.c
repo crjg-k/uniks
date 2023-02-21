@@ -61,12 +61,12 @@ uint64_t trap_handler(uint64_t epc, uint64_t cause)
 	return return_pc;
 }
 
-void __always_inline interrupt_enable()
+__always_inline void interrupt_enable()
 {
 	set_csr(sstatus, SSTATUS_SIE);
 }
 
-void __always_inline interrupt_disable()
+__always_inline void interrupt_disable()
 {
 	clear_csr(sstatus, SSTATUS_SIE);
 }

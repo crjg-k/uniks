@@ -6,7 +6,7 @@ CROSS_PREFIX = riscv64-unknown-elf-
 CC = ${CROSS_PREFIX}gcc
 AS = $(TOOLPREFIX)as
 LD = $(TOOLPREFIX)ld
-GDB = ${CROSS_PREFIX}gdb
+GDB = gdb-multiarch
 OBJCOPY = ${CROSS_PREFIX}objcopy
 OBJDUMP = ${CROSS_PREFIX}objdump
 
@@ -19,6 +19,7 @@ SRC_FILES = \
 	./${SRC_KERNEL_DIR}/driver/* \
 	./${SRC_KERNEL_DIR}/platform/* \
 	./${SRC_KERNEL_DIR}/trap/* \
+	./${SRC_KERNEL_DIR}/mm/* \
 	./libs/*
 LINKER = ./script/kernel.ld
 TARGET = ./bin/kernel.elf
@@ -80,7 +81,16 @@ qemu: build
 .PHONY: debug
 debug: build
 	${QEMU} ${QFLAGS} -S ${QEMUGDB}&
-	gdb-multiarch bin/kernel.elf -q -x script/.gdbinit
+	${GDB} bin/kernel.elf -q -x script/.gdbinit
+
+.PHONY: debug-vscode
+debug-vscode: build
+	${QEMU} ${QFLAGS} -S ${QEMUGDB}
+
+.PHONY: dump
+dump: build
+	@${OBJDUMP} -s ${TARGET} > ./bin/kerneldump.txt
+	@vim ./bin/kerneldump.txt
 
 .PHONY: hint
 hint:

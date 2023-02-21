@@ -9,35 +9,33 @@
  *
  */
 
-#include <driver/clock.h>
+#include <defs.h>
 #include <kstdio.h>
 #include <kstring.h>
-#include <log.h>
 #include <trap/trap.h>
 
-extern char stext[], etext[];
-extern char sdata[], edata[];
-extern char sbss[], ebss[];
+extern void phymem_init(), kvminit(), kvminithart(), clock_init();
+extern void *kalloc();
 char message[] = "KOS is running!";
-void clean_bss()
-{
-	memset(sbss, 0, ebss - sbss);
-}
+
 void kernel_start()
 {
-	clean_bss();
-	kputc('\n');
+	memset(sbss, 0, ebss - sbss);
+	phymem_init();
+	kvminit();
+	kvminithart();
+	// now, in vaddr space!
 	trap_init();
 	clock_init();
 	interrupt_enable();
+	kputc('\n');
 	kprintf("%s\n", message);
 	debugf("stext: %p\tetext: %p", stext, etext);
 	debugf("sdata: %p\tedata: %p", sdata, edata);
 	debugf("sbss: %p\tebss: %p", sbss, ebss);
 	kputc('\n');
-	for (int8_t i = 0;; i++) /* waiting for interrupt */
-		/*kprintf("i = %d\n", i)*/;
+	while (1) /* waiting for interrupt */
+		;
 
-	panic("ALL DONE");
-	kprintf("will never step here");
+	panic("will never step here");
 }

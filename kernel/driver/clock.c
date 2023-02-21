@@ -10,7 +10,6 @@
  */
 
 #include "clock.h"
-#include <kstdio.h>
 #include <platform/riscv.h>
 #include <platform/sbi.h>
 
@@ -22,7 +21,7 @@ volatile uint64_t ticks;
 // Hardcode timebase
 static uint64_t timebase = CPUFREQ / TIMESPERSEC;
 
-static __always_inline uint64_t get_cycles()
+__always_inline static uint64_t get_cycles()
 {
 	uint64_t n;
 	asm volatile("rdtime %0" : "=r"(n));
@@ -40,6 +39,4 @@ void clock_init()
 	set_csr(sie, MIP_STIP);
 	ticks = 0;
 	clock_set_next_event();
-
-	kprintf("===> setup clock interrupts\n");
 }

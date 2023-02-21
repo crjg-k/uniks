@@ -1,0 +1,28 @@
+{
+	"version": "0.1.0",
+	"configurations": [
+		{
+			"name": "kosdebug",
+			"type": "cppdbg",
+			"request": "launch",
+			"program": "${workspaceFolder}/bin/kernel.elf",
+			"cwd": "${workspaceFolder}",
+			"stopAtEntry": true,
+			"miDebuggerServerAddress": "localhost:1234",
+			"miDebuggerPath": "gdb-multiarch",
+			"MIMode": "gdb",
+			"preLaunchTask": "make-debug", 
+			"setupCommands": [
+				{
+					"description": "Enable pretty-printing for gdb",
+					"text": "-enable-pretty-printing",
+					"ignoreFailures": true
+				},
+				// load register table
+				{
+					"text": "set tdesc filename registertable.xml",
+				}
+			],
+		}
+	]
+}

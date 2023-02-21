@@ -4,7 +4,7 @@
 #include <defs.h>
 
 extern void kprintf(const char *fmt, ...);
-static uint64_t __always_inline r_mhartid()
+__always_inline static uint64_t r_mhartid()
 {
 	uint64_t x = 0;
 	return x;
@@ -120,6 +120,7 @@ enum LOG_COLOR {
 		kprintf("\x1b[%dm[%s %d] %s:%d: " fmt "\x1b[0m\n", RED, \
 			"PANIC", tid, __FILE__, __LINE__, ##__VA_ARGS__); \
 		sbi_shutdown(); \
+		1; \
 	})
 
 #endif	 //! __LOG_H__

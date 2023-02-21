@@ -8,8 +8,8 @@
 
 .section .text
 kernel_entry:
+	# now, in S mode!
 	la	sp, bootstacktop	# set sp pointer
-
 	tail	kernel_start
 
 

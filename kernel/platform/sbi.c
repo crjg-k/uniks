@@ -19,7 +19,7 @@
 #define SBI_SEND_IPI	    4
 #define SBI_SHUTDOWN	    8
 
-static int64_t __always_inline sbi_call(uint64_t sbi_type, uint64_t arg0,
+__always_inline static int64_t sbi_call(uint64_t sbi_type, uint64_t arg0,
 					uint64_t arg1, uint64_t arg2)
 {
 	register uint64_t a0 asm("a0") = arg0;
