@@ -43,12 +43,12 @@ pte_t *walk(pagetable_t pagetable, uint64_t va, int32_t alloc)
 	return &pagetable[PX(0, va)];
 }
 
-int32_t mappages(pagetable_t pagetable, uint64_t va, uint64_t size, uint64_t pa,
-		 int32_t perm)
+int32_t mappages(pagetable_t pagetable, uintptr_t va, uintptr_t size,
+		 uintptr_t pa, int32_t perm)
 {
 	assert(size != 0);
 
-	uint64_t a = PGROUNDDOWN(va), last = PGROUNDDOWN(va + size - 1);
+	uint64_t a = PGROUNDDOWN(va), last = PGROUNDUP(va + size - 1);
 	pte_t *pte;
 	while (a < last) {
 		if ((pte = walk(pagetable, a, 1)) == 0)
@@ -66,9 +66,9 @@ static pagetable_t kvmmake()
 	pagetable_t kpgtbl;
 	kpgtbl = (pagetable_t)kalloc();
 	memset(kpgtbl, 0, PGSIZE);
-
+#define KERNELBASE (uintptr_t) KERNEL_BASE_ADDR
 	// map kernel text segment
-	mappages(kpgtbl, KERNELBASE, (uint64_t)etext - KERNELBASE, KERNELBASE,
+	mappages(kpgtbl, KERNELBASE, (uint64_t)(etext - KERNELBASE), KERNELBASE,
 		 PTE_R | PTE_X);
 	// map kernel data segment(include stack) and the remainder physical RAM
 	mappages(kpgtbl, (uint64_t)etext, PHYSTOP - (uint64_t)etext,

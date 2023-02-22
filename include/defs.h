@@ -26,6 +26,8 @@ extern char stext[], etext[];
 extern char sdata[], edata[];
 extern char sbss[], ebss[];
 extern char end[];
+extern char bootstack[], bootstacktop[];
+extern char KERNEL_BASE_ADDR[];
 
 
 #include <types.h>

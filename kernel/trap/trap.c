@@ -47,6 +47,7 @@ static uint64_t interrupt_handler(uint64_t epc, uint64_t cause)
 }
 static uint64_t exception_handler(uint64_t epc, uint64_t cause)
 {
+	kprintf("exception: %d\n", cause);
 	return epc;
 }
 

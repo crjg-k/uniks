@@ -13,10 +13,11 @@
 #include <kstdio.h>
 #include <kstring.h>
 #include <trap/trap.h>
+#include <process/proc.h>
 
 extern void phymem_init(), kvminit(), kvminithart(), clock_init();
 extern void *kalloc();
-char message[] = "KOS is running!";
+char message[] = "uniks is running!";
 
 void kernel_start()
 {
@@ -25,6 +26,7 @@ void kernel_start()
 	kvminit();
 	kvminithart();
 	// now, in vaddr space!
+	proc_init();
 	trap_init();
 	clock_init();
 	interrupt_enable();

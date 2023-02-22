@@ -20,10 +20,11 @@ SRC_FILES = \
 	./${SRC_KERNEL_DIR}/platform/* \
 	./${SRC_KERNEL_DIR}/trap/* \
 	./${SRC_KERNEL_DIR}/mm/* \
+	./${SRC_KERNEL_DIR}/process/* \
 	./libs/*
 LINKER = ./script/kernel.ld
 TARGET = ./bin/kernel.elf
-OSNAME = kos.bin
+OSNAME = uniks.bin
 OSBIN = ./bin/${OSNAME}
 
 CFLAGS = \

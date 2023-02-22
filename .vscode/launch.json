@@ -2,7 +2,7 @@
 	"version": "0.1.0",
 	"configurations": [
 		{
-			"name": "kosdebug",
+			"name": "uniks-debug",
 			"type": "cppdbg",
 			"request": "launch",
 			"program": "${workspaceFolder}/bin/kernel.elf",

@@ -3,7 +3,7 @@
 OUTPUT_ARCH(riscv) /* specific the ISA of output files which run in RV */
 ENTRY(kernel_entry)  /* specific entry of OS defined in asm file */
 
-KERNEL_BASE_ADDR = 0x80200000; /* OS start addr */
+PROVIDE(KERNEL_BASE_ADDR = 0x80200000); /* OS start addr */
 
 
 SECTIONS
