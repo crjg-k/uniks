@@ -1,19 +1,20 @@
 /**
  * @file clock.c
  * @author crjg-k (crjg-k@qq.com)
- * @brief 
+ * @brief
  * @version 0.1
  * @date 2023-02-16 11:46:00
- * 
+ *
  * @copyright Copyright (c) 2023 crjg-k
- * 
+ *
  */
 
 #include "clock.h"
 #include <platform/riscv.h>
 #include <platform/sbi.h>
 
-volatile uint64_t ticks;
+// the ticks will inc in each 0.01s
+volatile uint64_t ticks=0;
 
 #define TIMESPERSEC 100
 #define CPUFREQ	    10000000
@@ -39,4 +40,11 @@ void clock_init()
 	set_csr(sie, MIP_STIP);
 	ticks = 0;
 	clock_set_next_event();
+}
+
+void delay(int32_t num)
+{
+	int32_t cnt = ticks;
+	while (ticks < cnt + num)
+		;
 }

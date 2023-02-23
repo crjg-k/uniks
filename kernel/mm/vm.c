@@ -1,6 +1,7 @@
 #include "memlay.h"
 #include "mmu.h"
 #include <defs.h>
+#include <kassert.h>
 #include <kstring.h>
 #include <platform/riscv.h>
 
@@ -8,7 +9,7 @@ pagetable_t kernel_pagetable;
 
 extern void *kalloc();
 
-void kvminithart()
+void kvmenable()
 {
 	// wait for any previous writes to the page table memory to finish.
 	sfence_vma();

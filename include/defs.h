@@ -17,6 +17,8 @@
 #endif
 
 
+#include <types.h>
+
 #define __always_inline inline __attribute__((always_inline))
 #define __noinline	__attribute__((noinline))
 #define __noreturn	__attribute__((noreturn))
@@ -26,12 +28,12 @@ extern char stext[], etext[];
 extern char sdata[], edata[];
 extern char sbss[], ebss[];
 extern char end[];
-extern char bootstack[], bootstacktop[];
+extern char bootstack0[], bootstacktop0[];
+extern char bootstack1[], bootstacktop1[];
 extern char KERNEL_BASE_ADDR[];
 
 
-#include <types.h>
-#include <kassert.h>
 #include <log.h>
+
 
 #endif /* !__DEFS_H__ */

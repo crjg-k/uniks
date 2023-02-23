@@ -1,16 +1,12 @@
 
+#include "trap.h"
 #include <driver/clock.h>
 #include <kstdio.h>
 #include <platform/riscv.h>
-#include "trap.h"
 
-extern void trap_vector();
+extern void trap_vector(), scheduler();
 void trap_init()
 {
-	/* Set sscratch to 0, indicating to exception vector that we are
-	 * presently executing is from the kernel while >0 means from usermode
-	 */
-	write_csr(sscratch, 0);
 	/* Set the exception vector address */
 	write_csr(stvec, &trap_vector);
 }
@@ -29,10 +25,10 @@ static uint64_t interrupt_handler(uint64_t epc, uint64_t cause)
 		kprintf("User timer interrupt\n");
 		break;
 	case IRQ_S_TIMER:
+		++ticks;
 		clock_set_next_event();
-#define TICK_NUM 100
-		if (++ticks % TICK_NUM == 0)
-			kprintf("[%d ticks]\n", ticks);
+		if (ticks % 10 == 0)
+			scheduler();
 		break;
 	case IRQ_U_EXT:
 		kprintf("User external interrupt\n");
@@ -47,7 +43,7 @@ static uint64_t interrupt_handler(uint64_t epc, uint64_t cause)
 }
 static uint64_t exception_handler(uint64_t epc, uint64_t cause)
 {
-	kprintf("exception: %d\n", cause);
+	kprintf("exception: %d; epc: %x\n", cause, epc);
 	return epc;
 }
 

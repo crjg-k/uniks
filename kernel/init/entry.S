@@ -9,14 +9,22 @@
 .section .text
 kernel_entry:
 	# now, in S mode!
-	la	sp, bootstacktop	# set sp pointer
+	la	sp, bootstacktop0	# set sp pointer
 	tail	kernel_start
 
 
 .section .data
 	.align PGSHIFT			# align to next page
-	.global bootstack
-bootstack:
+	.global bootstack0
+bootstack0:
 	.space KSTACKSIZE		# stack size = KSTACKSIZE
-	.global bootstacktop
-bootstacktop:
+	.global bootstacktop0
+bootstacktop0:
+
+.section .data
+	.align PGSHIFT			# align to next page
+	.global bootstack1
+bootstack1:
+	.space KSTACKSIZE		# stack size = KSTACKSIZE
+	.global bootstacktop1
+bootstacktop1:

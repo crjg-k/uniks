@@ -1,6 +1,7 @@
 #include "memlay.h"
 #include "mmu.h"
 #include <defs.h>
+#include <kassert.h>
 #include <kstring.h>
 #include <list.h>
 

@@ -90,7 +90,7 @@ debug-vscode: build
 
 .PHONY: dump
 dump: build
-	@${OBJDUMP} -s ${TARGET} > ./bin/kerneldump.txt
+	@${OBJDUMP} -d ${TARGET} > ./bin/kerneldump.txt
 	@vim ./bin/kerneldump.txt
 
 .PHONY: hint
