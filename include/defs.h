@@ -12,10 +12,6 @@
 	#define or ||
 #endif
 
-#ifndef NULL
-	#define NULL ((void *)0)
-#endif
-
 
 #include <types.h>
 
@@ -31,9 +27,6 @@ extern char end[];
 extern char bootstack0[], bootstacktop0[];
 extern char bootstack1[], bootstacktop1[];
 extern char KERNEL_BASE_ADDR[];
-
-
-#include <log.h>
 
 
 #endif /* !__DEFS_H__ */

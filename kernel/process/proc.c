@@ -63,12 +63,13 @@ void scheduler()
 	switch_to(next);
 }
 
-
-#include <driver/clock.h>
+#include <log.h>
 void init_process()
 {
+	extern void delay(int32_t);
 	int32_t i = 0;
 	while (1) {
-		kprintf("init=>%d\n", i++);
+		delay(2);
+		kprintf("\x1b[%dminit=>%d\x1b[0m ", RED, i++);
 	}
 }

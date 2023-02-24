@@ -47,11 +47,10 @@
 	})
 
 
-__always_inline void sfence_vma()
-{
-	// zero, zero means flush all TLB entries
-	asm volatile("sfence.vma zero, zero\n\tnop");
-}
+#define r_mhartid() ({ 0; })
+
+// zero, zero means flush all TLB entries
+#define sfence_vma() ({ asm volatile("sfence.vma zero, zero\n\tnop"); })
 
 
 #define IRQ_U_SOFT  0

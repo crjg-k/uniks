@@ -12,6 +12,7 @@
 #include <defs.h>
 #include <kstdio.h>
 #include <kstring.h>
+#include <log.h>
 #include <process/proc.h>
 #include <trap/trap.h>
 
@@ -19,18 +20,21 @@ extern void phymem_init(), kvminit(), kvmenable(), clock_init();
 extern void *kalloc();
 char message[] = "uniks is running!";
 
-#include <driver/clock.h>
+
 void idle_process()
 {
-	// int32_t i = 0;
+	extern void delay(int32_t);
+	int32_t i = 0;
 	while (1) {
-		// kprintf("idle=>%d\n", i++);
+		delay(9);
+		kprintf("\x1b[%dmidle=>%d\x1b[0m ", YELLOW, i++);
 	}
 }
 
 void kernel_start()
 {
 	memset(sbss, 0, ebss - sbss);
+	printfinit();
 	phymem_init();
 	kvminit();
 	kvmenable();
