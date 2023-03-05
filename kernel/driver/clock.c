@@ -14,7 +14,7 @@
 #include <platform/sbi.h>
 
 // the ticks will inc in each 0.01s
-volatile uint64_t ticks=0;
+volatile uint64_t ticks = 0;
 
 #define TIMESPERSEC 100
 #define CPUFREQ	    10000000
@@ -29,7 +29,7 @@ __always_inline static uint64_t get_cycles()
 	return n;
 }
 
-void clock_set_next_event()
+__always_inline void clock_set_next_event()
 {
 	sbi_set_timer(get_cycles() + timebase);
 }

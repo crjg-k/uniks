@@ -2,17 +2,10 @@
 #define __LIST_H__
 
 #include <defs.h>
+#include <structdef.h>
 
 /* this list template is excerpted from linux:include/linux/list.h with url:
  * [https://github.com/torvalds/linux/blob/master/include/linux/list.h] */
-
-#define offsetof(type, member) ((size_t)(&((type *)0)->member))
-
-#define container_of(ptr, type, member) \
-	({ \
-		const typeof(((type *)0)->member) *__mptr = (ptr); \
-		(type *)((char *)__mptr - offsetof(type, member)); \
-	})
 
 
 struct list_node {

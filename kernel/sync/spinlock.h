@@ -17,5 +17,6 @@ struct spinlock {
 void initlock(struct spinlock *, char *);
 void acquire(struct spinlock *);
 void release(struct spinlock *);
+int64_t holding(struct spinlock *lk);
 
 #endif /* !__KERNEL_SYNC_SPINLOCK_H__ */

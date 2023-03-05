@@ -1,11 +1,11 @@
 
-LOG ?= debug
+# LOG ?= debug
 
 # basic tools
 CROSS_PREFIX = riscv64-unknown-elf-
 CC = ${CROSS_PREFIX}gcc
-AS = $(TOOLPREFIX)as
-LD = $(TOOLPREFIX)ld
+AS = ${CROSS_PREFIX}as
+LD = ${CROSS_PREFIX}ld
 GDB = gdb-multiarch
 OBJCOPY = ${CROSS_PREFIX}objcopy
 OBJDUMP = ${CROSS_PREFIX}objdump
@@ -20,6 +20,7 @@ SRC_FILES = \
 	./${SRC_KERNEL_DIR}/platform/* \
 	./${SRC_KERNEL_DIR}/trap/* \
 	./${SRC_KERNEL_DIR}/mm/* \
+	./${SRC_KERNEL_DIR}/sys/* \
 	./${SRC_KERNEL_DIR}/sync/* \
 	./${SRC_KERNEL_DIR}/process/* \
 	./libs/*
@@ -35,6 +36,7 @@ CFLAGS = \
 	-ffreestanding \
 	-Wall \
 	-Werror \
+	-march=rv64g \
 	-fno-stack-protector \
 	-fno-omit-frame-pointer
 
@@ -48,13 +50,13 @@ else ifeq ($(LOG), info)
 	CFLAGS += -D LOG_LEVEL_INFO
 else ifeq ($(LOG), debug)
 	CFLAGS += -D LOG_LEVEL_DEBUG
-	CFLAGS += -g
+	CFLAGS += -g3
 else ifeq ($(LOG), trace)
 	CFLAGS += -D LOG_LEVEL_TRACE
 endif
 
 .PHONY: run
-run: build qemu
+run: build qemu dump
 
 .PHONY: build
 build: 
@@ -91,8 +93,8 @@ debug-vscode: build
 
 .PHONY: dump
 dump: build
-	@${OBJDUMP} -d ${TARGET} > ./bin/kerneldump.txt
-	@vim ./bin/kerneldump.txt
+	${OBJDUMP} -d ${TARGET} > ./bin/kerneldump.asm
+	# vim ./bin/kerneldump.txt
 
 .PHONY: hint
 hint:

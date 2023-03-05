@@ -18,16 +18,15 @@
 
 extern void phymem_init(), kvminit(), kvmenable(), clock_init();
 extern void *kalloc();
-char message[] = "uniks is running!";
+char message[] = "uniks is booting!";
 
+// todo1: read and realize the memory/pagetable free function of vm.c
+// todo3: can kerneltrap only save tiny context?
 
-void idle_process()
+__noreturn __always_inline void idle_process()
 {
-	extern void delay(int32_t);
-	int32_t i = 0;
 	while (1) {
-		delay(9);
-		kprintf("\x1b[%dmidle=>%d\x1b[0m ", YELLOW, i++);
+		scheduler();
 	}
 }
 
@@ -41,13 +40,14 @@ void kernel_start()
 	// now, in vaddr space!
 	proc_init();
 	trap_init();
-	clock_init();
-	kputc('\n');
-	kprintf("%s\n", message);
+	kprintf("\n%s\n", message);
 	debugf("stext: %p\tetext: %p", stext, etext);
 	debugf("sdata: %p\tedata: %p", sdata, edata);
 	debugf("sbss: %p\tebss: %p", sbss, ebss);
 	kputc('\n');
+	user_init();
+	__sync_synchronize();
+	clock_init();
 	interrupt_enable();
 	idle_process();
 

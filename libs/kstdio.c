@@ -120,10 +120,10 @@ void kprintf(const char *fmt, ...)
 {
 	va_list ap;
 	va_start(ap, fmt);
-	if (prf.locking)
-		acquire(&prf.lock);
+	// if (prf.locking)
+	// 	acquire(&prf.lock);
 	vkprintf(fmt, ap);
-	if (prf.locking)
-		release(&prf.lock);
+	// if (prf.locking)
+	// 	release(&prf.lock);
 	va_end(ap);
 }

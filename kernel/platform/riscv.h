@@ -47,18 +47,31 @@
 	})
 
 
-#define r_mhartid() ({ 0; })
+#define PRILEVEL_U 0
+#define PRILEVEL_S 1
+#define PRILEVEL_M 3
 
-// zero, zero means flush all TLB entries
-#define sfence_vma() ({ asm volatile("sfence.vma zero, zero\n\tnop"); })
-
-
-#define IRQ_U_SOFT  0
-#define IRQ_S_SOFT  1
-#define IRQ_U_TIMER 4
-#define IRQ_S_TIMER 5
-#define IRQ_U_EXT   8
-#define IRQ_S_EXT   9
+// trap->interrupt
+#define IRQ_U_SOFT	       0
+#define IRQ_S_SOFT	       1
+#define IRQ_U_TIMER	       4
+#define IRQ_S_TIMER	       5
+#define IRQ_U_EXT	       8
+#define IRQ_S_EXT	       9
+// trap->exception
+#define EXC_INST_ADDR_MISALIGN 0
+#define EXC_INST_ACCESSFAULT   1
+#define EXC_INST_ILLEGAL       2
+#define EXC_BREAK	       3
+#define EXC_LD_ADDR_MISALIGN   4
+#define EXC_LD_ACCESSFAULT     5
+#define EXC_SD_ADDR_MISALIGN   6
+#define EXC_SD_ACCESSFAULT     7
+#define EXC_U_ECALL	       8
+#define EXC_S_ECALL	       9
+#define EXC_INST_PAGEFAULT     12
+#define EXC_LD_PAGEFAULT       13
+#define EXC_SD_PAGEFAULT       15
 
 /* trap and interrupt related */
 #define MIP_SSIP (1 << IRQ_S_SOFT)
@@ -77,12 +90,38 @@
 #define PTE_X		     (1 << 3)
 #define PTE_U		     (1 << 4)
 #define SATP_SV39	     (8l << 60)	  // RISCV Sv39 page table scheme
+#define PTENUM		     PGSIZE / 8
 #define MAKE_SATP(pagetable) (SATP_SV39 | (((uint64_t)pagetable) >> 12))
 #define w_satp(x)	     ({ asm volatile("csrw satp, %0" : : "r"(x)); })
 #define PA2PTE(pa)	     ((((uint64_t)pa) >> 12) << 10)   // pysical addr to pte
 #define PTE2PA(pte)	     (((pte) >> 10) << 12)   // pte to pysical addr
 #define PXSHIFT(level)	     (PGSHIFT + (9 * (level)))
 #define PX(level, va)	     ((((uint64_t)(va)) >> PXSHIFT(level)) & 0x1ff)
-#define MAXVA		     (1l << (39 - 1))	// Sv39
+#define PTE_FLAGS(pte)	     ((pte)&0x3FF)
+
+
+#define r_mhartid() ({ 0; })
+// enable device interrupts
+static __always_inline void interrupt_on()
+{
+	set_csr(sstatus, SSTATUS_SIE);
+}
+
+// disable device interrupts
+static __always_inline void interrupt_off()
+{
+	clear_csr(sstatus, SSTATUS_SIE);
+}
+
+// are device interrupts enabled?
+static __always_inline int interrupt_get()
+{
+	uint64_t x = read_csr(sstatus);
+	return (x & SSTATUS_SIE) != 0;
+}
+
+// zero, zero means flush all TLB entries
+#define sfence_vma() ({ asm volatile("sfence.vma zero, zero\n\tnop"); })
+
 
 #endif /* !__KERNEL_PLATFORM_RISCV_H__ */

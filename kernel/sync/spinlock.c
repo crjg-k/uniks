@@ -10,21 +10,19 @@ void initlock(struct spinlock *lk, char *name)
 #if defined(LOG_LEVEL_DEBUG)
 	lk->name = name;
 	lk->cpu = r_mhartid();
-#else
-	lk->name;
 #endif
 }
 
-// int32_t static holding(struct spinlock *lk)
-// {
-// 	return (lk->locked and
-// #if defined(LOG_LEVEL_DEBUG)
-// 	lk->cpu == r_mhartid()
-// #else
-// 1
-// #endif
-// 	);
-// }
+int64_t holding(struct spinlock *lk)
+{
+	return (lk->locked and
+#if defined(LOG_LEVEL_DEBUG)
+		lk->cpu == r_mhartid()
+#else
+		1
+#endif
+	);
+}
 
 void acquire(struct spinlock *lk)
 {

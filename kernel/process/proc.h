@@ -1,15 +1,33 @@
 #ifndef __KERNEL_PROCESS_PROC_H__
 #define __KERNEL_PROCESS_PROC_H__
 
-#include "param.h"
 #include <defs.h>
+#include <param.h>
+#include <sync/spinlock.h>
 
 #define PROC_NAME_LEN 63
-#define MAX_PROCESS   4096
-#define MAX_PID	      (MAX_PROCESS * 2)
 
 
+// this is only tiny context for kernel context switch occurred by function
+// calling, so we only need to save the callee saved registers
 struct context {
+	/*   0 */ uint64_t ra;
+	/*   8 */ uint64_t sp;
+	/*  16 */ uint64_t s0;
+	/*  24 */ uint64_t s1;
+	/*  32 */ uint64_t s2;
+	/*  40 */ uint64_t s3;
+	/*  48 */ uint64_t s4;
+	/*  56 */ uint64_t s5;
+	/*  64 */ uint64_t s6;
+	/*  72 */ uint64_t s7;
+	/*  80 */ uint64_t s8;
+	/*  88 */ uint64_t s9;
+	/*  96 */ uint64_t s10;
+	/* 104 */ uint64_t s11;
+};
+
+struct trapframe {
 	/*   0 */ uint64_t ra;
 	/*   8 */ uint64_t sp;
 	/*  16 */ uint64_t gp;
@@ -41,7 +59,11 @@ struct context {
 	/* 224 */ uint64_t t4;
 	/* 232 */ uint64_t t5;
 	/* 240 */ uint64_t t6;
-	/* 248 */ uint64_t pc;
+	/* 248 */ uint64_t kernel_satp;	    // kernel page table
+	/* 256 */ uint64_t kernel_sp;	    // top of process's kernel stack
+	/* 264 */ uint64_t kernel_trap;	    // usertrap()
+	/* 272 */ uint64_t epc;		    // saved user program counter
+	/* 280 */ uint64_t kernel_hartid;   // saved kernel tp
 };
 
 enum procstate {
@@ -54,17 +76,33 @@ enum procstate {
 };
 
 struct proc {
-	int32_t pid;			// Process ID
-	enum procstate state;		// Process state
-	uintptr_t kstack;		// Process kernel stack
+	struct spinlock lock;
+	int32_t pid;			// process ID
+	enum procstate state;		// process state
+	uintptr_t kstack;		// process kernel stack
+	uint64_t sz;			// size of process memory (bytes)
 	struct proc *parent;		// parent process
-	pagetable_t pagetable;		// User page table
-	struct context ctxt;		// Switch here to run process
-	struct trapframe *tf;		// Trap frame for current interrupt
-	char name[PROC_NAME_LEN + 1];	// Process name
+	pagetable_t pagetable;		// user page table
+	struct context ctxt;		// switch here to run process
+	struct trapframe *tf;		// trap frame for current interrupt
+	char name[PROC_NAME_LEN + 1];	// process name
 };
 
+struct cpu {
+	struct proc *proc;     // The process running on this cpu, or null
+	struct context ctxt;   // swtch() here to enter scheduler()
+};
 
+extern struct proc pcbtable[];
+extern struct cpu cpus[];
+
+void scheduler();
 void proc_init();
+void user_init();
+struct proc *myproc();
+void proc_mapstacks(pagetable_t);
+
+int64_t do_fork();
+int64_t do_exec();
 
 #endif /* !__KERNEL_PROCESS_PROC_H__ */

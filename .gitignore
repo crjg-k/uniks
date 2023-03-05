@@ -4,3 +4,5 @@
 
 bin
 
+user/bin
+user/*.*sm
