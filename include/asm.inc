@@ -1,6 +1,7 @@
 
-
-.macro reg_save base
+# save all regs since that this is called in usertrapvec, so that we
+# can control total behaviour of user process by modifying any regs
+.macro tf_reg_save base
 	sd ra,	  0(\base)
 	sd sp,	  8(\base)
 	sd gp,	 16(\base)
@@ -33,7 +34,7 @@
 	sd t5,	232(\base)
 .endm
 
-.macro reg_restore base
+.macro tf_reg_restore base
 	ld ra,	  0(\base)
 	ld sp,	  8(\base)
 	ld gp,	 16(\base)
@@ -65,4 +66,80 @@
 	ld t4,	224(\base)
 	ld t5,	232(\base)
 	ld t6,	240(\base)
+.endm
+
+
+# only save the callee saved regs since that this is expanded in callee (switch_to)
+.macro tinyctxt_reg_save base
+	sd ra,	  0(\base)
+	sd sp,	  8(\base)
+	sd s0,	 16(\base)
+	sd s1,	 24(\base)
+	sd s2,	 32(\base)
+	sd s3,	 40(\base)
+	sd s4,	 48(\base)
+	sd s5,	 56(\base)
+	sd s6,	 64(\base)
+	sd s7,	 72(\base)
+	sd s8,	 80(\base)
+	sd s9,	 88(\base)
+	sd s10,	 96(\base)
+	sd s11,	104(\base)
+.endm
+
+.macro tinyctxt_reg_restore base
+	ld ra,	  0(\base)
+	ld sp,	  8(\base)
+	ld s0,	 16(\base)
+	ld s1,	 24(\base)
+	ld s2,	 32(\base)
+	ld s3,	 40(\base)
+	ld s4,	 48(\base)
+	ld s5,	 56(\base)
+	ld s6,	 64(\base)
+	ld s7,	 72(\base)
+	ld s8,	 80(\base)
+	ld s9,	 88(\base)
+	ld s10,	 96(\base)
+	ld s11,	104(\base)
+.endm
+
+
+# only save the caller saved regs since that this is expanded in caller (kerneltrapvec)
+.macro caller_reg_save base
+	sd ra,	  0(\base)
+	sd t0,	  8(\base)
+	sd t1,	 16(\base)
+	sd t2,	 24(\base)
+	sd t3,	 32(\base)
+	sd t4,	 40(\base)
+	sd t5,	 48(\base)
+	sd t6,	 56(\base)
+	sd a0,	 64(\base)
+	sd a1,	 72(\base)
+	sd a2,	 80(\base)
+	sd a3,	 88(\base)
+	sd a4,	 96(\base)
+	sd a5,	104(\base)
+	sd a6,	112(\base)
+	sd a7,	120(\base)
+.endm
+
+.macro caller_reg_restore base
+	ld ra,	  0(\base)
+	ld t0,	  8(\base)
+	ld t1,	 16(\base)
+	ld t2,	 24(\base)
+	ld t3,	 32(\base)
+	ld t4,	 40(\base)
+	ld t5,	 48(\base)
+	ld t6,	 56(\base)
+	ld a0,	 64(\base)
+	ld a1,	 72(\base)
+	ld a2,	 80(\base)
+	ld a3,	 88(\base)
+	ld a4,	 96(\base)
+	ld a5,	104(\base)
+	ld a6,	112(\base)
+	ld a7,	120(\base)
 .endm

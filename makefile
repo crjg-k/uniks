@@ -1,5 +1,5 @@
 
-# LOG ?= debug
+LOG ?= debug
 
 # basic tools
 CROSS_PREFIX = riscv64-unknown-elf-
@@ -41,6 +41,7 @@ CFLAGS = \
 	-fno-omit-frame-pointer
 
 CFLAGS += -T ${LINKER}
+CFLAGS += -g3
 CFLAGS += $(foreach dir, ${INC_DIR}, -I${dir})
 ifeq ($(LOG), error)
 	CFLAGS += -D LOG_LEVEL_ERROR
@@ -50,7 +51,6 @@ else ifeq ($(LOG), info)
 	CFLAGS += -D LOG_LEVEL_INFO
 else ifeq ($(LOG), debug)
 	CFLAGS += -D LOG_LEVEL_DEBUG
-	CFLAGS += -g3
 else ifeq ($(LOG), trace)
 	CFLAGS += -D LOG_LEVEL_TRACE
 endif
@@ -59,9 +59,13 @@ endif
 run: build qemu dump
 
 .PHONY: build
-build: 
+build:
 	${CC} ${SRC_FILES} ${CFLAGS} -o ${TARGET}
 	${OBJCOPY} ${TARGET} --strip-all -O binary ${OSBIN}
+
+.PHONY: user
+user:
+	cd ./user && make
 
 
 # qemu option

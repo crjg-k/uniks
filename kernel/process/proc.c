@@ -51,26 +51,30 @@ int32_t allocpid()
 	return pid;
 }
 
-// create a user page table for a given process, with no user memory,
-// but with trampoline and trapframe pages.
-pagetable_t proc_pagetable(struct proc *p)
+/**
+ * @brief create a basic user page table for a given process only initial with
+ * trampoline and trapframe pages
+ *
+ * @param p
+ * @return pagetable_t
+ */
+pagetable_t proc_makebasicpagetable(struct proc *p)
 {
 	pagetable_t pagetable = uvmcreate();
 	if (pagetable == 0)
 		return 0;
 
-	// map the trampoline code (for system call return)
-	// at the highest user virtual address.
-	// only the supervisor uses it, on the way
-	// to/from user space, so not PTE_U.
+	/**
+	 * @brief map the trampoline.S code at the highest user virtual address.
+	 * only S mode can use it, on the way to/from user space, so not PTE_U
+	 */
 	if (mappages(pagetable, TRAMPOLINE, PGSIZE, (uint64_t)trampoline,
 		     PTE_R | PTE_X) < 0) {
 		uvmfree(pagetable, 0);
 		return 0;
 	}
 
-	// map the trapframe page just below the trampoline page, for
-	// trampoline.S.
+	// map the trapframe page just below the trampoline page
 	if (mappages(pagetable, TRAPFRAME, PGSIZE, (uint64_t)(p->tf),
 		     PTE_R | PTE_W) < 0) {
 		uvmunmap(pagetable, TRAMPOLINE, 1, 0);
@@ -88,23 +92,32 @@ void proc_freepagetable(pagetable_t pagetable, uint64_t sz)
 	uvmfree(pagetable, sz);
 }
 
-// Allocate a page for each process's kernel stack.
-// Map it's high in memory, followed by an invalid guard page.
+/**
+ * @brief allocate a page for each process's kernel stack which
+ * followed by an invalid guard page just below it
+ *
+ * @param kpgtbl kernel page table
+ */
 void proc_mapstacks(pagetable_t kpgtbl)
 {
+	uint64_t va, pa;
 	for (struct proc *p = pcbtable; p < &pcbtable[NPROC]; p++) {
-		char *pa = kalloc();
+		pa = (uint64_t)kalloc();
 		assert(pa != 0);
-		uint64_t va = KSTACK((int32_t)(p - pcbtable));
-		mappages(kpgtbl, va, PGSIZE, (uint64_t)pa, PTE_R | PTE_W);
+		va = KSTACK((int32_t)(p - pcbtable));
+		mappages(kpgtbl, va, PGSIZE, pa, PTE_R | PTE_W);
 	}
 }
 
-// free a proc structure and the data hanging from it,
-// including user pages.
-// p->lock must be held.
+/**
+ * @brief free a proc structure and the data hanging from it including user
+ * pages (unmap then free physical memory). p->lock must be held
+ *
+ * @param p
+ */
 static void freeproc(struct proc *p)
 {
+	assert(holding(&p->lock));
 	if (p->tf)
 		kfree((void *)p->tf), p->tf = NULL;
 	if (p->pagetable)
@@ -116,10 +129,10 @@ static void freeproc(struct proc *p)
 }
 
 /**
- * @brief allocate a new process and fill the switch tiny context between kernel
- * process
+ * @brief allocate a new process and fill the tiny context and return with
+ * holding the lock of the new process if allocate a process successfully
  *
- * @return struct proc*: new allocate process's pcb entry in pcb table
+ * @return struct proc *: new allocate process's pcb entry in pcb table
  */
 struct proc *allocproc()
 {
@@ -146,15 +159,18 @@ found:
 	}
 
 	// an empty user page table
-	if ((p->pagetable = proc_pagetable(p)) == 0) {
+	if ((p->pagetable = proc_makebasicpagetable(p)) == 0) {
 		// if there are no enough memory, failed
 		freeproc(p);
 		release(&p->lock);
 		return NULL;
 	}
 
-	// set up new context to start executing at forkret,
-	// which returns to user space
+	/**
+	 * @brief set new ctxt to start executing at forkret, where returns to
+	 * user space. this forges a trap scene for new forked process to
+	 * release lock right set sp point to the correct kstack address
+	 */
 	memset(&p->ctxt, 0, sizeof(p->ctxt));
 	void forkret();
 	p->ctxt.ra = (uint64_t)forkret;
@@ -184,9 +200,7 @@ void proc_init()
 	}
 }
 
-/**
- * @brief each hart will hold a local scheduler context
- */
+// each hart will hold a local scheduler context
 void scheduler()
 {
 	struct proc *p;
@@ -200,13 +214,13 @@ void scheduler()
 				debugf("switch to: %d\n", p - pcbtable);
 				// switch to chosen process. it is the process's
 				// job to release its lock and then reacquire it
-				// before jumping back to us.
+				// before jumping back to us (in yield())
 				c->proc = p;
 				p->state = RUNNING;
 				switch_to(&c->ctxt, &p->ctxt);
 
 				// process is done running for now since timer
-				// interrupt.
+				// interrupt
 				c->proc = NULL;
 			}
 			release(&p->lock);
@@ -214,8 +228,7 @@ void scheduler()
 	}
 }
 
-// switch to kernel thread scheduler in per hart
-// must hold p->lock
+// switch to kernel thread scheduler and must hold p->lock when entering here
 void sched(void)
 {
 	struct proc *p = myproc();
@@ -227,7 +240,7 @@ void sched(void)
 	switch_to(&p->ctxt, &mycpu()->ctxt);
 }
 
-// give up the CPU
+// give up the CPU who called this
 void yield()
 {
 	struct proc *p = myproc();
@@ -237,25 +250,45 @@ void yield()
 	release(&p->lock);
 }
 
-// a user program that calls fork() then write() which is assembled from
-// ${cwd}/user/initcode.S
-uint32_t initcode[] = {0x00100893, 0x00000073, 0x00051863, 0x03000593,
-		       0x03200613, 0x00c584a3, 0x03000593, 0x00c00613,
-		       0x01000893, 0x00000073, 0xff1ff06f, 0x00000000,
-		       0x74696e69, 0x636f7270, 0x000a3120, 0x00000000};
+/**
+ * @brief a user program that calls fork() then write() which is compiled and
+ * assembled from ${cwd}/user/src/forktest.c
+ * hexdata dump command: od user/bin/forktest -t x
+ */
+uint32_t initcode[] = {
+	0xff010113, 0x00113423, 0x00813023, 0x01010413, 0x008000ef, 0x0000006f,
+	0xff010113, 0x00113423, 0x00813023, 0x01010413, 0x128000ef, 0x00050793,
+	0x04079063, 0x1d000793, 0x03200713, 0x00e784a3, 0x110000ef, 0x00050793,
+	0x02079463, 0x1d000793, 0x03300713, 0x00e784a3, 0x0f8000ef, 0x00050793,
+	0x00079863, 0x1d000793, 0x03400713, 0x00e784a3, 0x00b00593, 0x1d000513,
+	0x10c000ef, 0xff5ff06f, 0xf9010113, 0x02813423, 0x03010413, 0xfca43c23,
+	0x00b43423, 0x00c43823, 0x00d43c23, 0x02e43023, 0x02f43423, 0x03043823,
+	0x03143c23, 0x04040793, 0xfcf43823, 0xfd043783, 0xfc878793, 0xfef43423,
+	0xfe843783, 0x00878713, 0xfee43423, 0x0007b783, 0x00078513, 0xfe843783,
+	0x00878713, 0xfee43423, 0x0007b783, 0x00078593, 0xfe843783, 0x00878713,
+	0xfee43423, 0x0007b783, 0x00078613, 0xfe843783, 0x00878713, 0xfee43423,
+	0x0007b783, 0x00078693, 0xfe843783, 0x00878713, 0xfee43423, 0x0007b783,
+	0x00078713, 0xfe843783, 0x00878813, 0xff043423, 0x0007b783, 0xfd843883,
+	0x00000073, 0x00050793, 0x00078513, 0x02813403, 0x07010113, 0x00008067,
+	0xff010113, 0x00113423, 0x00813023, 0x01010413, 0x00100513, 0xf1dff0ef,
+	0x00050793, 0x0007879b, 0x00078513, 0x00813083, 0x00013403, 0x01010113,
+	0x00008067, 0xfe010113, 0x00113c23, 0x00813823, 0x02010413, 0xfea43423,
+	0xfeb43023, 0xfe043683, 0xfe843603, 0x00000593, 0x01000513, 0xed5ff0ef,
+	0x00050793, 0x0007879b, 0x00078513, 0x01813083, 0x01013403, 0x02010113,
+	0x00008067, 0x00000000, 0x74696e69, 0x636f7270, 0x000a3120, 0x00000000,
+};
 
 void user_init()
 {
 	struct proc *p = allocproc();
 	initproc = p;
 
-	// allocate one user page and copy initcode's instructions
-	// and data into it
+	// allocate 1 page and copy initcode's instructions and data into it
 	uvmfirst(p->pagetable, initcode, sizeof(initcode));
 	p->sz = PGSIZE;
 
 	// forgery context: prepare for the 1st time return from kernel to user
-	p->tf->epc = 0;
+	p->tf->epc = 0;	      // user code start executing at addr 0x0
 	p->tf->sp = PGSIZE;   // user stack pointer
 	set_proc_name(initproc, "initcode");
 	p->state = READY;
@@ -269,7 +302,7 @@ int64_t do_fork()
 	if (((childproc) = allocproc()) == 0) {
 		return -1;
 	}
-	// copy user memory from parent to child.
+	// copy user memory from parent to child
 	if (uvmcopy(parentproc->pagetable, childproc->pagetable,
 		    parentproc->sz) < 0) {
 		freeproc(childproc);
@@ -278,8 +311,7 @@ int64_t do_fork()
 	}
 	childproc->sz = parentproc->sz;
 
-	*(childproc->tf) = *(parentproc->tf);	// copy saved user registers
-
+	*(childproc->tf) = *(parentproc->tf);	// copy saved user's registers
 	// childproc's ret val of fork need to be set to 0 according to POSIX
 	childproc->tf->a0 = 0;
 

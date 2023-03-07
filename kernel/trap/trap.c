@@ -20,10 +20,10 @@ static void interrupt_handler(uint64_t cause, int32_t prilevel)
 	cause = (cause << 1) >> 1;   // erase the MSB
 	switch (cause) {
 	case IRQ_U_SOFT:
-		debugf("User software interrupt");
+		kprintf("User software interrupt");
 		break;
 	case IRQ_S_SOFT:
-		debugf("Supervisor software interrupt");
+		kprintf("Supervisor software interrupt");
 		break;
 	case IRQ_U_TIMER:
 		kprintf("User timer interrupt");
@@ -37,10 +37,10 @@ static void interrupt_handler(uint64_t cause, int32_t prilevel)
 		}
 		break;
 	case IRQ_U_EXT:
-		debugf("User external interrupt");
+		kprintf("User external interrupt");
 		break;
 	case IRQ_S_EXT:
-		debugf("Supervisor external interrupt");
+		kprintf("Supervisor external interrupt");
 		break;
 	default:
 		kprintf("default interrupt");
@@ -50,8 +50,8 @@ static void exception_handler(uint64_t cause, struct proc *p, int32_t prilevel)
 {
 	switch (cause) {
 	case EXC_INST_ILLEGAL:
-		debugf("illegal instruction from user sapce, addr: %p",
-		       read_csr(sepc));
+		kprintf("illegal instruction from prilevel: %d, addr: %p",
+			prilevel, read_csr(sepc));
 		p->tf->epc += 4;
 		break;
 	case EXC_U_ECALL:
@@ -68,8 +68,8 @@ static void exception_handler(uint64_t cause, struct proc *p, int32_t prilevel)
 	default:
 		kprintf("exception_handler(): unexpected scause %p pid=%d",
 			read_csr(scause), p->pid);
-		kprintf("            sepc=%p stval=%p", read_csr(sepc),
-			read_csr(stval));
+		kprintf("\tepc=%p stval=%p, from prilevel: %d\n",
+			read_csr(sepc), read_csr(stval), prilevel);
 	}
 }
 

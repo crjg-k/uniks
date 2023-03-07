@@ -5,8 +5,6 @@ symbol-file bin/kernel.elf
 set disassemble-next-line on
 set riscv use-compressed-breakpoints yes
 
-break yield
-break interrupt_handler
-break scheduler
+break usertrapret
 c
 layout split

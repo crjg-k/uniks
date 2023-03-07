@@ -20,8 +20,6 @@ extern void phymem_init(), kvminit(), kvmenable(), clock_init();
 extern void *kalloc();
 char message[] = "uniks is booting!";
 
-// todo1: read and realize the memory/pagetable free function of vm.c
-// todo3: can kerneltrap only save tiny context?
 
 __noreturn __always_inline void idle_process()
 {

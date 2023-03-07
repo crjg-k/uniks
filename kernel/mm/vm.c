@@ -22,13 +22,14 @@ void kvmenable()
 }
 
 /**
- * @brief Return the address of the PTE in page table pagetable that corresponds
- * to virtual address va. If alloc!=0, create any required page-table pages.
+ * @brief return the address of the PTE in pagetable that corresponds to virtual
+ * address va.
+ * if alloc!=0, create any required page table pages
  *
  * @param pagetable
  * @param va
  * @param alloc wether allow to allocate memory
- * @return pte_t*
+ * @return pte_t *: the 3rd level pte
  */
 pte_t *walk(pagetable_t pagetable, uint64_t va, int32_t alloc)
 {
@@ -40,7 +41,7 @@ pte_t *walk(pagetable_t pagetable, uint64_t va, int32_t alloc)
 			pagetable = (pagetable_t)PTE2PA(*pte);
 		} else {   // this page is not valid
 			if (!alloc or (pagetable = (pde_t *)kalloc()) == 0)
-				return 0;
+				return NULL;
 			memset(pagetable, 0, PGSIZE);
 			*pte = PA2PTE(pagetable) | PTE_V;
 		}
@@ -128,44 +129,50 @@ pagetable_t uvmcreate()
 	return pagetable;
 }
 
-// Recursively free page-table pages.
-// All leaf mappings must already have been removed.
+/**
+ * @brief free pagetable and all leaf must already have been removed
+ *
+ * @param pagetable
+ */
 void freewalk(pagetable_t pagetable)
 {
 	for (int32_t i = 0; i < PTENUM; i++) {
 		pte_t pte = pagetable[i];
-		if ((pte & PTE_V) and (pte & (PTE_R | PTE_W | PTE_X)) == 0) {
-			// this PTE points to a lower-level page table.
-			uint64_t child = PTE2PA(pte);
-			freewalk((pagetable_t)child);
-			pagetable[i] = 0;
-		} else if (pte & PTE_V) {
-			panic("freewalk: leaf");
-		}
+
+		// means that this pte has child level
+		assert(!(pte & PTE_V) or (pte & (PTE_R | PTE_W | PTE_X)));
+
+		uint64_t child = PTE2PA(pte);
+		freewalk((pagetable_t)child);
+		pagetable[i] = 0;
 	}
 	kfree((void *)pagetable);
 }
 
-// Remove npages of mappings starting from va. va must be
-// page-aligned. The mappings must exist.
-// Optionally free the physical memory.
+/**
+ * @brief remove n pages of pagetable starting from va and free the phymem
+ * optionally
+ *
+ * @param pagetable
+ * @param va must be page-aligned namely 4096 bytes aligned
+ * @param npages
+ * @param do_free
+ */
 void uvmunmap(pagetable_t pagetable, uint64_t va, uint64_t npages,
 	      int32_t do_free)
 {
 	assert((va % PGSIZE) == 0);
+
 	pte_t *pte;
 	for (uint64_t a = va; a < va + npages * PGSIZE; a += PGSIZE) {
-		if ((pte = walk(pagetable, a, 0)) == 0)
-			panic("uvmunmap: walk");
-		if ((*pte & PTE_V) == 0)
-			panic("uvmunmap: not mapped");
-		if (PTE_FLAGS(*pte) == PTE_V)
-			panic("uvmunmap: not a leaf");
+		assert((pte = walk(pagetable, a, 0)) != NULL);
+		assert((*pte & PTE_V) != 0);	    // assert mappings is exist
+		assert(PTE_FLAGS(*pte) != PTE_V);   // assert it is a leaf
 		if (do_free) {
 			uint64_t pa = PTE2PA(*pte);
 			kfree((void *)pa);
 		}
-		*pte = 0;
+		*pte = 0;   // do unmap operation by clear valid flag
 	}
 }
 
@@ -177,8 +184,17 @@ void uvmfree(pagetable_t pagetable, uint64_t sz)
 	freewalk(pagetable);
 }
 
-// receive a parent process's page table, and copy its page table both memory
-// content into child's address space
+//
+//
+/**
+ * @brief receive a parent process's page table, and copy its page table both
+ * memory content into child's address space
+ *
+ * @param old namely parent process
+ * @param new namely child process
+ * @param sz
+ * @return int64_t
+ */
 int64_t uvmcopy(pagetable_t old, pagetable_t new, uint64_t sz)
 {
 	pte_t *pte;
@@ -187,10 +203,8 @@ int64_t uvmcopy(pagetable_t old, pagetable_t new, uint64_t sz)
 	char *mem;
 
 	for (i = 0; i < sz; i += PGSIZE) {
-		if ((pte = walk(old, i, 0)) == 0)
-			panic("uvmcopy: pte should exist");
-		if ((*pte & PTE_V) == 0)
-			panic("uvmcopy: page not present");
+		assert((pte = walk(old, i, 0)));
+		assert((*pte & PTE_V));
 		pa = PTE2PA(*pte);
 		flags = PTE_FLAGS(*pte);
 		if ((mem = kalloc()) == 0)

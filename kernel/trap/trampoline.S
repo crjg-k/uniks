@@ -17,13 +17,13 @@ usertrapvec:
 
 	# save all registers to p->tf
 	li t6, TRAPFRAME
-	reg_save t6
+	tf_reg_save t6
 
 	# save t6 to p->tf
 	csrr t5, sscratch
 	sd t5, 240(t6)
 
-	ld sp, 256(t6)		# initialize kernel stack pointer, from p->tf->kernel_sp
+	ld sp, 256(t6)		# set kernel stack pointer, from p->tf->kernel_sp
 	ld tp, 280(t6)		# make tp hold the current hartid, from p->tf->kernel_hartid
 	ld t0, 264(t6)		# load the address of usertrap_handler(), from p->tf->kernel_trap
 	ld t1, 248(t6)		# fetch the kernel page table address, from p->tf->kernel_satp
@@ -54,7 +54,7 @@ userret:
 
 	# restore all registers from TRAPFRAME
 	li t6, TRAPFRAME
-	reg_restore t6
+	tf_reg_restore t6
 
 	# return to user mode and jump to user pc
 	# usertrapret() has set up sstatus and sepc in front
