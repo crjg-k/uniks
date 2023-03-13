@@ -3,20 +3,19 @@
 #include <defs.h>
 #include <kassert.h>
 #include <kstring.h>
-#include <list.h>
+
+#define USED   1
+#define UNUSED 0
+
+int32_t mem_map[PHYSIZE >> PGSHIFT];
 
 
-LIST_HEAD(kmem);
-
-/* each page is linked by a list whose node is located in the head of it */
 void kfree(void *pa)
 {
 	assert(((uint64_t)pa % PGSIZE) == 0 and (char *) pa >= end and
 	       (uint64_t) pa < PHYSTOP);
 
-	struct list_node *r;
-	r = (struct list_node *)pa;
-	list_add_front(r, &kmem);
+	mem_map[PA2ARRAYINDEX((uint64_t)pa)]--;
 }
 /**
  * Allocate one 4096-byte page of physical memory.
@@ -25,22 +24,27 @@ void kfree(void *pa)
  */
 void *kalloc()
 {
-	if (list_empty(&kmem))
-		return NULL;
-	struct list_node *r = list_next(&kmem);
-	list_del(kmem.next);
-	return (void *)r;
+	kprintf("kkkk\n");
+	for (int32_t i = PA2ARRAYINDEX(PGROUNDUP((uint64_t)end));
+	     i < PA2ARRAYINDEX(PHYSTOP); i++)
+		if (mem_map[i] == UNUSED) {
+			mem_map[i]++;
+			return (void *)ARRAYINDEX2PA((uint64_t)i);
+		}
+	return NULL;
 }
 
 static void freerange(void *pa_start, void *pa_end)
 {
-	char *p;
-	p = (char *)PGROUNDUP((uint64_t)pa_start);
-	for (; p + PGSIZE <= (char *)pa_end; p += PGSIZE)
-		kfree(p);
+	for (int32_t i = PA2ARRAYINDEX((uint64_t)pa_start);
+	     i < PA2ARRAYINDEX((uint64_t)pa_end); i++)
+		mem_map[i] = UNUSED;
 }
 
 void phymem_init()
 {
-	freerange(end, (void *)PHYSTOP);
+	// the front is used by OpenSBI and kernel code and data
+	for (int32_t i = 0; i <= PA2ARRAYINDEX((uint64_t)(end)); i++)
+		mem_map[i] = USED;
+	freerange((void *)PGROUNDUP((uint64_t)end), (void *)PHYSTOP);
 }

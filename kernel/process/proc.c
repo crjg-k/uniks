@@ -232,11 +232,10 @@ void scheduler()
 void sched(void)
 {
 	struct proc *p = myproc();
-
 	assert(holding(&p->lock));
-	assert(interrupt_get() == 0);
-
+	
 	p->state = READY;
+	interrupt_off();
 	switch_to(&p->ctxt, &mycpu()->ctxt);
 }
 
@@ -302,7 +301,7 @@ int64_t do_fork()
 	if (((childproc) = allocproc()) == 0) {
 		return -1;
 	}
-	// copy user memory from parent to child
+	// copy user memory from parent to child with COW mechanism
 	if (uvmcopy(parentproc->pagetable, childproc->pagetable,
 		    parentproc->sz) < 0) {
 		freeproc(childproc);

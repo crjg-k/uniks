@@ -65,7 +65,7 @@ build:
 
 .PHONY: user
 user:
-	cd ./user && make
+	cd ./user ; make
 
 
 # qemu option

@@ -8,7 +8,7 @@
 #include <process/proc.h>
 
 extern void kerneltrapvec(), scheduler(), usertrap_handler(), syscall(),
-	yield();
+	yield(), do_cow(struct proc *p, uint64_t va);
 extern char trampoline[], usertrapvec[], userret[];
 void trap_init()
 {
@@ -51,62 +51,67 @@ static void exception_handler(uint64_t cause, struct proc *p, int32_t prilevel)
 	switch (cause) {
 	case EXC_INST_ILLEGAL:
 		kprintf("illegal instruction from prilevel: %d, addr: %p",
-			prilevel, read_csr(sepc));
+			prilevel, p->tf->epc);
 		p->tf->epc += 4;
 		break;
 	case EXC_U_ECALL:
 		// system call
 		debugf("process: %d, system call: %d", p->pid, p->tf->a7);
-		// an interrupt will change sepc, scause, and sstatus,
-		// so enable only now that we're done with those registers.
-		interrupt_on();
-		// note: this inc must lay before syscall() since that the fork
-		// note: syscall need the right instruction address
+		/**
+		 * @note: this inc must lay before syscall() since that the fork
+		 * syscall need the right instruction address
+		 */
 		p->tf->epc += 4;
 		syscall();
+		break;
+	case EXC_SD_PAGEFAULT:
+		kprintf("process: %d, sd page fault from prilevel: %d, addr: %p\n",
+		       p->pid, prilevel, p->tf->epc);
+		do_cow(p, p->tf->epc);
 		break;
 	default:
 		kprintf("exception_handler(): unexpected scause %p pid=%d",
 			read_csr(scause), p->pid);
-		kprintf("\tepc=%p stval=%p, from prilevel: %d\n",
-			read_csr(sepc), read_csr(stval), prilevel);
+		kprintf("\tepc=%p stval=%p, from prilevel: %d\n", p->tf->epc,
+			read_csr(stval), prilevel);
 	}
 }
-
-__always_inline void interrupt_enable()
-{
-	set_csr(sstatus, SSTATUS_SIE);
-}
-__always_inline void interrupt_disable()
-{
-	clear_csr(sstatus, SSTATUS_SIE);
-}
-
 
 // return to user space
 void usertrapret()
 {
 	struct proc *p = myproc();
 
-	// we're about to switch the destination of traps from
-	// kerneltrap() to usertrap_handler(), so turn off interrupts until
-	// we're back in user space, where usertrap_handler() is correct
-	interrupt_off();
-
 	// note: the 2nd operand should change according to if using OpenSBI
 	uint64_t trampoline_uservec =
 		TRAMPOLINE + (usertrapvec - KERNEL_BASE_ADDR) % PGSIZE;
+
+	/**
+	 * @brief we're about to switch the destination of traps from
+	 * kerneltrap() to usertrap_handler(), so turn off interrupts until
+	 * we're back in user space, where usertrap_handler() is correct
+	 */
+	interrupt_off();
+
+	/**
+	 * @brief we will return to user space, so the traps are supposed to be
+	 * tackled with usertrapvec
+	 */
 	write_csr(stvec, trampoline_uservec);
 
-	// set up trapframe values that usertrapvec will need when
-	// the process next traps into the kernel.
+	/**
+	 * @brief set up trapframe values that usertrapvec will need when the
+	 * process next traps into the kernel
+	 */
 	p->tf->kernel_satp = read_csr(satp);	 // kernel page table
 	p->tf->kernel_sp = p->kstack + PGSIZE;	 // process's kernel stack
 	p->tf->kernel_trap = (uint64_t)usertrap_handler;
 	p->tf->kernel_hartid = r_mhartid();
 
-	// set up the registers that trampoline.S's sret will use
-	// to return to user space
+	/**
+	 * @brief set up the registers that trampoline.S's sret will use to
+	 * return to user space
+	 */
 	clear_csr(sstatus, SSTATUS_SPP);   // clear SPP to 0 for user mode
 	set_csr(sstatus, SSTATUS_SPIE);	   // enable interrupts in user mode
 
@@ -117,27 +122,38 @@ void usertrapret()
 	uint64_t satp = MAKE_SATP(p->pagetable);
 
 	// note: the 2nd operand should change according to if using OpenSBI
-	// jmp to userret in trampoline.S
 	uint64_t trampoline_usertrapret =
 		TRAMPOLINE + (uint64_t)(userret - KERNEL_BASE_ADDR) % PGSIZE;
+	// jmp to userret in trampoline.S
 	((void (*)(uint64_t))trampoline_usertrapret)(satp);
 }
 
-// handle an interrupt, exception, or system call from user space
-// called from trampoline.S
+/**
+ * @brief handle an interrupt, exception, or system call from user space called
+ * from trampoline.S
+ */
 void usertrap_handler()
 {
-	// assert that from user mode
+	// assert that this trap is from user mode
 	assert((read_csr(sstatus) & SSTATUS_SPP) == 0);
 
-	// now in kernel, so the traps are supposed to be tackled with
-	// kerneltrapvec
+	/**
+	 * @brief now in kernel, so the traps are supposed to be tackled with
+	 * kerneltrapvec
+	 */
 	write_csr(stvec, &kerneltrapvec);
 
 	struct proc *p = myproc();
 	p->tf->epc = read_csr(sepc);   // save user's pc
 
 	uint64_t cause = read_csr(scause);
+
+	/**
+	 * @brief an interrupt will change sepc, scause, and sstatus, so enable
+	 * only now that we're done with those registers
+	 */
+	interrupt_on();
+
 	if (cause & (1l << 63))
 		interrupt_handler(cause, PRILEVEL_U);
 	else
@@ -146,8 +162,10 @@ void usertrap_handler()
 	usertrapret();
 }
 
-// handle an interrupt, exception, or system call from S mode
-// called from kerneltrap.S
+/**
+ * @brief handle an interrupt, exception, or system call from S mode called from
+ * kerneltrap.S
+ */
 void kerneltrap_handler()
 {
 	// assert that from S mode

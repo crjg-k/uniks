@@ -13,11 +13,11 @@
 #include <kstdio.h>
 #include <kstring.h>
 #include <log.h>
+#include <platform/riscv.h>
 #include <process/proc.h>
 #include <trap/trap.h>
 
 extern void phymem_init(), kvminit(), kvmenable(), clock_init();
-extern void *kalloc();
 char message[] = "uniks is booting!";
 
 
@@ -32,21 +32,21 @@ void kernel_start()
 {
 	memset(sbss, 0, ebss - sbss);
 	printfinit();
+	kprintf("\n%s\n", message);
+	debugf("stext: %p\tetext: %p", stext, etext);
+	debugf("sdata: %p\tedata: %p", sdata, edata);
+	debugf("sbss: %p\tebss: %p", sbss, ebss);
 	phymem_init();
 	kvminit();
 	kvmenable();
 	// now, in vaddr space!
 	proc_init();
 	trap_init();
-	kprintf("\n%s\n", message);
-	debugf("stext: %p\tetext: %p", stext, etext);
-	debugf("sdata: %p\tedata: %p", sdata, edata);
-	debugf("sbss: %p\tebss: %p", sbss, ebss);
 	kputc('\n');
 	user_init();
 	__sync_synchronize();
 	clock_init();
-	interrupt_enable();
+	interrupt_on();
 	idle_process();
 
 	panic("will never step here");

@@ -9,6 +9,7 @@
 pagetable_t kernel_pagetable;
 
 extern char trampoline[];
+extern int32_t mem_map[];
 extern void *kalloc();
 extern void kfree(void *);
 
@@ -184,11 +185,9 @@ void uvmfree(pagetable_t pagetable, uint64_t sz)
 	freewalk(pagetable);
 }
 
-//
-//
 /**
- * @brief receive a parent process's page table, and copy its page table both
- * memory content into child's address space
+ * @brief receive a parent process's page table, and copy its page table only
+ * into child's address space (since the COW is implemented)
  *
  * @param old namely parent process
  * @param new namely child process
@@ -200,20 +199,17 @@ int64_t uvmcopy(pagetable_t old, pagetable_t new, uint64_t sz)
 	pte_t *pte;
 	uint64_t pa, i;
 	uint32_t flags;
-	char *mem;
 
 	for (i = 0; i < sz; i += PGSIZE) {
 		assert((pte = walk(old, i, 0)));
 		assert((*pte & PTE_V));
 		pa = PTE2PA(*pte);
+		*pte &= ~PTE_W;	  // clear the write permission bit
 		flags = PTE_FLAGS(*pte);
-		if ((mem = kalloc()) == 0)
-			goto err;
-		memcpy(mem, (char *)pa, PGSIZE);
-		if (mappages(new, i, PGSIZE, (uint64_t)mem, flags) != 0) {
-			kfree(mem);
+		if (mappages(new, i, PGSIZE, (uint64_t)pa, flags) != 0) {
 			goto err;
 		}
+		mem_map[PA2ARRAYINDEX(pa)]++;
 	}
 	return 0;
 
@@ -222,6 +218,27 @@ err:
 	return -1;
 }
 
+int32_t do_cow(struct proc *p, uint64_t va)
+{
+	pte_t *pte = walk(p->pagetable, va, 1);
+	uint64_t pa = PTE2PA(*pte);
+	// if it is referred one time, only add write permission
+	if (mem_map[PA2ARRAYINDEX(pa)] == 1) {
+		*pte |= PTE_W;
+		return 0;
+	}
+	// else duplicate
+	char *mem;
+	if ((mem = kalloc()) == 0)
+		goto err;
+	memcpy(mem, (char *)pa, PGSIZE);
+	register uint64_t perm = *pte & 0xff;
+	*pte = PA2PTE(mem) | PTE_W | perm;
+	mem_map[PA2ARRAYINDEX((uint64_t)pa)]--;
+	return 0;
+err:
+	return -1;
+}
 
 /* transmit data between user space and kernel space */
 
