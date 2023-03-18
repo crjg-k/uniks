@@ -20,7 +20,7 @@ struct printflock prf;
 
 void printfinit()
 {
-	initlock(&prf.lock, "prf");
+	initlock(&prf.lock, "kprintf");
 	prf.locking = 1;
 }
 

@@ -12,6 +12,8 @@
 #include "console.h"
 #include <platform/sbi.h>
 
+void consoleinit() {}
+
 int64_t console_putchar(char c)
 {
 	return sbi_console_putchar(c);

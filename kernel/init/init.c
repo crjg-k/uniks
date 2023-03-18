@@ -10,10 +10,15 @@
  */
 
 #include <defs.h>
+#include <driver/console.h>
+#include <driver/virtio_disk.h>
+#include <fs/fs.h>
 #include <kstdio.h>
 #include <kstring.h>
 #include <log.h>
+#include <mm/blkbuffer.h>
 #include <platform/riscv.h>
+#include <process/file.h>
 #include <process/proc.h>
 #include <trap/trap.h>
 
@@ -28,25 +33,44 @@ __noreturn __always_inline void idle_process()
 	}
 }
 
+volatile static int8_t started = 0;
+
 void kernel_start()
 {
-	memset(sbss, 0, ebss - sbss);
-	printfinit();
-	kprintf("\n%s\n", message);
-	debugf("stext: %p\tetext: %p", stext, etext);
-	debugf("sdata: %p\tedata: %p", sdata, edata);
-	debugf("sbss: %p\tebss: %p", sbss, ebss);
-	phymem_init();
-	kvminit();
-	kvmenable();
-	// now, in vaddr space!
-	proc_init();
-	trap_init();
-	kputc('\n');
-	user_init();
-	__sync_synchronize();
-	clock_init();
-	interrupt_on();
+	if (!r_mhartid()) {
+		memset(sbss, 0, ebss - sbss);
+		consoleinit();
+		printfinit();
+		kprintf("\n%s\n", message);
+		kputc('\n');
+		debugf("stext: %p\tetext: %p", stext, etext);
+		debugf("sdata: %p\tedata: %p", sdata, edata);
+		debugf("sbss: %p\tebss: %p", sbss, ebss);
+
+		phymem_init();
+		kvminit();
+		kvmenable();
+		// now, in vaddr space!
+		proc_init();
+		trap_init();
+		// plicinit();
+
+		buffer_init();
+		inode_init();
+		fileinit();
+		virtio_disk_init();
+
+		user_init();
+		__sync_synchronize();
+		clock_init();
+		interrupt_on();
+		started = 1;
+	} else {
+		while (!started)
+			;
+		__sync_synchronize();
+		kprintf("hart %d starting\n", r_mhartid());
+	}
 	idle_process();
 
 	panic("will never step here");

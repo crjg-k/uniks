@@ -24,7 +24,6 @@ void kfree(void *pa)
  */
 void *kalloc()
 {
-	kprintf("kkkk\n");
 	for (int32_t i = PA2ARRAYINDEX(PGROUNDUP((uint64_t)end));
 	     i < PA2ARRAYINDEX(PHYSTOP); i++)
 		if (mem_map[i] == UNUSED) {

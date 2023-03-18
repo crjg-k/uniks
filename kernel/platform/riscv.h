@@ -100,7 +100,12 @@
 #define PTE_FLAGS(pte)	     ((pte)&0x3FF)
 
 
-#define r_mhartid() ({ 0; })
+#define r_mhartid() \
+	({ \
+		uint64_t __tmp; \
+		asm volatile("mv %0, tp" : "=r"(__tmp)); \
+		__tmp; \
+	})
 // enable device interrupts
 static __always_inline void interrupt_on()
 {

@@ -86,6 +86,13 @@ static pagetable_t kvmmake()
 	pagetable_t kpgtbl;
 	kpgtbl = (pagetable_t)kalloc();
 	memset(kpgtbl, 0, PGSIZE);
+	// uart registers
+	assert(mappages(kpgtbl, UART0, PGSIZE, UART0, PTE_R | PTE_W) != -1);
+	// virtio mmio disk interface
+	assert(mappages(kpgtbl, VIRTIO0, PGSIZE, VIRTIO0, PTE_R | PTE_W) != -1);
+	// PLIC
+	assert(mappages(kpgtbl, PLIC, 0x400000, PLIC, PTE_R | PTE_W) != -1);
+
 #define KERNELBASE (uintptr_t) KERNEL_BASE_ADDR
 	// map kernel text segment
 	assert(mappages(kpgtbl, KERNELBASE, (uint64_t)(etext - KERNELBASE),

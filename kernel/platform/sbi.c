@@ -10,6 +10,7 @@
  */
 
 #include "sbi.h"
+#include <stdarg.h>
 
 // SBI number
 #define SBI_SET_TIMER	    0
@@ -19,13 +20,20 @@
 #define SBI_SEND_IPI	    4
 #define SBI_SHUTDOWN	    8
 
-__always_inline int64_t sbi_call(uint64_t sbi_type, uint64_t arg0,
-					uint64_t arg1, uint64_t arg2)
+int64_t sbi_call(uint64_t sbi_type, ...)
 {
-	register uint64_t a0 asm("a0") = arg0;
-	register uint64_t a1 asm("a1") = arg1;
-	register uint64_t a2 asm("a2") = arg2;
+	// register uint64_t a0 asm("a0") = arg0;
+	// register uint64_t a1 asm("a1") = arg1;
+	// register uint64_t a2 asm("a2") = arg2;
+	// register uint64_t a7 asm("a7") = sbi_type;
+
+	va_list ap;
+	va_start(ap, sbi_type);
+	register uint64_t a0 asm("a0") = va_arg(ap, uint64_t);
+	register uint64_t a1 asm("a1") = va_arg(ap, uint64_t);
+	register uint64_t a2 asm("a2") = va_arg(ap, uint64_t);
 	register uint64_t a7 asm("a7") = sbi_type;
+	va_end(ap);
 	asm volatile("ecall"
 		     : "=r"(a0)
 		     : "r"(a0), "r"(a1), "r"(a2), "r"(a7)
@@ -35,20 +43,20 @@ __always_inline int64_t sbi_call(uint64_t sbi_type, uint64_t arg0,
 
 __always_inline int64_t sbi_set_timer(uint64_t stime_value)
 {
-	return sbi_call(SBI_SET_TIMER, stime_value, 0, 0);
+	return sbi_call(SBI_SET_TIMER, stime_value);
 }
 
 int64_t sbi_console_putchar(char ch)
 {
-	return sbi_call(SBI_CONSOLE_PUTCHAR, ch, 0, 0);
+	return sbi_call(SBI_CONSOLE_PUTCHAR, ch);
 }
 
 int64_t sbi_console_getchar()
 {
-	return sbi_call(SBI_CONSOLE_GETCHAR, 0, 0, 0);
+	return sbi_call(SBI_CONSOLE_GETCHAR);
 }
 
 void sbi_shutdown()
 {
-	sbi_call(SBI_SHUTDOWN, 0, 0, 0);
+	sbi_call(SBI_SHUTDOWN);
 }

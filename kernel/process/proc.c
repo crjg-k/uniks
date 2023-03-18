@@ -211,7 +211,7 @@ void scheduler()
 		for (p = pcbtable; p < &pcbtable[NPROC]; p++) {
 			acquire(&p->lock);
 			if (p->state == READY) {
-				debugf("switch to: %d\n", p - pcbtable);
+				debugf("switch to: %d\n", p->pid);
 				// switch to chosen process. it is the process's
 				// job to release its lock and then reacquire it
 				// before jumping back to us (in yield())
@@ -233,7 +233,7 @@ void sched(void)
 {
 	struct proc *p = myproc();
 	assert(holding(&p->lock));
-	
+
 	p->state = READY;
 	interrupt_off();
 	switch_to(&p->ctxt, &mycpu()->ctxt);

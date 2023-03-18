@@ -21,6 +21,7 @@ SRC_FILES = \
 	./${SRC_KERNEL_DIR}/trap/* \
 	./${SRC_KERNEL_DIR}/mm/* \
 	./${SRC_KERNEL_DIR}/sys/* \
+	./${SRC_KERNEL_DIR}/fs/* \
 	./${SRC_KERNEL_DIR}/sync/* \
 	./${SRC_KERNEL_DIR}/process/* \
 	./libs/*
@@ -56,7 +57,7 @@ else ifeq ($(LOG), trace)
 endif
 
 .PHONY: run
-run: build qemu dump
+run: clean build qemu dump
 
 .PHONY: build
 build:
@@ -75,9 +76,13 @@ QEMU = qemu-system-riscv64
 QFLAGS = \
 	-nographic \
 	-smp ${CPUS} \
+	-m 128M \
 	-machine virt \
 	-bios ${BOOTLOADER} \
-	-kernel ${OSBIN}
+	-kernel ${OSBIN} \
+	-global virtio-mmio.force-legacy=false \
+	-drive file=fs.img,if=none,format=raw,id=x0 \
+	-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 QEMUGDB = \
 	-gdb tcp::1234
 
