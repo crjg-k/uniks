@@ -24,12 +24,12 @@ int64_t holding(struct spinlock *lk)
 	);
 }
 
-void acquire(struct spinlock *lk)
+void do_acquire(struct spinlock *lk)
 {
 	// assert(!holding(lk));
 
 	while (__sync_lock_test_and_set(&lk->locked, 1) != 0)
-		;
+		debugf("kkk");
 
 	__sync_synchronize();
 
@@ -38,7 +38,7 @@ void acquire(struct spinlock *lk)
 #endif
 }
 
-void release(struct spinlock *lk)
+void do_release(struct spinlock *lk)
 {
 	// assert(holding(lk));
 #if defined(LOG_LEVEL_DEBUG)

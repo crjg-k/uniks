@@ -15,13 +15,13 @@
 
 
 static char digits[] = "0123456789abcdef";
-struct printflock prf;
+// struct printflock prf;
 
 
 void printfinit()
 {
-	initlock(&prf.lock, "kprintf");
-	prf.locking = 1;
+	// initlock(&prf.lock, "kprintf");
+	// prf.locking = 1;
 }
 
 char getchar()

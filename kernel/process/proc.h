@@ -5,8 +5,6 @@
 #include <param.h>
 #include <sync/spinlock.h>
 
-#define PROC_NAME_LEN 63
-
 
 // this is only tiny context for kernel context switch occurred by function
 // calling, so we only need to save the callee saved registers
@@ -77,8 +75,14 @@ enum procstate {
 
 struct proc {
 	struct spinlock lock;
-	int32_t pid;			// process ID
-	enum procstate state;		// process state
+
+	// this->lock must be held when using these below:
+	int32_t pid;		// process ID
+	enum procstate state;	// process state
+	void *sleeplist;	// if non-zero, sleeping on sleeplist
+	int8_t killed;		// if non-zero, have been killed
+	int32_t exitstate;	// exit status to be returned to parent's wait
+
 	uintptr_t kstack;		// process kernel stack
 	uint64_t sz;			// size of process memory (bytes)
 	struct proc *parent;		// parent process
@@ -99,9 +103,13 @@ extern struct cpu cpus[];
 void scheduler();
 void proc_init();
 void user_init();
+void sleep(void *sleeplist, struct spinlock *lk);
+void wakeup(void *sleeplist);
+int8_t killed(struct proc *);
 struct proc *myproc();
 void proc_mapstacks(pagetable_t);
 
+// process relative syscall
 int64_t do_fork();
 int64_t do_exec();
 

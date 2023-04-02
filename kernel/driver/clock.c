@@ -10,14 +10,14 @@
  */
 
 #include "clock.h"
+#include <param.h>
 #include <platform/riscv.h>
 #include <platform/sbi.h>
+#include <process/proc.h>
 
 // the ticks will inc in each 0.01s
-volatile uint64_t ticks = 0;
-
-#define TIMESPERSEC 100
-#define CPUFREQ	    10000000
+uint64_t ticks = 0;
+struct spinlock tickslock;
 
 // Hardcode timebase
 static uint64_t timebase = CPUFREQ / TIMESPERSEC;
@@ -36,15 +36,21 @@ __always_inline void clock_set_next_event()
 
 void clock_init()
 {
+	initlock(&tickslock, "tickslock");
 	// enable timer interrupt in sie
 	set_csr(sie, MIP_STIP);
 	ticks = 0;
 	clock_set_next_event();
 }
 
-void delay(int32_t num)
+/**
+ * @brief only the primary hart could cope with the timer interrupt, so we
+ * can simply disable the interrupt to avoid dead lock
+ */
+void clock_interrupt_handler()
 {
-	int32_t cnt = ticks;
-	while (ticks < cnt + num)
-		;
+	// note: may need a lock here, but it's pretty easy to occur a dead lock
+	ticks++;
+	clock_set_next_event();
+	// wakeup(&ticks);
 }

@@ -1,6 +1,6 @@
 #include <stdarg.h>
-#include <usyscall.h>
 #include <ulib.h>
+#include <usyscall.h>
 
 
 static inline long syscall(long num, ...)
@@ -28,6 +28,11 @@ static inline long syscall(long num, ...)
 int fork()
 {
 	return syscall(SYS_fork);
+}
+
+int getpid()
+{
+	return syscall(SYS_getpid);
 }
 
 int write(char *buf, long len)

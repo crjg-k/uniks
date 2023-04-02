@@ -11,6 +11,7 @@ void _start();
 // system calls
 int fork();
 int write(char *buf, long len);
+int getpid();
 
 
 #endif /* !__USER_INCLUDE_ULIB_H__ */

@@ -12,7 +12,7 @@
 .align 4
 trampoline:
 usertrapvec:
-	# note: when trap from user space, the addr of this section start at 0x3ffffff000
+	# note: when trap from user space, the addr of this section start at 0x3ffffff000 while label usertrapvec locate at 0x3ffffff600
 	csrw sscratch, t6
 
 	# save all registers to p->tf

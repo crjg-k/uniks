@@ -6,10 +6,10 @@
 #include <stdarg.h>
 #include <sync/spinlock.h>
 
-struct printflock {
-	struct spinlock lock;
-	int32_t locking;   // prevent panic cannot acquire the lock
-};
+// struct printflock {
+// 	struct spinlock lock;
+// 	int32_t locking;   // prevent panic cannot acquire the lock
+// };
 
 
 void printfinit();

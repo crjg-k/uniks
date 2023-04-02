@@ -29,8 +29,7 @@ static void interrupt_handler(uint64_t cause, int32_t prilevel)
 		kprintf("User timer interrupt");
 		break;
 	case IRQ_S_TIMER:
-		++ticks;
-		clock_set_next_event();
+		clock_interrupt_handler();
 		// hint: there may be a wrong that the yield is not equidistant
 		if (prilevel == PRILEVEL_U) {
 			yield();
@@ -56,7 +55,7 @@ static void exception_handler(uint64_t cause, struct proc *p, int32_t prilevel)
 		break;
 	case EXC_U_ECALL:
 		// system call
-		debugf("process: %d, system call: %d", p->pid, p->tf->a7);
+		tracef("process: %d, system call: %d", p->pid, p->tf->a7);
 		/**
 		 * @note: this inc must lay before syscall() since that the fork
 		 * syscall need the right instruction address
@@ -65,14 +64,14 @@ static void exception_handler(uint64_t cause, struct proc *p, int32_t prilevel)
 		syscall();
 		break;
 	case EXC_SD_PAGEFAULT:
-		kprintf("process: %d, sd page fault from prilevel: %d, addr: %p\n",
-		       p->pid, prilevel, p->tf->epc);
+		tracef("process: %d, sd page fault from prilevel: %d, addr: %p\n",
+			p->pid, prilevel, p->tf->epc);
 		do_cow(p, p->tf->epc);
 		break;
 	default:
 		kprintf("exception_handler(): unexpected scause %p pid=%d",
 			read_csr(scause), p->pid);
-		kprintf("\tepc=%p stval=%p, from prilevel: %d\n", p->tf->epc,
+		kprintf("\tepc=%p stval=%p, from prilevel: %d\n", read_csr(sepc),
 			read_csr(stval), prilevel);
 	}
 }

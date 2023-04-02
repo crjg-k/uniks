@@ -42,7 +42,7 @@ void kernel_start()
 		consoleinit();
 		printfinit();
 		kprintf("\n%s\n", message);
-		kputc('\n');
+		kprintf("hart %d start\n\n", r_mhartid());
 		debugf("stext: %p\tetext: %p", stext, etext);
 		debugf("sdata: %p\tedata: %p", sdata, edata);
 		debugf("sbss: %p\tebss: %p", sbss, ebss);

@@ -112,8 +112,8 @@ enum LOG_COLOR {
 #define panic(fmt, ...) \
 	({ \
 		extern void sbi_shutdown(); \
-		extern struct printflock prf; \
-		prf.locking = 0; \
+		/*extern struct printflock prf; \
+		prf.locking = 0;*/ \
 		int64_t tid = r_mhartid(); \
 		kprintf("\x1b[%dm[%s %d] %s:%d: " fmt "\x1b[0m\n", RED, \
 			"PANIC", tid, __FILE__, __LINE__, ##__VA_ARGS__); \

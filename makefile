@@ -61,6 +61,7 @@ run: clean build qemu dump
 
 .PHONY: build
 build:
+	$(shell if [ ! -e bin ]; then mkdir bin; fi)
 	${CC} ${SRC_FILES} ${CFLAGS} -o ${TARGET}
 	${OBJCOPY} ${TARGET} --strip-all -O binary ${OSBIN}
 

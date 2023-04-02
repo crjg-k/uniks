@@ -5,15 +5,14 @@ char info[] = "initproc 1\n";
 
 int main()
 {
-	if (fork() == 0) {
-		info[9] = '2';
+#define NPROC 7
+	for (int i = 0; i < NPROC; i++) {
 		if (fork() == 0) {
-			info[9] = '3';
-			if (fork() == 0) {
-				info[9] = '4';
-			}
+			goto output;
 		}
 	}
+output:
+	info[9] = getpid() + '0';
 	while (1) {
 		write(info, 11);
 	};
