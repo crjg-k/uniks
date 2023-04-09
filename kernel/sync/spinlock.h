@@ -29,7 +29,6 @@ void do_release(struct spinlock *);
 #else
 	#define acquire(lk) \
 		({ \
-			debugf("acquire: %s %d", __FILE__, __LINE__); \
 			do_acquire(lk); \
 		})
 #endif
@@ -44,7 +43,6 @@ void do_release(struct spinlock *);
 #else
 	#define release(lk) \
 		({ \
-			debugf("release: %s %d", __FILE__, __LINE__); \
 			do_release(lk); \
 		})
 #endif

@@ -4,22 +4,22 @@
 #include <sys/ksyscall.h>
 
 
-uint64_t sys_getpid(void)
+int64_t sys_getpid(void)
 {
 	return myproc()->pid;
 }
 
-uint64_t sys_fork()
+int64_t sys_fork()
 {
 	return do_fork();
 }
 
-uint64_t sys_exec()
+int64_t sys_exec()
 {
 	return do_exec();
 }
 
-uint64_t sys_sleep()
+int64_t sys_sleep()
 {
 	int64_t n = argufetch(0);
 	uint64_t ticks0;

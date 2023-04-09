@@ -7,7 +7,8 @@
 #define USED   1
 #define UNUSED 0
 
-int32_t mem_map[PHYSIZE >> PGSHIFT];
+int16_t mem_map[PHYSIZE >> PGSHIFT];
+int32_t freepagenum;
 
 
 void kfree(void *pa)
@@ -16,6 +17,7 @@ void kfree(void *pa)
 	       (uint64_t) pa < PHYSTOP);
 
 	mem_map[PA2ARRAYINDEX((uint64_t)pa)]--;
+	freepagenum++;
 }
 /**
  * Allocate one 4096-byte page of physical memory.
@@ -28,6 +30,7 @@ void *kalloc()
 	     i < PA2ARRAYINDEX(PHYSTOP); i++)
 		if (mem_map[i] == UNUSED) {
 			mem_map[i]++;
+			freepagenum--;
 			return (void *)ARRAYINDEX2PA((uint64_t)i);
 		}
 	return NULL;
@@ -36,12 +39,15 @@ void *kalloc()
 static void freerange(void *pa_start, void *pa_end)
 {
 	for (int32_t i = PA2ARRAYINDEX((uint64_t)pa_start);
-	     i < PA2ARRAYINDEX((uint64_t)pa_end); i++)
+	     i < PA2ARRAYINDEX((uint64_t)pa_end); i++) {
 		mem_map[i] = UNUSED;
+		freepagenum++;
+	}
 }
 
 void phymem_init()
 {
+	freepagenum = 0;
 	// the front is used by OpenSBI and kernel code and data
 	for (int32_t i = 0; i <= PA2ARRAYINDEX((uint64_t)(end)); i++)
 		mem_map[i] = USED;

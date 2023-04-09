@@ -29,11 +29,12 @@ LDFLAGS = \
 .PHONY: build
 build: src/forktest.c libs/ulib.c libs/usyscall.c
 	${CC} $^ ${CFLAGS}
-	${LD} ${LDFLAGS} ulib.o forktest.o usyscall.o -o ${TAG_DIR}/forktest.out
-	${OBJDUMP} -d ${TAG_DIR}/forktest.out > ${ABSM_DIR}/forktest.asm
-	${OBJDUMP} -s ${TAG_DIR}/forktest.out > ${ABSM_DIR}/forktest.bsm
-	${OBJCOPY} ${TAG_DIR}/forktest.out --strip-all -O binary ${TAG_DIR}/forktest
+	${LD} ${LDFLAGS} ulib.o forktest.o usyscall.o -o ${TAG_DIR}/forktest.o
+	${OBJDUMP} -d ${TAG_DIR}/forktest.o > ${ABSM_DIR}/forktest.asm
+	${OBJDUMP} -s ${TAG_DIR}/forktest.o > ${ABSM_DIR}/forktest.bsm
+	${OBJCOPY} ${TAG_DIR}/forktest.o --strip-all -O binary ${TAG_DIR}/forktest
 	od -t x ${TAG_DIR}/forktest
+	rm bin/forktest
 	rm *.o
 
 .PHONY: initasm

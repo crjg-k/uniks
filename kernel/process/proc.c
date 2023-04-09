@@ -15,7 +15,7 @@ extern char trampoline[];
 extern void *kalloc();
 extern void usertrapret();
 extern int32_t mappages(pagetable_t pagetable, uintptr_t va, uintptr_t size,
-			uintptr_t pa, int32_t perm);
+			uintptr_t pa, int32_t perm, int8_t recordref);
 extern void switch_to(struct context *, struct context *);
 extern void uvmfirst(pagetable_t, uint32_t *, uint32_t);
 extern pagetable_t uvmcreate();
@@ -23,12 +23,15 @@ extern void uvmunmap(pagetable_t, uint64_t, uint64_t, int32_t);
 extern void uvmfree(pagetable_t, uint64_t), kfree(void *);
 extern int64_t uvmcopy(pagetable_t old, pagetable_t new, uint64_t sz);
 
+/**
+ * @brief Set the proc->name as argument name with the constraint of max length,
+ * and it supposed that the caller will pass a legal string with '\0' terminator
+ * @param proc
+ * @param name
+ */
 static void set_proc_name(struct proc *proc, const char *name)
 {
-	int32_t len = strlen(name);
-	assert(len <= PROC_NAME_LEN);
-	memcpy(proc->name, name, len);
-	proc->name[len] = 0;
+	strncpy(proc->name, name, PROC_NAME_LEN);
 }
 
 struct cpu *mycpu()
@@ -69,14 +72,14 @@ pagetable_t proc_makebasicpagetable(struct proc *p)
 	 * only S mode can use it, on the way to/from user space, so not PTE_U
 	 */
 	if (mappages(pagetable, TRAMPOLINE, PGSIZE, (uint64_t)trampoline,
-		     PTE_R | PTE_X) < 0) {
+		     PTE_R | PTE_X, 1) < 0) {
 		uvmfree(pagetable, 0);
 		return 0;
 	}
 
 	// map the trapframe page just below the trampoline page
 	if (mappages(pagetable, TRAPFRAME, PGSIZE, (uint64_t)(p->tf),
-		     PTE_R | PTE_W) < 0) {
+		     PTE_R | PTE_W, 1) < 0) {
 		uvmunmap(pagetable, TRAMPOLINE, 1, 0);
 		uvmfree(pagetable, 0);
 		return 0;
@@ -105,7 +108,7 @@ void proc_mapstacks(pagetable_t kpgtbl)
 		pa = (uint64_t)kalloc();
 		assert(pa != 0);
 		va = KSTACK((int32_t)(p - pcbtable));
-		mappages(kpgtbl, va, PGSIZE, pa, PTE_R | PTE_W);
+		mappages(kpgtbl, va, PGSIZE, pa, PTE_R | PTE_W, 0);
 	}
 }
 
@@ -147,8 +150,8 @@ struct proc *allocproc()
 	}
 	return NULL;
 found:
-	p->pid = allocpid();
 	p->state = INITING;
+	p->pid = allocpid();
 
 	// allocate a trapframe page
 	if ((p->tf = (struct trapframe *)kalloc()) == NULL) {
@@ -212,15 +215,20 @@ void scheduler()
 			acquire(&p->lock);
 			if (p->state == READY) {
 				tracef("switch to: %d\n", p->pid);
-				// switch to chosen process. it is the process's
-				// job to release its lock and then reacquire it
-				// before jumping back to us (in yield())
+				/**
+				 * @brief switch to chosen process. it is the
+				 * process's job to release its lock and then
+				 * reacquire it before jumping back to us (in
+				 * yield())
+				 */
 				c->proc = p;
 				p->state = RUNNING;
 				switch_to(&c->ctxt, &p->ctxt);
 
-				// process is done running for now since timer
-				// interrupt
+				/**
+				 * @brief process is done running for now since
+				 * timer interrupt
+				 */
 				c->proc = NULL;
 			}
 			release(&p->lock);
@@ -361,7 +369,7 @@ void user_init()
 int64_t do_fork()
 {
 	struct proc *parentproc = myproc(), *childproc = NULL;
-	if (((childproc) = allocproc()) == 0) {
+	if ((childproc = allocproc()) == NULL) {
 		return -1;
 	}
 	// copy user memory from parent to child with COW mechanism

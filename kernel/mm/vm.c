@@ -3,6 +3,7 @@
 #include <defs.h>
 #include <kassert.h>
 #include <kstring.h>
+#include <param.h>
 #include <platform/riscv.h>
 #include <process/proc.h>
 
@@ -64,17 +65,20 @@ uint64_t walkaddr(pagetable_t pagetable, uint64_t va)
 }
 
 int32_t mappages(pagetable_t pagetable, uintptr_t va, uintptr_t size,
-		 uintptr_t pa, int32_t perm)
+		 uintptr_t pa, int32_t perm, int8_t recordref)
 {
 	assert(size != 0);
 
 	uint64_t a = PGROUNDDOWN(va), last = PGROUNDUP(va + size - 1);
 	pte_t *pte;
 	while (a < last) {
+		// potential optimization: deeper interweaving with walk()
 		if ((pte = walk(pagetable, a, 1)) == 0)
 			return -1;
 		assert(!(*pte & PTE_V));
 		*pte = PA2PTE(pa) | perm | PTE_V;
+		if (recordref)
+			mem_map[PA2ARRAYINDEX(pa)]++;
 		a += PGSIZE;
 		pa += PGSIZE;
 	}
@@ -87,22 +91,23 @@ static pagetable_t kvmmake()
 	kpgtbl = (pagetable_t)kalloc();
 	memset(kpgtbl, 0, PGSIZE);
 	// uart registers
-	assert(mappages(kpgtbl, UART0, PGSIZE, UART0, PTE_R | PTE_W) != -1);
+	assert(mappages(kpgtbl, UART0, PGSIZE, UART0, PTE_R | PTE_W, 0) != -1);
 	// virtio mmio disk interface
-	assert(mappages(kpgtbl, VIRTIO0, PGSIZE, VIRTIO0, PTE_R | PTE_W) != -1);
+	assert(mappages(kpgtbl, VIRTIO0, PGSIZE, VIRTIO0, PTE_R | PTE_W, 0) !=
+	       -1);
 	// PLIC
-	assert(mappages(kpgtbl, PLIC, 0x400000, PLIC, PTE_R | PTE_W) != -1);
+	assert(mappages(kpgtbl, PLIC, 0x400000, PLIC, PTE_R | PTE_W, 0) != -1);
 
 #define KERNELBASE (uintptr_t) KERNEL_BASE_ADDR
 	// map kernel text segment
 	assert(mappages(kpgtbl, KERNELBASE, (uint64_t)(etext - KERNELBASE),
-			KERNELBASE, PTE_R | PTE_X) != -1);
+			KERNELBASE, PTE_R | PTE_X, 0) != -1);
 	// map kernel data segment(include stack) and the remainder physical RAM
 	assert(mappages(kpgtbl, (uint64_t)etext, PHYSTOP - (uint64_t)etext,
-			(uint64_t)etext, PTE_R | PTE_W) != -1);
+			(uint64_t)etext, PTE_R | PTE_W, 0) != -1);
 	// map the trampoline to the highest virtual address in the kernel
 	assert(mappages(kpgtbl, TRAMPOLINE, PGSIZE, (uint64_t)trampoline,
-			PTE_R | PTE_X) != -1);
+			PTE_R | PTE_X, 0) != -1);
 
 	proc_mapstacks(kpgtbl);
 
@@ -122,7 +127,7 @@ void uvmfirst(pagetable_t pagetable, uint32_t *src, uint32_t sz)
 	char *mem = kalloc();
 	memset(mem, 0, PGSIZE);
 	mappages(pagetable, 0, PGSIZE, (uint64_t)mem,
-		 PTE_W | PTE_R | PTE_X | PTE_U);
+		 PTE_W | PTE_R | PTE_X | PTE_U, 1);
 	memcpy(mem, src, sz);
 }
 
@@ -192,6 +197,11 @@ void uvmfree(pagetable_t pagetable, uint64_t sz)
 	freewalk(pagetable);
 }
 
+__always_inline void invalidate(uint64_t va)
+{
+	asm volatile("sfence.vma %0, zero\n\tnop" : "=r"(va));
+}
+
 /**
  * @brief receive a parent process's page table, and copy its page table only
  * into child's address space (since the COW is implemented)
@@ -203,21 +213,46 @@ void uvmfree(pagetable_t pagetable, uint64_t sz)
  */
 int64_t uvmcopy(pagetable_t old, pagetable_t new, uint64_t sz)
 {
+#if (UNSEALCOW == 1)
 	pte_t *pte;
 	uint64_t pa, i;
 	uint32_t flags;
 
 	for (i = 0; i < sz; i += PGSIZE) {
-		assert((pte = walk(old, i, 0)));
-		assert((*pte & PTE_V));
+		assert((pte = walk(old, i, 0)) != NULL);
+		assert((*pte & PTE_V) != 0);
 		pa = PTE2PA(*pte);
 		*pte &= ~PTE_W;	  // clear the write permission bit
 		flags = PTE_FLAGS(*pte);
-		if (mappages(new, i, PGSIZE, (uint64_t)pa, flags) != 0) {
+		// add mapping to childproc pagetable
+		if (mappages(new, i, PGSIZE, (uint64_t)pa, flags, 1) != 0) {
 			goto err;
 		}
 		mem_map[PA2ARRAYINDEX(pa)]++;
+		// note: must must must flush the TLB to validate the
+		// note: modification of the page table
+		invalidate(i);
 	}
+#else
+	pte_t *pte;
+	uint64_t pa, i;
+	uint32_t flags;
+	char *mem;
+
+	for (i = 0; i < sz; i += PGSIZE) {
+		assert((pte = walk(old, i, 0)));
+		assert((*pte & PTE_V));
+		pa = PTE2PA(*pte);
+		flags = PTE_FLAGS(*pte);
+		if ((mem = kalloc()) == 0)
+			goto err;
+		memcpy(mem, (char *)pa, PGSIZE);
+		if (mappages(new, i, PGSIZE, (uint64_t)mem, flags, 0) != 0) {
+			kfree(mem);
+			goto err;
+		}
+	}
+#endif
 	return 0;
 
 err:
@@ -227,11 +262,16 @@ err:
 
 int32_t do_cow(struct proc *p, uint64_t va)
 {
-	pte_t *pte = walk(p->pagetable, va, 1);
+	pte_t *pte = walk(p->pagetable, va, 0);
+	assert(pte != NULL);
 	uint64_t pa = PTE2PA(*pte);
+	assert(mem_map[PA2ARRAYINDEX(pa)] >= 1);
 	// if it is referred one time, only add write permission
 	if (mem_map[PA2ARRAYINDEX(pa)] == 1) {
 		*pte |= PTE_W;
+		// note: must must must flush the TLB to validate the
+		// note: modification of the page table
+		invalidate(va);
 		return 0;
 	}
 	// else duplicate
@@ -241,7 +281,10 @@ int32_t do_cow(struct proc *p, uint64_t va)
 	memcpy(mem, (char *)pa, PGSIZE);
 	register uint64_t perm = *pte & 0xff;
 	*pte = PA2PTE(mem) | PTE_W | perm;
-	mem_map[PA2ARRAYINDEX((uint64_t)pa)]--;
+	// note: must must must flush the TLB to validate the
+	// note: modification of the page table
+	invalidate(va);
+	mem_map[PA2ARRAYINDEX(pa)]--;
 	return 0;
 err:
 	return -1;
@@ -249,7 +292,7 @@ err:
 
 /* transmit data between user space and kernel space */
 
-// copy from user to kernel, return 0 on success, -1 on error
+// copy data from user to kernel, return 0 on success, -1 on error
 int64_t copyin(pagetable_t pagetable, char *dst, uint64_t srcva, uint64_t len)
 {
 	uint64_t n, va0, pa0;

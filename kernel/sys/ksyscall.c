@@ -23,29 +23,29 @@ uint64_t argufetch(int32_t n)
 
 
 // execute system call actually
-extern uint64_t sys_fork();
-extern uint64_t sys_exit();
-extern uint64_t sys_wait();
-extern uint64_t sys_pipe();
-extern uint64_t sys_read();
-extern uint64_t sys_kill();
-extern uint64_t sys_exec();
-extern uint64_t sys_fstat();
-extern uint64_t sys_chdir();
-extern uint64_t sys_dup();
-extern uint64_t sys_getpid();
-extern uint64_t sys_sbrk();
-extern uint64_t sys_sleep();
-extern uint64_t sys_uptime();
-extern uint64_t sys_open();
-extern uint64_t sys_write();
-extern uint64_t sys_mknod();
-extern uint64_t sys_unlink();
-extern uint64_t sys_link();
-extern uint64_t sys_mkdir();
-extern uint64_t sys_close();
+extern int64_t sys_fork();
+extern int64_t sys_exit();
+extern int64_t sys_wait();
+extern int64_t sys_pipe();
+extern int64_t sys_read();
+extern int64_t sys_kill();
+extern int64_t sys_exec();
+extern int64_t sys_fstat();
+extern int64_t sys_chdir();
+extern int64_t sys_dup();
+extern int64_t sys_getpid();
+extern int64_t sys_sbrk();
+extern int64_t sys_sleep();
+extern int64_t sys_uptime();
+extern int64_t sys_open();
+extern int64_t sys_write();
+extern int64_t sys_mknod();
+extern int64_t sys_unlink();
+extern int64_t sys_link();
+extern int64_t sys_mkdir();
+extern int64_t sys_close();
 
-static uint64_t (*syscalls[])() = {
+static int64_t (*syscalls[])() = {
 	[SYS_fork] sys_fork,   [SYS_exec] sys_exec,	[SYS_write] sys_write,
 	[SYS_sleep] sys_sleep, [SYS_getpid] sys_getpid,
 };

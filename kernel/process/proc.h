@@ -95,6 +95,7 @@ struct proc {
 struct cpu {
 	struct proc *proc;     // The process running on this cpu, or null
 	struct context ctxt;   // swtch() here to enter scheduler()
+	int64_t preintstat;    // pre-interrupt enabled status before push_off()
 };
 
 extern struct proc pcbtable[];
@@ -106,6 +107,7 @@ void user_init();
 void sleep(void *sleeplist, struct spinlock *lk);
 void wakeup(void *sleeplist);
 int8_t killed(struct proc *);
+struct cpu *mycpu();
 struct proc *myproc();
 void proc_mapstacks(pagetable_t);
 

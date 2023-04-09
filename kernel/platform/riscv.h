@@ -119,10 +119,15 @@ static __always_inline void interrupt_off()
 }
 
 // are device interrupts enabled?
-static __always_inline int interrupt_get()
+static __always_inline uint64_t interrupt_get()
 {
-	uint64_t x = read_csr(sstatus);
-	return (x & SSTATUS_SIE) != 0;
+	return read_csr(sstatus);
+}
+
+// set device interrupts enabled status to a specific value
+static __always_inline void interrupt_set(uint64_t val)
+{
+	write_csr(sstatus, val);
 }
 
 // zero, zero means flush all TLB entries

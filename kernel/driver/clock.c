@@ -10,6 +10,7 @@
  */
 
 #include "clock.h"
+#include <defs.h>
 #include <param.h>
 #include <platform/riscv.h>
 #include <platform/sbi.h>
@@ -37,8 +38,7 @@ __always_inline void clock_set_next_event()
 void clock_init()
 {
 	initlock(&tickslock, "tickslock");
-	// enable timer interrupt in sie
-	set_csr(sie, MIP_STIP);
+	set_csr(sie, MIP_STIP);	  // enable timer interrupt in sie
 	ticks = 0;
 	clock_set_next_event();
 }
@@ -47,10 +47,11 @@ void clock_init()
  * @brief only the primary hart could cope with the timer interrupt, so we
  * can simply disable the interrupt to avoid dead lock
  */
-void clock_interrupt_handler()
+__always_inline void clock_interrupt_handler()
 {
-	// note: may need a lock here, but it's pretty easy to occur a dead lock
+	acquire(&tickslock);   // this have disabled interrupt interior
 	ticks++;
 	clock_set_next_event();
 	// wakeup(&ticks);
+	release(&tickslock);
 }

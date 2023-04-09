@@ -17,13 +17,15 @@
 #include <kstring.h>
 #include <log.h>
 #include <mm/blkbuffer.h>
+#include <mm/memlay.h>
 #include <platform/riscv.h>
 #include <process/file.h>
 #include <process/proc.h>
 #include <trap/trap.h>
 
 extern void phymem_init(), kvminit(), kvmenable(), clock_init();
-char message[] = "uniks is booting!";
+char message[] = "uniks boot over!";
+extern int32_t freepagenum;
 
 
 __noreturn __always_inline void idle_process()
@@ -41,13 +43,14 @@ void kernel_start()
 		memset(sbss, 0, ebss - sbss);
 		consoleinit();
 		printfinit();
-		kprintf("\n%s\n", message);
-		kprintf("hart %d start\n\n", r_mhartid());
 		debugf("stext: %p\tetext: %p", stext, etext);
 		debugf("sdata: %p\tedata: %p", sdata, edata);
 		debugf("sbss: %p\tebss: %p", sbss, ebss);
+		debugf("end: %p\n", end);
 
 		phymem_init();
+		kprintf("==> total memory size: %l MiB, total pages: %d, free pages: %d\n",
+			PHYSIZE / 1024 / 1024, PHYSIZE/4096,freepagenum);
 		kvminit();
 		kvmenable();
 		// now, in vaddr space!
@@ -63,6 +66,10 @@ void kernel_start()
 		user_init();
 		__sync_synchronize();
 		clock_init();
+
+		kprintf("\n%s\n", message);
+		kprintf("hart %d start\n\n", r_mhartid());
+
 		interrupt_on();
 		started = 1;
 	} else {

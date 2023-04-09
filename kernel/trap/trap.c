@@ -65,14 +65,14 @@ static void exception_handler(uint64_t cause, struct proc *p, int32_t prilevel)
 		break;
 	case EXC_SD_PAGEFAULT:
 		tracef("process: %d, sd page fault from prilevel: %d, addr: %p\n",
-			p->pid, prilevel, p->tf->epc);
+		       p->pid, prilevel, p->tf->epc);
 		do_cow(p, p->tf->epc);
 		break;
 	default:
 		kprintf("exception_handler(): unexpected scause %p pid=%d",
 			read_csr(scause), p->pid);
-		kprintf("\tepc=%p stval=%p, from prilevel: %d\n", read_csr(sepc),
-			read_csr(stval), prilevel);
+		kprintf("\tepc=%p stval=%p, from prilevel: %d\n",
+			read_csr(sepc), read_csr(stval), prilevel);
 	}
 }
 
@@ -145,7 +145,7 @@ void usertrap_handler()
 	struct proc *p = myproc();
 	p->tf->epc = read_csr(sepc);   // save user's pc
 
-	uint64_t cause = read_csr(scause);
+	int64_t cause = read_csr(scause);
 
 	/**
 	 * @brief an interrupt will change sepc, scause, and sstatus, so enable
@@ -153,7 +153,7 @@ void usertrap_handler()
 	 */
 	interrupt_on();
 
-	if (cause & (1l << 63))
+	if (cause < 0)
 		interrupt_handler(cause, PRILEVEL_U);
 	else
 		exception_handler(cause, p, PRILEVEL_U);
@@ -170,10 +170,10 @@ void kerneltrap_handler()
 	// assert that from S mode
 	assert((read_csr(sstatus) & SSTATUS_SPP) != 0);
 
-	uint64_t cause = read_csr(scause);
+	int64_t cause = read_csr(scause);
 	// assume that in kernel space, no exception will occur
-	assert((cause & (1l << 63)) != 0);
-	if (cause & (1l << 63))
+	assert(cause < 0);
+	if (cause < 0)
 		interrupt_handler(cause, PRILEVEL_S);
 	else
 		exception_handler(cause, myproc(), PRILEVEL_S);

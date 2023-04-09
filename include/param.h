@@ -2,6 +2,8 @@
 #define __PARAM_H__
 
 
+#define UNSEALCOW 1   // if unseal cow mechanism
+
 #define PROC_NAME_LEN 63		  // max count of process name length
 #define NPROC	      64		  // max number of processes
 #define NCPU	      1			  // max number of harts
