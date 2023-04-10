@@ -17,7 +17,8 @@ void kfree(void *pa)
 	       (uint64_t) pa < PHYSTOP);
 
 	mem_map[PA2ARRAYINDEX((uint64_t)pa)]--;
-	freepagenum++;
+	if (mem_map[PA2ARRAYINDEX((uint64_t)pa)] == 0)
+		freepagenum++;
 }
 /**
  * Allocate one 4096-byte page of physical memory.

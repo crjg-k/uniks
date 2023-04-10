@@ -74,22 +74,51 @@ enum procstate {
 };
 
 struct proc {
-	struct spinlock lock;
-
 	// this->lock must be held when using these below:
 	int32_t pid;		// process ID
 	enum procstate state;	// process state
 	void *sleeplist;	// if non-zero, sleeping on sleeplist
 	int8_t killed;		// if non-zero, have been killed
 	int32_t exitstate;	// exit status to be returned to parent's wait
+	uint32_t priority;	// process priority
+	uint32_t ticks;		// remainder time slices
+	uint32_t jiffies;	// global time slice when last execution
 
-	uintptr_t kstack;		// process kernel stack
-	uint64_t sz;			// size of process memory (bytes)
-	struct proc *parent;		// parent process
-	pagetable_t pagetable;		// user page table
-	struct context ctxt;		// switch here to run process
-	struct trapframe *tf;		// trap frame for current interrupt
+	uintptr_t kstack;	 // process kernel stack
+	uint64_t sz;		 // size of process memory (bytes)
+	struct proc *parent;	 // parent process
+	pagetable_t pagetable;	 // user page table
+	struct context ctxt;	 // switch here to run process
+	/**
+	 * @brief the trapframe for current interrupt, and furthermore, it point
+	 * to the beginning of kstack at the same time. The layout of kstack:
+	 *
+	 * kernelstacktop ->    +---------------+<=====+
+	 *                      |               |      |
+	 *                      |               |      |
+	 *                      |               |      |
+	 *                 +----+---------------+      |
+	 *                 |    |     MAGIC     |      |
+	 *                 |    +---------------+      |
+	 *                 |    |      ...      |      |
+	 *                 |    +---------------+      |
+	 *                 |    |      TF       |---+  |           +---+---+---+
+	 * STRUCT PROC <---|    +---------------+   |  |           |   |...|   |
+	 *                 |    |      ...      |   |  |  pcblock: +---+---+---+
+	 *                 |    +---------------+   |  |             |       |
+	 *                 |    |    KSTACK     |===|==+             ⬇       ⬇
+	 *                 |    +---------------+   |              +---+---+---+
+	 *                 |    |      ...      |   |              |   |...|   |
+	 *                 +----+---------------+<--|----pcbtable: +---+---+---+
+	 *                      |               |   |
+	 *                      |   TRAPFRAME   |   |
+	 *                      |               |   |
+	 * kernelstackbottom -> +---------------+<--+
+	 */
+	struct trapframe *tf;
 	char name[PROC_NAME_LEN + 1];	// process name
+
+	uint32_t magic;	  // magic number as canary to determine stackoverflow
 };
 
 struct cpu {
@@ -98,18 +127,19 @@ struct cpu {
 	int64_t preintstat;    // pre-interrupt enabled status before push_off()
 };
 
-extern struct proc pcbtable[];
+extern struct proc *pcbtable[];
+extern struct spinlock pcblock[];
 extern struct cpu cpus[];
 
 void scheduler();
 void proc_init();
-void user_init();
+void user_init(uint32_t priority);
+void yield();
 void sleep(void *sleeplist, struct spinlock *lk);
 void wakeup(void *sleeplist);
 int8_t killed(struct proc *);
 struct cpu *mycpu();
 struct proc *myproc();
-void proc_mapstacks(pagetable_t);
 
 // process relative syscall
 int64_t do_fork();

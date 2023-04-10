@@ -58,6 +58,7 @@ void syscall()
 	int64_t num = p->tf->a7;
 	if (num >= 0 and num < NUM_SYSCALLS and syscalls[num]) {
 		p->tf->a0 = syscalls[num]();
+		assert(myproc()->magic == UNIKS_MAGIC);
 		return;
 	}
 	tracef("undefined syscall %d, pid = %d, pname = %s", num, p->pid,

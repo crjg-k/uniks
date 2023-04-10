@@ -3,10 +3,13 @@
 #include <kstring.h>
 #include <mm/memlay.h>
 #include <platform/riscv.h>
+#include <sync/spinlock.h>
 
 
-struct proc pcbtable[NPROC];
+struct proc *pcbtable[NPROC] = {NULL};
+struct spinlock pcblock[NPROC];
 struct cpu cpus[NCPU];
+
 struct spinlock pid_lock;
 static volatile int32_t nextpid = 1;
 struct proc *initproc = NULL;	// init proc
@@ -96,39 +99,19 @@ void proc_freepagetable(pagetable_t pagetable, uint64_t sz)
 }
 
 /**
- * @brief allocate a page for each process's kernel stack which
- * followed by an invalid guard page just below it
- *
- * @param kpgtbl kernel page table
- */
-void proc_mapstacks(pagetable_t kpgtbl)
-{
-	uint64_t va, pa;
-	for (struct proc *p = pcbtable; p < &pcbtable[NPROC]; p++) {
-		pa = (uint64_t)kalloc();
-		assert(pa != 0);
-		va = KSTACK((int32_t)(p - pcbtable));
-		mappages(kpgtbl, va, PGSIZE, pa, PTE_R | PTE_W, 0);
-	}
-}
-
-/**
- * @brief free a proc structure and the data hanging from it including user
- * pages (unmap then free physical memory). p->lock must be held
- *
+ * @brief free kstack of a proc which contains the proc structure represents it
+ * and also include user pages (unmap then free physical memory), then release
+ * the corresponding pointer in pcbtable.
+ * p->lock must be held before calling this function
  * @param p
  */
-static void freeproc(struct proc *p)
+static void freeproc(int32_t pid)
 {
-	assert(holding(&p->lock));
-	if (p->tf)
-		kfree((void *)p->tf), p->tf = NULL;
-	if (p->pagetable)
-		proc_freepagetable(p->pagetable, p->sz), p->pagetable = 0;
-	p->sz = 0;
-	p->name[0] = p->pid = 0;
-	p->parent = NULL;
-	p->state = UNUSED;
+	assert(holding(&pcblock[pid]));
+	if (pcbtable[pid]->pagetable)
+		proc_freepagetable(pcbtable[pid]->pagetable, pcbtable[pid]->sz);
+	kfree(pcbtable[pid]->tf);
+	pcbtable[pid] = NULL;
 }
 
 /**
@@ -139,33 +122,39 @@ static void freeproc(struct proc *p)
  */
 struct proc *allocproc()
 {
-	struct proc *p;
-	for (p = pcbtable; p < &pcbtable[NPROC]; p++) {
-		acquire(&p->lock);
-		if (p->state == UNUSED) {
-			goto found;
-		} else {
-			release(&p->lock);
-		}
-	}
+	int32_t newpid = allocpid();
+	if (newpid != -1)
+		goto found;
 	return NULL;
 found:
-	p->state = INITING;
-	p->pid = allocpid();
+	acquire(&pcblock[newpid]);
+	assert(pcbtable[newpid] == NULL);
 
-	// allocate a trapframe page
-	if ((p->tf = (struct trapframe *)kalloc()) == NULL) {
+	struct trapframe *tf;
+	uintptr_t kstack;
+
+	/**
+	 * @brief allocate a kstack page as well as a trapframe page locate at
+	 * the begining of kstack
+	 */
+	if ((tf = kalloc()) == NULL) {
 		// if there are no enough memory, failed
-		freeproc(p);
-		release(&p->lock);
+		release(&pcblock[newpid]);
 		return NULL;
 	}
+	kstack = (uintptr_t)tf;
+	pcbtable[newpid] = (struct proc *)(kstack + sizeof(struct trapframe));
+	pcbtable[newpid]->state = INITING;
+	pcbtable[newpid]->pid = newpid;
+	pcbtable[newpid]->kstack = kstack + PGSIZE;
+	pcbtable[newpid]->tf = tf;
 
 	// an empty user page table
-	if ((p->pagetable = proc_makebasicpagetable(p)) == 0) {
+	if ((pcbtable[newpid]->pagetable =
+		     proc_makebasicpagetable(pcbtable[newpid])) == 0) {
 		// if there are no enough memory, failed
-		freeproc(p);
-		release(&p->lock);
+		freeproc(pcbtable[newpid]->pid);
+		release(&pcblock[newpid]);
 		return NULL;
 	}
 
@@ -174,45 +163,45 @@ found:
 	 * user space. this forges a trap scene for new forked process to
 	 * release lock right set sp point to the correct kstack address
 	 */
-	memset(&p->ctxt, 0, sizeof(p->ctxt));
+	memset(&pcbtable[newpid]->ctxt, 0, sizeof(pcbtable[newpid]->ctxt));
 	void forkret();
-	p->ctxt.ra = (uint64_t)forkret;
-	p->ctxt.sp = p->kstack + PGSIZE;
+	pcbtable[newpid]->ctxt.ra = (uint64_t)forkret;
+	pcbtable[newpid]->ctxt.sp = pcbtable[newpid]->kstack;
+	pcbtable[newpid]->magic = UNIKS_MAGIC;
 
-	return p;
+	return pcbtable[newpid];
 }
 
 // a fork child's 1st scheduling by scheduler() will swtch to forkret
 void forkret()
 {
 	// note: still holding p->lock from scheduler
-	release(&myproc()->lock);
+	release(&pcblock[myproc()->pid]);
 	usertrapret();
 }
 
-// initialize the pcb table
+// initialize the pcb table lock
 void proc_init()
 {
-	// init the global pcb table
 	initlock(&pid_lock, "nextpid");
-	for (struct proc *p = pcbtable; p < &pcbtable[NPROC]; p++) {
-		initlock(&p->lock, "proc");
-		p->state = UNUSED;
-		p->kstack = KSTACK((int32_t)(p - pcbtable));
-		p->parent = NULL;
+	for (struct spinlock *plk = pcblock; plk < &pcblock[NPROC]; plk++) {
+		initlock(plk, "proc");
 	}
 }
 
 // each hart will hold a local scheduler context
 void scheduler()
 {
-	struct proc *p;
 	struct cpu *c = mycpu();
 	c->proc = NULL;
 	while (1) {
+		int32_t i = 1;
 		interrupt_on();	  // ensure that the interrupt is on
-		for (p = pcbtable; p < &pcbtable[NPROC]; p++) {
-			acquire(&p->lock);
+		for (struct proc *p; i < NPROC; i++) {
+			p = pcbtable[i];
+			if (p == NULL)
+				continue;
+			acquire(&pcblock[p->pid]);
 			if (p->state == READY) {
 				tracef("switch to: %d\n", p->pid);
 				/**
@@ -231,7 +220,7 @@ void scheduler()
 				 */
 				c->proc = NULL;
 			}
-			release(&p->lock);
+			release(&pcblock[p->pid]);
 		}
 	}
 }
@@ -240,7 +229,7 @@ void scheduler()
 void sched(void)
 {
 	struct proc *p = myproc();
-	assert(holding(&p->lock));
+	assert(holding(&pcblock[p->pid]));
 
 	p->state = READY;
 	interrupt_off();
@@ -251,9 +240,9 @@ void sched(void)
 void yield()
 {
 	struct proc *p = myproc();
-	acquire(&p->lock);
+	acquire(&pcblock[p->pid]);
 	sched();
-	release(&p->lock);
+	release(&pcblock[p->pid]);
 }
 
 /**
@@ -271,7 +260,7 @@ void sleep(void *sleeplist, struct spinlock *lk)
 	 * sched. once we hold p->lock, we can be guaranteed that we won't miss
 	 * any wakeup (wakeup locks p->lock), so it's okay to release lk.
 	 */
-	acquire(&p->lock);
+	acquire(&pcblock[p->pid]);
 	release(lk);
 
 	// go to sleep
@@ -284,7 +273,7 @@ void sleep(void *sleeplist, struct spinlock *lk)
 	p->sleeplist = NULL;
 
 	// reacquire original lock
-	release(&p->lock);
+	release(&pcblock[p->pid]);
 	acquire(lk);
 }
 
@@ -295,14 +284,16 @@ void sleep(void *sleeplist, struct spinlock *lk)
  */
 void wakeup(void *sleeplist)
 {
-	for (struct proc *p = pcbtable; p < &pcbtable[NPROC]; p++) {
-		if (p != myproc()) {   // can not wakeup self
-			acquire(&p->lock);
+	int32_t i = 1;
+	for (struct proc *p = pcbtable[i]; i < NPROC; i++) {
+		p = pcbtable[i];
+		if (p != NULL and p != myproc()) {   // can not wakeup self
+			acquire(&pcblock[p->pid]);
 			if (p->state == SLEEPING and
 			    p->sleeplist == sleeplist) {
 				p->state = READY;
 			}
-			release(&p->lock);
+			release(&pcblock[p->pid]);
 		}
 	}
 }
@@ -311,9 +302,9 @@ int8_t killed(struct proc *p)
 {
 	int8_t k;
 
-	acquire(&p->lock);
+	acquire(&pcblock[p->pid]);
 	k = p->killed;
-	release(&p->lock);
+	release(&pcblock[p->pid]);
 	return k;
 }
 
@@ -345,10 +336,10 @@ uint32_t initcode[] = {
 	0x00113c23, 0x00813823, 0x02010413, 0xfea43423, 0xfeb43023, 0xfe043683,
 	0xfe843603, 0x00000593, 0x01000513, 0xea1ff0ef, 0x00050793, 0x0007879b,
 	0x00078513, 0x01813083, 0x01013403, 0x02010113, 0x00008067, 0x00000000,
-	0x74696e69, 0x636f7270, 0x000a3120, 0x00000000,
+	0x74696e69, 0x636f7270, 0x00093120, 0x00000000,
 };
 
-void user_init()
+void user_init(uint32_t priority)
 {
 	struct proc *p = allocproc();
 	initproc = p;
@@ -361,9 +352,12 @@ void user_init()
 	p->tf->epc = 0;	      // user code start executing at addr 0x0
 	p->tf->sp = PGSIZE;   // user stack pointer
 	set_proc_name(initproc, "initcode");
+	p->parent = NULL;
 	p->state = READY;
 
-	release(&p->lock);
+	p->ticks = p->priority = priority;
+
+	release(&pcblock[p->pid]);
 }
 
 int64_t do_fork()
@@ -372,11 +366,12 @@ int64_t do_fork()
 	if ((childproc = allocproc()) == NULL) {
 		return -1;
 	}
+
 	// copy user memory from parent to child with COW mechanism
 	if (uvmcopy(parentproc->pagetable, childproc->pagetable,
 		    parentproc->sz) < 0) {
-		freeproc(childproc);
-		release(&childproc->lock);
+		freeproc(childproc->pid);
+		release(&pcblock[childproc->pid]);
 		return -1;
 	}
 	childproc->sz = parentproc->sz;
@@ -389,8 +384,12 @@ int64_t do_fork()
 
 	childproc->parent = parentproc;
 	childproc->state = READY;
-	release(&childproc->lock);
 
+	childproc->jiffies = parentproc->jiffies;
+	childproc->ticks = parentproc->ticks;
+	childproc->priority = parentproc->priority;
+	release(&pcblock[childproc->pid]);
+	assert(myproc()->magic == UNIKS_MAGIC);
 	return childproc->pid;
 }
 

@@ -17,6 +17,7 @@ void trap_init()
 
 static void interrupt_handler(uint64_t cause, int32_t prilevel)
 {
+	assert(myproc()->magic == UNIKS_MAGIC);
 	cause = (cause << 1) >> 1;   // erase the MSB
 	switch (cause) {
 	case IRQ_U_SOFT:
@@ -29,11 +30,8 @@ static void interrupt_handler(uint64_t cause, int32_t prilevel)
 		kprintf("User timer interrupt");
 		break;
 	case IRQ_S_TIMER:
-		clock_interrupt_handler();
 		// hint: there may be a wrong that the yield is not equidistant
-		if (prilevel == PRILEVEL_U) {
-			yield();
-		}
+		clock_interrupt_handler(prilevel);
 		break;
 	case IRQ_U_EXT:
 		kprintf("User external interrupt");
@@ -47,6 +45,7 @@ static void interrupt_handler(uint64_t cause, int32_t prilevel)
 }
 static void exception_handler(uint64_t cause, struct proc *p, int32_t prilevel)
 {
+	assert(myproc()->magic == UNIKS_MAGIC);
 	switch (cause) {
 	case EXC_INST_ILLEGAL:
 		kprintf("illegal instruction from prilevel: %d, addr: %p",
@@ -102,8 +101,8 @@ void usertrapret()
 	 * @brief set up trapframe values that usertrapvec will need when the
 	 * process next traps into the kernel
 	 */
-	p->tf->kernel_satp = read_csr(satp);	 // kernel page table
-	p->tf->kernel_sp = p->kstack + PGSIZE;	 // process's kernel stack
+	p->tf->kernel_satp = read_csr(satp);   // kernel page table
+	p->tf->kernel_sp = p->kstack;	       // process's kernel stack
 	p->tf->kernel_trap = (uint64_t)usertrap_handler;
 	p->tf->kernel_hartid = r_mhartid();
 

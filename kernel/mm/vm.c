@@ -109,8 +109,6 @@ static pagetable_t kvmmake()
 	assert(mappages(kpgtbl, TRAMPOLINE, PGSIZE, (uint64_t)trampoline,
 			PTE_R | PTE_X, 0) != -1);
 
-	proc_mapstacks(kpgtbl);
-
 	return kpgtbl;
 }
 
@@ -213,6 +211,7 @@ __always_inline void invalidate(uint64_t va)
  */
 int64_t uvmcopy(pagetable_t old, pagetable_t new, uint64_t sz)
 {
+	// note: COW mechanism is not applicable to kstack page!!
 #if (UNSEALCOW == 1)
 	pte_t *pte;
 	uint64_t pa, i;
@@ -285,6 +284,7 @@ int32_t do_cow(struct proc *p, uint64_t va)
 	// note: modification of the page table
 	invalidate(va);
 	mem_map[PA2ARRAYINDEX(pa)]--;
+	assert(myproc()->magic == UNIKS_MAGIC);
 	return 0;
 err:
 	return -1;

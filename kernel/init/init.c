@@ -63,7 +63,7 @@ void kernel_start()
 		fileinit();
 		virtio_disk_init();
 
-		user_init();
+		user_init(5);
 		__sync_synchronize();
 		clock_init();
 

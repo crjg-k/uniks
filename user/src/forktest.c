@@ -1,6 +1,6 @@
 #include <ulib.h>
 
-char info[] = "initproc 1\n";
+char info[] = "initproc 1\t";
 
 
 int main()

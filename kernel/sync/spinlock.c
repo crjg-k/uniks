@@ -39,14 +39,14 @@ void pop_off()
 void do_acquire(struct spinlock *lk)
 {
 	/**
+	 * @brief disable interrupts to avoid deadlock incurred by extern
+	 * interrupt and this must layed at initiate
+	 */
+	push_off();
+	/**
 	 * @brief avoid obtaining duplicate locks on the same CPU itself
 	 */
 	assert(!holding(lk));
-	/**
-	 * @brief disable interrupts to avoid deadlock incurred by extern
-	 * interrupt
-	 */
-	push_off();
 
 	while (__sync_lock_test_and_set(&lk->locked, 1) != 0)
 		debugf("kkk");

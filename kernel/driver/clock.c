@@ -11,6 +11,7 @@
 
 #include "clock.h"
 #include <defs.h>
+#include <kassert.h>
 #include <param.h>
 #include <platform/riscv.h>
 #include <platform/sbi.h>
@@ -47,11 +48,25 @@ void clock_init()
  * @brief only the primary hart could cope with the timer interrupt, so we
  * can simply disable the interrupt to avoid dead lock
  */
-__always_inline void clock_interrupt_handler()
+__always_inline void clock_interrupt_handler(int32_t prilevel)
 {
 	acquire(&tickslock);   // this have disabled interrupt interior
 	ticks++;
 	clock_set_next_event();
 	// wakeup(&ticks);
 	release(&tickslock);
+
+	if (prilevel == PRILEVEL_U) {
+		struct proc *p = myproc();
+		acquire(&pcblock[p->pid]);
+		p->jiffies = ticks;
+		p->ticks--;
+		if (!p->ticks) {
+			p->ticks = p->priority;
+			release(&pcblock[p->pid]);
+			yield();
+		} else
+			release(&pcblock[p->pid]);
+	}
+	assert(myproc()->magic == UNIKS_MAGIC);
 }

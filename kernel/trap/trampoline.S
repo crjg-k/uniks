@@ -28,13 +28,9 @@ usertrapvec:
 	ld t0, 264(t6)		# load the address of usertrap_handler(), from p->tf->kernel_trap
 	ld t1, 248(t6)		# fetch the kernel page table address, from p->tf->kernel_satp
 
-	# wait for any pre-mem operations to complete, so that they use the user page table
+	# switch to kernel page table
 	sfence.vma zero, zero
-
-	# switch to the kernel page table space
 	csrw satp, t1
-
-	# flush TLB
 	sfence.vma zero, zero
 
 	# jump to usertrap_handler(), which does not return
