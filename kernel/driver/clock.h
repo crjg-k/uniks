@@ -5,7 +5,7 @@
 #include <sync/spinlock.h>
 
 
-extern uint64_t ticks;
+extern volatile uint64_t ticks;
 extern struct spinlock tickslock;
 
 void clock_set_next_event();

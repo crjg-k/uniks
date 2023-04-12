@@ -4,9 +4,13 @@
 #include <defs.h>
 #include <log.h>
 
-// mutual exclusion lock
+
+/**
+ * @brief mutual exclusion lock, could reentry by same hart
+ */
 struct spinlock {
 	uint32_t locked;
+	uint32_t repeat;   // reentry times
 
 // for debugging:
 #if defined(LOG_LEVEL_DEBUG)
@@ -15,9 +19,9 @@ struct spinlock {
 #endif
 };
 
-void initlock(struct spinlock *, char *);
-void do_acquire(struct spinlock *);
-void do_release(struct spinlock *);
+void initlock(struct spinlock *lk, char *name);
+void do_acquire(struct spinlock *lk);
+void do_release(struct spinlock *lk);
 #if defined(LOG_LEVEL_DEBUG)
 	#define acquire(lk) \
 		({ \
@@ -27,10 +31,7 @@ void do_release(struct spinlock *);
 			do_acquire(lk); \
 		})
 #else
-	#define acquire(lk) \
-		({ \
-			do_acquire(lk); \
-		})
+	#define acquire(lk) ({ do_acquire(lk); })
 #endif
 #if defined(LOG_LEVEL_DEBUG)
 	#define release(lk) \
@@ -41,10 +42,7 @@ void do_release(struct spinlock *);
 			do_release(lk); \
 		})
 #else
-	#define release(lk) \
-		({ \
-			do_release(lk); \
-		})
+	#define release(lk) ({ do_release(lk); })
 #endif
 
 int64_t holding(struct spinlock *lk);

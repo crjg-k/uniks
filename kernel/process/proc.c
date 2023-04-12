@@ -3,15 +3,21 @@
 #include <kstring.h>
 #include <mm/memlay.h>
 #include <platform/riscv.h>
+#include <queue.h>
 #include <sync/spinlock.h>
 
 
 struct proc *pcbtable[NPROC] = {NULL};
+struct proc idlepcb;
 struct spinlock pcblock[NPROC];
 struct cpu cpus[NCPU];
 
-struct spinlock pid_lock;
-static volatile int32_t nextpid = 1;
+struct {
+	struct spinlock pid_lock;
+	struct queue_meta qm;
+	int32_t pids_queue_array[NPROC];
+} pids_queue;
+
 struct proc *initproc = NULL;	// init proc
 
 extern char trampoline[];
@@ -51,9 +57,10 @@ __always_inline struct proc *myproc()
 int32_t allocpid()
 {
 	int32_t pid;
-	acquire(&pid_lock);
-	pid = nextpid++;
-	release(&pid_lock);
+	acquire(&pids_queue.pid_lock);
+	pid = *queue_front(&pids_queue.qm);
+	queue_pop(&pids_queue.qm);
+	release(&pids_queue.pid_lock);
 	return pid;
 }
 
@@ -144,7 +151,7 @@ found:
 	}
 	kstack = (uintptr_t)tf;
 	pcbtable[newpid] = (struct proc *)(kstack + sizeof(struct trapframe));
-	pcbtable[newpid]->state = INITING;
+	pcbtable[newpid]->state = TASK_INITING;
 	pcbtable[newpid]->pid = newpid;
 	pcbtable[newpid]->kstack = kstack + PGSIZE;
 	pcbtable[newpid]->tf = tf;
@@ -180,29 +187,42 @@ void forkret()
 	usertrapret();
 }
 
+__always_inline void initidleproc()
+{
+	pcbtable[0] = &idlepcb;
+	pcbtable[0]->pid = 0;
+	pcbtable[0]->kstack = (uintptr_t)&bootstacktop0;
+	strcpy(pcbtable[0]->name, "idleproc");
+	pcbtable[0]->magic = UNIKS_MAGIC;
+	mycpu()->proc = pcbtable[0];
+}
+
 // initialize the pcb table lock
 void proc_init()
 {
-	initlock(&pid_lock, "nextpid");
+	initlock(&pids_queue.pid_lock, "nextpid");
+	queue_init(&pids_queue.qm, NPROC, pids_queue.pids_queue_array);
+	for (int32_t i = 1; i < NPROC; i++)
+		queue_push(&pids_queue.qm, i);
 	for (struct spinlock *plk = pcblock; plk < &pcblock[NPROC]; plk++) {
 		initlock(plk, "proc");
 	}
+	initidleproc();
 }
 
-// each hart will hold a local scheduler context
+// each hart will hold its local scheduler context
 void scheduler()
 {
 	struct cpu *c = mycpu();
-	c->proc = NULL;
+	c->proc = pcbtable[0];
 	while (1) {
 		int32_t i = 1;
-		interrupt_on();	  // ensure that the interrupt is on
 		for (struct proc *p; i < NPROC; i++) {
 			p = pcbtable[i];
 			if (p == NULL)
 				continue;
 			acquire(&pcblock[p->pid]);
-			if (p->state == READY) {
+			if (p->state == TASK_READY) {
 				tracef("switch to: %d\n", p->pid);
 				/**
 				 * @brief switch to chosen process. it is the
@@ -211,14 +231,15 @@ void scheduler()
 				 * yield())
 				 */
 				c->proc = p;
-				p->state = RUNNING;
+				p->state = TASK_RUNNING;
+				interrupt_off();
 				switch_to(&c->ctxt, &p->ctxt);
-
+				interrupt_on();
 				/**
 				 * @brief process is done running for now since
 				 * timer interrupt
 				 */
-				c->proc = NULL;
+				c->proc = pcbtable[0];
 			}
 			release(&pcblock[p->pid]);
 		}
@@ -226,22 +247,61 @@ void scheduler()
 }
 
 // switch to kernel thread scheduler and must hold p->lock when entering here
-void sched(void)
+void sched()
 {
 	struct proc *p = myproc();
 	assert(holding(&pcblock[p->pid]));
 
-	p->state = READY;
+	p->state = TASK_READY;
 	interrupt_off();
 	switch_to(&p->ctxt, &mycpu()->ctxt);
+	interrupt_on();
 }
 
-// give up the CPU who called this
+/**
+ * @brief give up the CPU who called this
+ */
 void yield()
 {
 	struct proc *p = myproc();
 	acquire(&pcblock[p->pid]);
 	sched();
+	release(&pcblock[p->pid]);
+}
+
+/**
+ * @brief make process p blocked and mount it to blocked_list list
+ *
+ * @param p
+ * @param list
+ * @param state
+ */
+void proc_block(struct proc *p, struct list_node *list, enum proc_state state)
+{
+	acquire(&pcblock[p->pid]);
+	/**
+	 * @brief process can be block only when it hasn't been blocked!
+	 */
+	assert(list_empty(&p->block_list));
+	list_add_front(&p->block_list, list);
+	p->state = state;
+	if (myproc() == p) {
+		sched();
+	}
+	release(&pcblock[p->pid]);
+}
+
+/**
+ * @brief unblock process p and remove it from its original block list
+ *
+ * @param p
+ */
+void proc_unblock(struct proc *p)
+{
+	acquire(&pcblock[p->pid]);
+	assert(!list_empty(&p->block_list));
+	list_del(&p->block_list);
+	p->state = TASK_READY;
 	release(&pcblock[p->pid]);
 }
 
@@ -265,7 +325,7 @@ void sleep(void *sleeplist, struct spinlock *lk)
 
 	// go to sleep
 	p->sleeplist = sleeplist;
-	p->state = SLEEPING;
+	p->state = TASK_BLOCK;
 
 	sched();
 
@@ -289,14 +349,16 @@ void wakeup(void *sleeplist)
 		p = pcbtable[i];
 		if (p != NULL and p != myproc()) {   // can not wakeup self
 			acquire(&pcblock[p->pid]);
-			if (p->state == SLEEPING and
+			if (p->state == TASK_BLOCK and
 			    p->sleeplist == sleeplist) {
-				p->state = READY;
+				p->state = TASK_READY;
 			}
 			release(&pcblock[p->pid]);
 		}
 	}
 }
+
+void time_wakeup() {}
 
 int8_t killed(struct proc *p)
 {
@@ -353,13 +415,14 @@ void user_init(uint32_t priority)
 	p->tf->sp = PGSIZE;   // user stack pointer
 	set_proc_name(initproc, "initcode");
 	p->parent = NULL;
-	p->state = READY;
+	p->state = TASK_READY;
 
 	p->ticks = p->priority = priority;
 
 	release(&pcblock[p->pid]);
 }
 
+// process relative syscall
 int64_t do_fork()
 {
 	struct proc *parentproc = myproc(), *childproc = NULL;
@@ -383,7 +446,7 @@ int64_t do_fork()
 	set_proc_name(childproc, parentproc->name);
 
 	childproc->parent = parentproc;
-	childproc->state = READY;
+	childproc->state = TASK_READY;
 
 	childproc->jiffies = parentproc->jiffies;
 	childproc->ticks = parentproc->ticks;

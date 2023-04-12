@@ -24,8 +24,8 @@ extern char stext[], etext[];
 extern char sdata[], edata[];
 extern char sbss[], ebss[];
 extern char end[];
-extern char bootstack0[], bootstacktop0[];
-extern char bootstack1[], bootstacktop1[];
+extern char bootstackbottom0[], bootstacktop0[];
+extern char bootstackbottom1[], bootstacktop1[];
 extern char KERNEL_BASE_ADDR[];
 
 

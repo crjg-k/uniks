@@ -8,7 +8,7 @@
 
 
 /**
- * @brief fetch the syscall nth argument 
+ * @brief fetch the syscall nth argument
  *
  * @param n the nth argument
  * @return uint64_t
@@ -35,7 +35,7 @@ extern int64_t sys_chdir();
 extern int64_t sys_dup();
 extern int64_t sys_getpid();
 extern int64_t sys_sbrk();
-extern int64_t sys_sleep();
+extern int64_t sys_msleep();
 extern int64_t sys_uptime();
 extern int64_t sys_open();
 extern int64_t sys_write();
@@ -46,8 +46,8 @@ extern int64_t sys_mkdir();
 extern int64_t sys_close();
 
 static int64_t (*syscalls[])() = {
-	[SYS_fork] sys_fork,   [SYS_exec] sys_exec,	[SYS_write] sys_write,
-	[SYS_sleep] sys_sleep, [SYS_getpid] sys_getpid,
+	[SYS_fork] sys_fork,	 [SYS_exec] sys_exec,	  [SYS_write] sys_write,
+	[SYS_msleep] sys_msleep, [SYS_getpid] sys_getpid,
 };
 
 #define NUM_SYSCALLS ((sizeof(syscalls)) / (sizeof(syscalls[0])))

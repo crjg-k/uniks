@@ -26,6 +26,7 @@
 extern void phymem_init(), kvminit(), kvmenable(), clock_init();
 char message[] = "uniks boot over!";
 extern int32_t freepagenum;
+volatile static int8_t started = 0;
 
 
 __noreturn __always_inline void idle_process()
@@ -34,8 +35,6 @@ __noreturn __always_inline void idle_process()
 		scheduler();
 	}
 }
-
-volatile static int8_t started = 0;
 
 void kernel_start()
 {
@@ -50,7 +49,7 @@ void kernel_start()
 
 		phymem_init();
 		kprintf("==> total memory size: %l MiB, total pages: %d, free pages: %d\n",
-			PHYSIZE / 1024 / 1024, PHYSIZE/4096,freepagenum);
+			PHYSIZE / 1024 / 1024, PHYSIZE / 4096, freepagenum);
 		kvminit();
 		kvmenable();
 		// now, in vaddr space!
@@ -58,12 +57,13 @@ void kernel_start()
 		trap_init();
 		// plicinit();
 
+		// hint: below 4 init functions maybe could let other harts do
 		buffer_init();
 		inode_init();
 		fileinit();
 		virtio_disk_init();
 
-		user_init(5);
+		user_init(1);
 		__sync_synchronize();
 		clock_init();
 

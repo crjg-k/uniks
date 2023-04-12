@@ -7,7 +7,7 @@
 
 void initlock(struct spinlock *lk, char *name)
 {
-	lk->locked = 0;
+	lk->locked = lk->repeat = 0;
 #if defined(LOG_LEVEL_DEBUG)
 	lk->name = name;
 	lk->cpu = r_mhartid();
@@ -43,14 +43,14 @@ void do_acquire(struct spinlock *lk)
 	 * interrupt and this must layed at initiate
 	 */
 	push_off();
-	/**
-	 * @brief avoid obtaining duplicate locks on the same CPU itself
-	 */
-	assert(!holding(lk));
 
-	while (__sync_lock_test_and_set(&lk->locked, 1) != 0)
-		debugf("kkk");
-
+	if (!holding(lk)) {
+		while (__sync_lock_test_and_set(&lk->locked, 1) != 0)
+			debugf("kkk");
+		assert(lk->repeat == 0);
+		lk->repeat = 1;
+	} else
+		lk->repeat++;
 	__sync_synchronize();
 
 #if defined(LOG_LEVEL_DEBUG)
@@ -61,6 +61,12 @@ void do_acquire(struct spinlock *lk)
 void do_release(struct spinlock *lk)
 {
 	assert(holding(lk));
+	if(lk->repeat>1){
+		lk->repeat--;
+		return;
+	}
+	assert(lk->repeat == 1);
+	lk->repeat = 0;
 #if defined(LOG_LEVEL_DEBUG)
 	lk->cpu = -1;
 #endif

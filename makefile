@@ -2,6 +2,7 @@
 LOG ?= debug
 
 # basic tools
+SHELL = /bin/bash
 CROSS_PREFIX = riscv64-unknown-elf-
 CC = ${CROSS_PREFIX}gcc
 AS = ${CROSS_PREFIX}as
@@ -113,4 +114,4 @@ hint:
 
 .PHONY: clean
 clean:
-	rm -r bin/*
+	$(shell if [ -d bin -a "`ls -A bin`" != "" ]; then rm -r bin/*; fi)

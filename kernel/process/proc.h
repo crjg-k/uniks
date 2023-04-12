@@ -2,6 +2,7 @@
 #define __KERNEL_PROCESS_PROC_H__
 
 #include <defs.h>
+#include <list.h>
 #include <param.h>
 #include <sync/spinlock.h>
 
@@ -64,28 +65,29 @@ struct trapframe {
 	/* 280 */ uint64_t kernel_hartid;   // saved kernel tp
 };
 
-enum procstate {
-	UNUSED,
-	INITING,
-	SLEEPING,
-	READY,
-	RUNNING,
-	ZOMBIE
+enum proc_state {
+	TASK_UNUSED,
+	TASK_INITING,
+	TASK_BLOCK,
+	TASK_READY,
+	TASK_RUNNING,
+	TASK_ZOMBIE
 };
 
 struct proc {
 	// this->lock must be held when using these below:
-	int32_t pid;		// process ID
-	enum procstate state;	// process state
-	void *sleeplist;	// if non-zero, sleeping on sleeplist
-	int8_t killed;		// if non-zero, have been killed
-	int32_t exitstate;	// exit status to be returned to parent's wait
-	uint32_t priority;	// process priority
-	uint32_t ticks;		// remainder time slices
-	uint32_t jiffies;	// global time slice when last execution
+	int32_t pid;		 // process ID
+	enum proc_state state;	 // process state
+	void *sleeplist;	 // if non-zero, sleeping on sleeplist
+	int8_t killed;		 // if non-zero, have been killed
+	int32_t exitstate;	 // exit status to be returned to parent's wait
+	uint32_t priority;	 // process priority
+	uint32_t ticks;		 // remainder time slices
+	uint32_t jiffies;	 // global time slice when last execution
+	struct list_node block_list;   // block list of this process
 
-	uintptr_t kstack;	 // process kernel stack
-	uint64_t sz;		 // size of process memory (bytes)
+	uintptr_t kstack;   // process kernel stack, always point to kstack top
+	uint64_t sz;	    // size of process memory (bytes)
 	struct proc *parent;	 // parent process
 	pagetable_t pagetable;	 // user page table
 	struct context ctxt;	 // switch here to run process
@@ -93,7 +95,7 @@ struct proc {
 	 * @brief the trapframe for current interrupt, and furthermore, it point
 	 * to the beginning of kstack at the same time. The layout of kstack:
 	 *
-	 * kernelstacktop ->    +---------------+<=====+
+	 * kernelstacktop ->    +---------------+<=====+ (high address)
 	 *                      |               |      |
 	 *                      |               |      |
 	 *                      |               |      |
@@ -103,7 +105,7 @@ struct proc {
 	 *                 |    |      ...      |      |
 	 *                 |    +---------------+      |
 	 *                 |    |      TF       |---+  |           +---+---+---+
-	 * STRUCT PROC <---|    +---------------+   |  |           |   |...|   |
+	 * STRUCT PROC <---|    +---------------+   |  |           |🔒 |...| 🔒|
 	 *                 |    |      ...      |   |  |  pcblock: +---+---+---+
 	 *                 |    +---------------+   |  |             |       |
 	 *                 |    |    KSTACK     |===|==+             ⬇       ⬇
@@ -113,7 +115,7 @@ struct proc {
 	 *                      |               |   |
 	 *                      |   TRAPFRAME   |   |
 	 *                      |               |   |
-	 * kernelstackbottom -> +---------------+<--+
+	 * kernelstackbottom -> +---------------+<--+ (low address)
 	 */
 	struct trapframe *tf;
 	char name[PROC_NAME_LEN + 1];	// process name
@@ -132,14 +134,18 @@ extern struct spinlock pcblock[];
 extern struct cpu cpus[];
 
 void scheduler();
+void sched();
 void proc_init();
 void user_init(uint32_t priority);
 void yield();
 void sleep(void *sleeplist, struct spinlock *lk);
 void wakeup(void *sleeplist);
+void time_wakeup();
 int8_t killed(struct proc *);
 struct cpu *mycpu();
 struct proc *myproc();
+void proc_block(struct proc *p, struct list_node *list, enum proc_state state);
+void proc_unblock(struct proc *p);
 
 // process relative syscall
 int64_t do_fork();

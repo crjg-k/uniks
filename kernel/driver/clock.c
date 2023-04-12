@@ -18,11 +18,11 @@
 #include <process/proc.h>
 
 // the ticks will inc in each 0.01s
-uint64_t ticks = 0;
+volatile uint64_t ticks = 0;
 struct spinlock tickslock;
 
-// Hardcode timebase
-static uint64_t timebase = CPUFREQ / TIMESPERSEC;
+// hardcode jiffy
+uint64_t jiffy = CPUFREQ / TIMESPERSEC;
 
 __always_inline static uint64_t get_cycles()
 {
@@ -33,7 +33,7 @@ __always_inline static uint64_t get_cycles()
 
 __always_inline void clock_set_next_event()
 {
-	sbi_set_timer(get_cycles() + timebase);
+	sbi_set_timer(get_cycles() + jiffy);
 }
 
 void clock_init()
@@ -53,7 +53,7 @@ __always_inline void clock_interrupt_handler(int32_t prilevel)
 	acquire(&tickslock);   // this have disabled interrupt interior
 	ticks++;
 	clock_set_next_event();
-	// wakeup(&ticks);
+	time_wakeup();
 	release(&tickslock);
 
 	if (prilevel == PRILEVEL_U) {
