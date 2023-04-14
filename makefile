@@ -75,6 +75,7 @@ user:
 CPUS = 1
 BOOTLOADER = default
 QEMU = qemu-system-riscv64
+QEMULOGPATH = ./qemu-log
 QFLAGS = \
 	-nographic \
 	-smp ${CPUS} \
@@ -87,6 +88,10 @@ QFLAGS = \
 	-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 QEMUGDB = \
 	-gdb tcp::1234
+
+ifeq ($(LOG), trace)
+	QFLAGS += -D ${QEMULOGPATH} -d exec
+endif
 
 
 .PHONY: qemu

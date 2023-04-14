@@ -17,12 +17,12 @@
 #include <platform/sbi.h>
 #include <process/proc.h>
 
-// the ticks will inc in each 0.01s
+// the ticks will inc in each 0.001s namely 1ms
 volatile uint64_t ticks = 0;
 struct spinlock tickslock;
 
-// hardcode jiffy
-uint64_t jiffy = CPUFREQ / TIMESPERSEC;
+// hardcode jiffy = 1ms and timebase
+uint64_t jiffy = 1000 / TIMESPERSEC, timebase = CPUFREQ / TIMESPERSEC;
 
 __always_inline static uint64_t get_cycles()
 {
@@ -33,14 +33,13 @@ __always_inline static uint64_t get_cycles()
 
 __always_inline void clock_set_next_event()
 {
-	sbi_set_timer(get_cycles() + jiffy);
+	sbi_set_timer(get_cycles() + timebase);
 }
 
 void clock_init()
 {
 	initlock(&tickslock, "tickslock");
 	set_csr(sie, MIP_STIP);	  // enable timer interrupt in sie
-	ticks = 0;
 	clock_set_next_event();
 }
 

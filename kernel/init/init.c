@@ -80,5 +80,5 @@ void kernel_start()
 	}
 	idle_process();
 
-	panic("will never step here");
+	panic("will never step here!");
 }

@@ -1,5 +1,6 @@
 
 # basic tools
+SHELL = /bin/bash
 CROSS_PREFIX = riscv64-unknown-elf-
 CC = ${CROSS_PREFIX}gcc
 AS = ${CROSS_PREFIX}as
@@ -10,7 +11,8 @@ OBJDUMP = ${CROSS_PREFIX}objdump
 
 
 INC_DIR = ./include
-TAG_DIR = ./bin
+LIBS_DIR= ./libs
+BIN_DIR = ./bin
 ABSM_DIR = ./absm
 
 LINKER = ./user.ld
@@ -18,36 +20,44 @@ LINKER = ./user.ld
 CFLAGS = \
 	-c \
 	-g3 \
-	-march=rv64g
+	-march=rv64g \
+	-nostdlib \
+	-fno-builtin \
+	-ffreestanding
 
 CFLAGS += $(foreach dir, ${INC_DIR}, -I${dir})
 
 LDFLAGS = \
 	-T ${LINKER}
 
+SRCS := $(wildcard ./src/*.c)
+OBJS := $(patsubst ./src/%.c, %, $(SRCS))
 
 .PHONY: build
-build: src/forktest.c libs/ulib.c libs/usyscall.c
+build: $(OBJS)
+
+%: src/%.c ${LIBS_DIR}/ulib.c ${LIBS_DIR}/usyscall.c
 	${CC} $^ ${CFLAGS}
-	${LD} ${LDFLAGS} ulib.o forktest.o usyscall.o -o ${TAG_DIR}/forktest.o
-	${OBJDUMP} -d ${TAG_DIR}/forktest.o > ${ABSM_DIR}/forktest.asm
-	${OBJDUMP} -s ${TAG_DIR}/forktest.o > ${ABSM_DIR}/forktest.bsm
-	${OBJCOPY} ${TAG_DIR}/forktest.o --strip-all -O binary ${TAG_DIR}/forktest
-	od -t x ${TAG_DIR}/forktest
-	rm bin/forktest
+	${LD} ${LDFLAGS} ulib.o $@.o usyscall.o -o ${BIN_DIR}/$@.o
+	${OBJDUMP} -d ${BIN_DIR}/$@.o > ${ABSM_DIR}/$@.asm
+	${OBJDUMP} -s ${BIN_DIR}/$@.o > ${ABSM_DIR}/$@.bsm
+	${OBJCOPY} ${BIN_DIR}/$@.o --strip-all -O binary ${BIN_DIR}/$@
+	od -t x ${BIN_DIR}/$@
+	rm bin/$@
 	rm *.o
 
 .PHONY: initasm
 initasm: src/initcode.S
-	${CC} $< ${CFLAGS} -o ${TAG_DIR}/initcode.o
-	${LD} ${LDFLAGS} ${TAG_DIR}/initcode.o -o ${TAG_DIR}/initcode.out
-	${OBJDUMP} -d ${TAG_DIR}/initcode.out > ${ABSM_DIR}/initcode.asm
-	${OBJDUMP} -s ${TAG_DIR}/initcode.out > ${ABSM_DIR}/initcode.bsm
-	${OBJCOPY} ${TAG_DIR}/initcode.out --strip-all -O binary ${TAG_DIR}/initcode
-	od -t x ${TAG_DIR}/initcode
-	rm ${TAG_DIR}/initcode.o
+	${CC} $< ${CFLAGS} -o ${BIN_DIR}/initcode.o
+	${LD} ${LDFLAGS} ${BIN_DIR}/initcode.o -o ${BIN_DIR}/initcode.tmp
+	${OBJDUMP} -d ${BIN_DIR}/initcode.tmp > ${ABSM_DIR}/initcode.asm
+	${OBJDUMP} -s ${BIN_DIR}/initcode.tmp > ${ABSM_DIR}/initcode.bsm
+	${OBJCOPY} ${BIN_DIR}/initcode.tmp --strip-all -O binary ${BIN_DIR}/initcode
+	od -t x ${BIN_DIR}/initcode
+	mv ${BIN_DIR}/initcode ${BIN_DIR}/initcode.o
+	rm ${BIN_DIR}/initcode.tmp
 
 .PHONY: clean
 clean: 
-	rm ${TAG_DIR}/*
+	rm ${BIN_DIR}/*
 	rm ${ABSM_DIR}/*

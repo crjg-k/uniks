@@ -7,7 +7,7 @@
 
 void initlock(struct spinlock *lk, char *name)
 {
-	lk->locked = lk->repeat = 0;
+	lk->locked = 0;
 #if defined(LOG_LEVEL_DEBUG)
 	lk->name = name;
 	lk->cpu = r_mhartid();
@@ -25,15 +25,29 @@ int64_t holding(struct spinlock *lk)
 	);
 }
 
+/**
+ * @brief push_off/pop_off are like intr_off()/intr_on() except that they are
+ * matched: it takes two pop_off()s to undo two push_off()s.  Also, if
+ * interrupts are initially off, then push_off, pop_off leaves them off.
+ */
 void push_off()
 {
-	mycpu()->preintstat = interrupt_get();
-	interrupt_off();
-}
+	uint64_t old = interrupt_get();
 
+	interrupt_off();
+	struct cpu *c = mycpu();
+	if (c->repeat == 0)
+		c->preintstat = old;
+	c->repeat++;
+}
 void pop_off()
 {
-	interrupt_set(mycpu()->preintstat);
+	struct cpu *c = mycpu();
+	assert(!(interrupt_get() & SSTATUS_SIE));
+	assert(c->repeat >= 1);
+	c->repeat--;
+	if (c->repeat == 0 and (c->preintstat & SSTATUS_SIE))
+		interrupt_on();
 }
 
 void do_acquire(struct spinlock *lk)
@@ -44,13 +58,14 @@ void do_acquire(struct spinlock *lk)
 	 */
 	push_off();
 
-	if (!holding(lk)) {
-		while (__sync_lock_test_and_set(&lk->locked, 1) != 0)
-			debugf("kkk");
-		assert(lk->repeat == 0);
-		lk->repeat = 1;
-	} else
-		lk->repeat++;
+	/**
+	 * @brief avoid obtaining duplicate locks on the same CPU itself
+	 */
+	assert(!holding(lk));
+
+	while (__sync_lock_test_and_set(&lk->locked, 1) != 0)
+		debugf("kkk");
+
 	__sync_synchronize();
 
 #if defined(LOG_LEVEL_DEBUG)
@@ -61,12 +76,7 @@ void do_acquire(struct spinlock *lk)
 void do_release(struct spinlock *lk)
 {
 	assert(holding(lk));
-	if(lk->repeat>1){
-		lk->repeat--;
-		return;
-	}
-	assert(lk->repeat == 1);
-	lk->repeat = 0;
+
 #if defined(LOG_LEVEL_DEBUG)
 	lk->cpu = -1;
 #endif

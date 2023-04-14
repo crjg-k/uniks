@@ -52,20 +52,21 @@ void mutex_release(struct mutex *m)
 	assert(mutex_holding(m));   // ensure that this mutex had been held
 	m->locked = 0;
 #if defined(LOG_LEVEL_DEBUG)
-	m->pid = 0;
+	m->pid = -1;
 #endif
-	if (!list_empty(&m->waiters)) {
+	while (!list_empty(&m->waiters)) {
 		// waiting queue has item(s), need to wakeup other processes
 		/**
 		 * @brief search from back to front to ensure fair: the last is
 		 * the first comed
 		 */
-		struct proc *p = element_entry(list_prev(&m->waiters),
+		struct proc *p = element_entry(list_prev_then_del(&m->waiters),
 					       struct proc, block_list);
-		assert(p->magic == UNIKS_MAGIC);
+		assert(p->state == TASK_BLOCK);
 		proc_unblock(p);
 		release(&m->spinlk);
-		yield();   // give other process a chance to acquire this lock
-	} else
-		release(&m->spinlk);
+	}
+	release(&m->spinlk);
+	// give other processes a chance to acquire this lock
+	yield();
 }

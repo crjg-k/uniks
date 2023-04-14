@@ -1,4 +1,5 @@
 #include <ulib.h>
+#include <usyscall.h>
 
 char info[] = "initproc 1\t";
 

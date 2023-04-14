@@ -5,7 +5,7 @@
 
 char dst[32];
 
-extern int64_t copyin(pagetable_t pagetable, char *dst, uint64_t srcva,
+extern int64_t copyin(pagetable_t pagetable, char *dst, uintptr_t srcva,
 		      uint64_t len);
 
 uint64_t fileswrite(int32_t n)
@@ -18,7 +18,7 @@ uint64_t fileswrite(int32_t n)
 uint64_t sys_write(struct proc *p)
 {
 	// hint: now, temporary output to console directly
-	int64_t n = argufetch(2);
-	copyin(p->pagetable, dst, argufetch(1), n);
+	int64_t n = argufetch(p, 2);
+	copyin(p->pagetable, dst, (uintptr_t)argufetch(p, 1), n);
 	return fileswrite(n);
 }

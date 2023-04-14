@@ -3,8 +3,8 @@
 #include <kstring.h>
 #include <mm/memlay.h>
 #include <platform/riscv.h>
-#include <queue.h>
 #include <sync/spinlock.h>
+#include <sys/ksyscall.h>
 
 
 struct proc *pcbtable[NPROC] = {NULL};
@@ -12,15 +12,13 @@ struct proc idlepcb;
 struct spinlock pcblock[NPROC];
 struct cpu cpus[NCPU];
 
-struct {
-	struct spinlock pid_lock;
-	struct queue_meta qm;
-	int32_t pids_queue_array[NPROC];
-} pids_queue;
+struct pids_queue_t pids_queue;
+struct sleep_queue_t sleep_queue;
 
 struct proc *initproc = NULL;	// init proc
 
 extern char trampoline[];
+extern volatile uint64_t ticks;
 extern void *kalloc();
 extern void usertrapret();
 extern int32_t mappages(pagetable_t pagetable, uintptr_t va, uintptr_t size,
@@ -31,6 +29,8 @@ extern pagetable_t uvmcreate();
 extern void uvmunmap(pagetable_t, uint64_t, uint64_t, int32_t);
 extern void uvmfree(pagetable_t, uint64_t), kfree(void *);
 extern int64_t uvmcopy(pagetable_t old, pagetable_t new, uint64_t sz);
+extern int32_t copyout(pagetable_t pagetable, uintptr_t dstva, char *src,
+		       uint64_t len);
 
 /**
  * @brief Set the proc->name as argument name with the constraint of max length,
@@ -51,7 +51,10 @@ struct cpu *mycpu()
 }
 __always_inline struct proc *myproc()
 {
-	return mycpu()->proc;
+	push_off();
+	struct proc *p = mycpu()->proc;
+	pop_off();
+	return p;
 }
 
 int32_t allocpid()
@@ -154,6 +157,10 @@ found:
 	pcbtable[newpid]->state = TASK_INITING;
 	pcbtable[newpid]->pid = newpid;
 	pcbtable[newpid]->kstack = kstack + PGSIZE;
+
+	INIT_LIST_HEAD(&pcbtable[newpid]->block_list);
+	INIT_LIST_HEAD(&pcbtable[newpid]->wait_list);
+
 	pcbtable[newpid]->tf = tf;
 
 	// an empty user page table
@@ -182,8 +189,6 @@ found:
 // a fork child's 1st scheduling by scheduler() will swtch to forkret
 void forkret()
 {
-	// note: still holding p->lock from scheduler
-	release(&pcblock[myproc()->pid]);
 	usertrapret();
 }
 
@@ -208,6 +213,8 @@ void proc_init()
 		initlock(plk, "proc");
 	}
 	initidleproc();
+	initlock(&sleep_queue.sleep_lock, "sleeplock");
+	priority_queue_init(&sleep_queue.pqm, NPROC, &sleep_queue.sleepqueue);
 }
 
 // each hart will hold its local scheduler context
@@ -221,6 +228,7 @@ void scheduler()
 			p = pcbtable[i];
 			if (p == NULL)
 				continue;
+			tracef("idle process running");
 			acquire(&pcblock[p->pid]);
 			if (p->state == TASK_READY) {
 				tracef("switch to: %d\n", p->pid);
@@ -232,27 +240,26 @@ void scheduler()
 				 */
 				c->proc = p;
 				p->state = TASK_RUNNING;
+				release(&pcblock[p->pid]);
 				interrupt_off();
 				switch_to(&c->ctxt, &p->ctxt);
-				interrupt_on();
 				/**
 				 * @brief process is done running for now since
 				 * timer interrupt
 				 */
 				c->proc = pcbtable[0];
-			}
-			release(&pcblock[p->pid]);
+				interrupt_on();
+			} else
+				release(&pcblock[p->pid]);
 		}
 	}
 }
 
-// switch to kernel thread scheduler and must hold p->lock when entering here
+// switch to kernel thread scheduler
 void sched()
 {
 	struct proc *p = myproc();
-	assert(holding(&pcblock[p->pid]));
 
-	p->state = TASK_READY;
 	interrupt_off();
 	switch_to(&p->ctxt, &mycpu()->ctxt);
 	interrupt_on();
@@ -265,8 +272,9 @@ void yield()
 {
 	struct proc *p = myproc();
 	acquire(&pcblock[p->pid]);
-	sched();
+	p->state = TASK_READY;
 	release(&pcblock[p->pid]);
+	sched();
 }
 
 /**
@@ -286,9 +294,10 @@ void proc_block(struct proc *p, struct list_node *list, enum proc_state state)
 	list_add_front(&p->block_list, list);
 	p->state = state;
 	if (myproc() == p) {
+		release(&pcblock[p->pid]);
 		sched();
-	}
-	release(&pcblock[p->pid]);
+	} else
+		release(&pcblock[p->pid]);
 }
 
 /**
@@ -305,60 +314,21 @@ void proc_unblock(struct proc *p)
 	release(&pcblock[p->pid]);
 }
 
-/**
- * @brief atomically release lock and sleep on sleeplist.
- * reacquires lock when awakened.
- * @param sleeplist
- * @param lk
- */
-void sleep(void *sleeplist, struct spinlock *lk)
+void time_wakeup()
 {
-	struct proc *p = myproc();
-
-	/**
-	 * @brief must acquire p->lock in order to change p->state and then call
-	 * sched. once we hold p->lock, we can be guaranteed that we won't miss
-	 * any wakeup (wakeup locks p->lock), so it's okay to release lk.
-	 */
-	acquire(&pcblock[p->pid]);
-	release(lk);
-
-	// go to sleep
-	p->sleeplist = sleeplist;
-	p->state = TASK_BLOCK;
-
-	sched();
-
-	// tidy up
-	p->sleeplist = NULL;
-
-	// reacquire original lock
-	release(&pcblock[p->pid]);
-	acquire(lk);
-}
-
-/**
- * @brief wake up all processes sleeping on sleeplist.
- * must be called without any p->lock
- * @param sleeplist the sleep list that process waiting on
- */
-void wakeup(void *sleeplist)
-{
-	int32_t i = 1;
-	for (struct proc *p = pcbtable[i]; i < NPROC; i++) {
-		p = pcbtable[i];
-		if (p != NULL and p != myproc()) {   // can not wakeup self
-			acquire(&pcblock[p->pid]);
-			if (p->state == TASK_BLOCK and
-			    p->sleeplist == sleeplist) {
-				p->state = TASK_READY;
-			}
-			release(&pcblock[p->pid]);
-		}
+	acquire(&sleep_queue.sleep_lock);
+	while (!priority_queue_empty(&sleep_queue.pqm)) {
+		struct pair temppair = priority_queue_top(&sleep_queue.pqm);
+		if (ticks < temppair.key)
+			break;
+		acquire(&pcblock[temppair.value]);
+		assert(pcbtable[temppair.value]->state == TASK_BLOCK);
+		pcbtable[temppair.value]->state = TASK_READY;
+		release(&pcblock[temppair.value]);
+		priority_queue_pop(&sleep_queue.pqm);
 	}
+	release(&sleep_queue.sleep_lock);
 }
-
-void time_wakeup() {}
 
 int8_t killed(struct proc *p)
 {
@@ -377,11 +347,13 @@ int8_t killed(struct proc *p)
  */
 uint32_t initcode[] = {
 	0xff010113, 0x00113423, 0x00813023, 0x01010413, 0x008000ef, 0x0000006f,
-	0xfe010113, 0x00113c23, 0x00813823, 0x02010413, 0xfe042623, 0x01c0006f,
-	0x12c000ef, 0x00050793, 0x02078263, 0xfec42783, 0x0017879b, 0xfef42623,
-	0xfec42783, 0x0007871b, 0x00600793, 0xfce7dee3, 0x0080006f, 0x00000013,
-	0x130000ef, 0x00050793, 0x0ff7f793, 0x0307879b, 0x0ff7f713, 0x21000793,
-	0x00e784a3, 0x00b00593, 0x21000513, 0x140000ef, 0xff5ff06f, 0xf9010113,
+	0xfe010113, 0x00113c23, 0x00813823, 0x02010413, 0x164000ef, 0x00050793,
+	0xfef42623, 0xfec42783, 0x0007879b, 0x02079463, 0x01100593, 0x31000513,
+	0x1ac000ef, 0x3e800513, 0x1ec000ef, 0x01600593, 0x32800513, 0x198000ef,
+	0x03c0006f, 0xfe840713, 0xfec42783, 0x00070593, 0x00078513, 0x20c000ef,
+	0xfe842783, 0x0ff7f793, 0x0307879b, 0x0ff7f713, 0x34000793, 0x02e78023,
+	0x02200593, 0x34000513, 0x15c000ef, 0x00900513, 0x22c000ef, 0x00000013,
+	0x00078513, 0x01813083, 0x01013403, 0x02010113, 0x00008067, 0xf9010113,
 	0x02813423, 0x03010413, 0xfca43c23, 0x00b43423, 0x00c43823, 0x00d43c23,
 	0x02e43023, 0x02f43423, 0x03043823, 0x03143c23, 0x04040793, 0xfcf43823,
 	0xfd043783, 0xfc878793, 0xfef43423, 0xfe843783, 0x00878713, 0xfee43423,
@@ -397,8 +369,20 @@ uint32_t initcode[] = {
 	0x00078513, 0x00813083, 0x00013403, 0x01010113, 0x00008067, 0xfe010113,
 	0x00113c23, 0x00813823, 0x02010413, 0xfea43423, 0xfeb43023, 0xfe043683,
 	0xfe843603, 0x00000593, 0x01000513, 0xea1ff0ef, 0x00050793, 0x0007879b,
-	0x00078513, 0x01813083, 0x01013403, 0x02010113, 0x00008067, 0x00000000,
-	0x74696e69, 0x636f7270, 0x00093120, 0x00000000,
+	0x00078513, 0x01813083, 0x01013403, 0x02010113, 0x00008067, 0xfe010113,
+	0x00113c23, 0x00813823, 0x02010413, 0x00050793, 0xfef42623, 0xfec42783,
+	0x00078593, 0x00d00513, 0xe5dff0ef, 0x00050793, 0x0007879b, 0x00078513,
+	0x01813083, 0x01013403, 0x02010113, 0x00008067, 0xfe010113, 0x00113c23,
+	0x00813823, 0x02010413, 0x00050793, 0xfeb43023, 0xfef42623, 0xfec42783,
+	0xfe043603, 0x00078593, 0x00300513, 0xe11ff0ef, 0x00050793, 0x0007879b,
+	0x00078513, 0x01813083, 0x01013403, 0x02010113, 0x00008067, 0xfe010113,
+	0x00113c23, 0x00813823, 0x02010413, 0x00050793, 0xfef42623, 0xfec42783,
+	0x00078593, 0x00200513, 0xdcdff0ef, 0x00000013, 0x01813083, 0x01013403,
+	0x02010113, 0x00008067, 0x00000000, 0x00000000, 0x6c696863, 0x72702064,
+	0x7320636f, 0x74726174, 0x0000000a, 0x00000000, 0x6c696863, 0x72702064,
+	0x7320636f, 0x7065656c, 0x65766f20, 0x00000a72, 0x65726170, 0x7020746e,
+	0x3a636f72, 0x69686320, 0x6520646c, 0x20746978, 0x74617473, 0x203a7375,
+	0x00000a30, 0x00000000, 0x00000000, 0x00000000,
 };
 
 void user_init(uint32_t priority)
@@ -414,7 +398,7 @@ void user_init(uint32_t priority)
 	p->tf->epc = 0;	      // user code start executing at addr 0x0
 	p->tf->sp = PGSIZE;   // user stack pointer
 	set_proc_name(initproc, "initcode");
-	p->parent = NULL;
+	p->parentpid = 0;
 	p->state = TASK_READY;
 
 	p->ticks = p->priority = priority;
@@ -445,14 +429,16 @@ int64_t do_fork()
 
 	set_proc_name(childproc, parentproc->name);
 
-	childproc->parent = parentproc;
+	childproc->parentpid = parentproc->pid;
 	childproc->state = TASK_READY;
 
 	childproc->jiffies = parentproc->jiffies;
 	childproc->ticks = parentproc->ticks;
 	childproc->priority = parentproc->priority;
+
 	release(&pcblock[childproc->pid]);
-	assert(myproc()->magic == UNIKS_MAGIC);
+	assert(parentproc->magic == UNIKS_MAGIC);
+
 	return childproc->pid;
 }
 
@@ -460,4 +446,47 @@ int64_t do_exec()
 {
 	kprintf("do exec syscall\n");
 	return 0;
+}
+
+/**
+ * @brief Exit the current process. Does not return. An exited process remains
+ * in the zombie state until its parent calls waitpid().
+ * @param status process exit status
+ */
+void do_exit(int32_t status)
+{
+	struct proc *p = myproc();
+
+	acquire(&pcblock[p->pid]);
+
+	p->exitstate = status;
+	p->state = TASK_ZOMBIE;
+
+	assert(p->magic == UNIKS_MAGIC);
+	release(&pcblock[p->pid]);
+
+	/**
+	 * @brief when wake the process which is waiting for myproc() to exit,
+	 * there are no need to acquire myproc() own process lock
+	 */
+	while (!list_empty(&p->wait_list)) {
+		struct proc *waitp =
+			element_entry(list_next_then_del(&p->wait_list),
+				      struct proc, block_list);
+		assert(waitp->state == TASK_BLOCK);
+		acquire(&pcblock[waitp->pid]);
+		waitp->state = TASK_READY;
+		int64_t *status_addr = (int64_t *)argufetch(waitp, 1);
+		copyout(waitp->pagetable, (uintptr_t)status_addr,
+			(char *)&pcbtable[p->pid]->exitstate,
+			sizeof(pcbtable[p->pid]->exitstate));
+		release(&pcblock[waitp->pid]);
+	}
+
+	/**
+	 * @brief jump to kernel thread scheduler, and will never return or
+	 * incur a panic at line +3
+	 */
+	sched();
+	panic("zombie exit!");
 }

@@ -5,81 +5,40 @@
 #include <defs.h>
 #include <kassert.h>
 
+struct pair {
+	int64_t key;
+	int64_t value;
+};
+
 /**
  * @brief a priority queue of int32_t type
  */
 struct priority_queue_meta {
-	uint32_t priority_queue_size;
-	uint32_t priority_queue_capacity;
-	int32_t *priority_queue_heap;
+	int64_t priority_queue_size;
+	int64_t priority_queue_capacity;
+	struct pair *priority_queue_heap;
 };
 
-void priority_queue_init(struct priority_queue_meta *pq, uint32_t capacity,
-			 int32_t *heap_addr)
-{
-	assert(capacity > 0);
-	pq->priority_queue_size = 0;
-	pq->priority_queue_capacity = capacity;
-	pq->priority_queue_heap = heap_addr;
-}
 
-int32_t priority_queue_empty(struct priority_queue_meta *pq)
-{
-	return pq->priority_queue_size == 0;
-}
+void priority_queue_init(struct priority_queue_meta *pq, int64_t capacity,
+			 void *heap_addr);
 
-int32_t priority_queue_full(struct priority_queue_meta *pq)
-{
-	return pq->priority_queue_size == pq->priority_queue_capacity;
-}
+int32_t priority_queue_empty(struct priority_queue_meta *pq);
 
-void priority_queue_push(struct priority_queue_meta *pq, int32_t push_data)
-{
-	assert(pq->priority_queue_size < pq->priority_queue_capacity);
-	pq->priority_queue_size++;
-	int32_t now = pq->priority_queue_size;
-	while (now != 1) {
-		if (push_data < pq->priority_queue_heap[now >> 1]) {
-			pq->priority_queue_heap[now] =
-				pq->priority_queue_heap[now >> 1];
-			now >>= 1;
-		} else
-			break;
-	}
-	pq->priority_queue_heap[now] = push_data;
-}
+int32_t priority_queue_full(struct priority_queue_meta *pq);
+
+int32_t less_than_pair(struct pair *o1, struct pair *o2);
+
+void priority_queue_push(struct priority_queue_meta *pq, void *push_data);
 
 /**
  * @brief if the priority queue is empty, this function will perform a ub
  *
  * @param pq
- * @return int32_t
+ * @return struct pair
  */
-int32_t priority_queue_top(struct priority_queue_meta *pq)
-{
-	return pq->priority_queue_heap[1];
-}
+struct pair priority_queue_top(struct priority_queue_meta *pq);
 
-void priority_queue_pop(struct priority_queue_meta *pq)
-{
-	assert(!priority_queue_empty(pq));
-	int32_t value = pq->priority_queue_heap[pq->priority_queue_size];
-	pq->priority_queue_size--;
-	int32_t child = 2;
-	while (child <= pq->priority_queue_size) {
-		if (child < pq->priority_queue_size and
-		    pq->priority_queue_heap[child + 1] <
-			    pq->priority_queue_heap[child])
-			child++;
-		if (pq->priority_queue_heap[child] < value)
-			pq->priority_queue_heap[child >> 1] =
-				pq->priority_queue_heap[child];
-		else
-			break;
-		child <<= 1;
-	}
-	pq->priority_queue_heap[child >> 1] = value;
-}
-
+void priority_queue_pop(struct priority_queue_meta *pq);
 
 #endif /* !__PRIORITY_QUEUE_H__ */

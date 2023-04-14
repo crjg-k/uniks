@@ -107,25 +107,25 @@
 		__tmp; \
 	})
 // enable device interrupts
-static __always_inline void interrupt_on()
+__always_inline static void interrupt_on()
 {
 	set_csr(sstatus, SSTATUS_SIE);
 }
 
 // disable device interrupts
-static __always_inline void interrupt_off()
+__always_inline static void interrupt_off()
 {
 	clear_csr(sstatus, SSTATUS_SIE);
 }
 
 // are device interrupts enabled?
-static __always_inline uint64_t interrupt_get()
+__always_inline static uint64_t interrupt_get()
 {
 	return read_csr(sstatus);
 }
 
 // set device interrupts enabled status to a specific value
-static __always_inline void interrupt_set(uint64_t val)
+__always_inline static void interrupt_set(uint64_t val)
 {
 	write_csr(sstatus, val);
 }

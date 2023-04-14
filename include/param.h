@@ -11,8 +11,8 @@
 #define NBUF	      (MAXOPBLOCKS * 3)	  // size of disk block cache
 #define NINODE	      64		  // max number of active inodes
 #define NFILE	      255   // max number of opening files in system
-#define TIMESPERSEC   100
-#define CPUFREQ	      10000000
+#define TIMESPERSEC   1000
+#define CPUFREQ	      10000000	 // the frequency of qemu is 10MHz
 
 #define UNIKS_MAGIC 0x114514
 

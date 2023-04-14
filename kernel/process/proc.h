@@ -4,6 +4,8 @@
 #include <defs.h>
 #include <list.h>
 #include <param.h>
+#include <priority_queue.h>
+#include <queue.h>
 #include <sync/spinlock.h>
 
 
@@ -78,17 +80,17 @@ struct proc {
 	// this->lock must be held when using these below:
 	int32_t pid;		 // process ID
 	enum proc_state state;	 // process state
-	void *sleeplist;	 // if non-zero, sleeping on sleeplist
 	int8_t killed;		 // if non-zero, have been killed
 	int32_t exitstate;	 // exit status to be returned to parent's wait
 	uint32_t priority;	 // process priority
 	uint32_t ticks;		 // remainder time slices
 	uint32_t jiffies;	 // global time slice when last execution
 	struct list_node block_list;   // block list of this process
+	struct list_node wait_list;    // who wait for this process to exit
 
-	uintptr_t kstack;   // process kernel stack, always point to kstack top
-	uint64_t sz;	    // size of process memory (bytes)
-	struct proc *parent;	 // parent process
+	uintptr_t kstack;    // process kernel stack, always point to kstack top
+	uint64_t sz;	     // size of process memory (bytes)
+	int32_t parentpid;   // parent process
 	pagetable_t pagetable;	 // user page table
 	struct context ctxt;	 // switch here to run process
 	/**
@@ -126,7 +128,20 @@ struct proc {
 struct cpu {
 	struct proc *proc;     // The process running on this cpu, or null
 	struct context ctxt;   // swtch() here to enter scheduler()
-	int64_t preintstat;    // pre-interrupt enabled status before push_off()
+	uint32_t repeat;       // reacquire lock times per-cpu
+	uint64_t preintstat;   // pre-interrupt enabled status before push_off()
+};
+
+struct pids_queue_t {
+	struct spinlock pid_lock;
+	struct queue_meta qm;
+	int32_t pids_queue_array[NPROC];
+};
+
+struct sleep_queue_t {
+	struct spinlock sleep_lock;
+	struct priority_queue_meta pqm;
+	struct pair sleepqueue[NPROC];
 };
 
 extern struct proc *pcbtable[];
@@ -138,8 +153,6 @@ void sched();
 void proc_init();
 void user_init(uint32_t priority);
 void yield();
-void sleep(void *sleeplist, struct spinlock *lk);
-void wakeup(void *sleeplist);
 void time_wakeup();
 int8_t killed(struct proc *);
 struct cpu *mycpu();
@@ -147,8 +160,10 @@ struct proc *myproc();
 void proc_block(struct proc *p, struct list_node *list, enum proc_state state);
 void proc_unblock(struct proc *p);
 
+
 // process relative syscall
 int64_t do_fork();
 int64_t do_exec();
+void do_exit(int32_t status);
 
 #endif /* !__KERNEL_PROCESS_PROC_H__ */

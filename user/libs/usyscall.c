@@ -1,5 +1,4 @@
 #include <stdarg.h>
-#include <ulib.h>
 #include <usyscall.h>
 
 
@@ -38,4 +37,16 @@ int getpid()
 int write(char *buf, long len)
 {
 	return syscall(SYS_write, 0, buf, len);
+}
+
+int msleep(int msec){
+	return syscall(SYS_msleep, msec);
+}
+
+int waitpid(int pid, int *status){
+	return syscall(SYS_waitpid, pid, status);
+}
+
+void exit(int status){
+	syscall(SYS_exit, status);
 }

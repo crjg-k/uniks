@@ -1,17 +1,11 @@
 #ifndef __USER_INCLUDE_ULIB_H__
 #define __USER_INCLUDE_ULIB_H__
 
-#include "usyscall.h"
+#define NULL (void *)0
 
 
 // basic C enviroment
 void _start();
-
-
-// system calls
-int fork();
-int write(char *buf, long len);
-int getpid();
 
 
 #endif /* !__USER_INCLUDE_ULIB_H__ */

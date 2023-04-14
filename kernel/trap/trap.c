@@ -10,6 +10,8 @@
 extern void kerneltrapvec(), scheduler(), usertrap_handler(), syscall(),
 	yield(), do_cow(struct proc *p, uint64_t va);
 extern char trampoline[], usertrapvec[], userret[];
+extern volatile uint64_t ticks;
+
 void trap_init()
 {
 	write_csr(stvec, &kerneltrapvec);
@@ -122,6 +124,7 @@ void usertrapret()
 	// note: the 2nd operand should change according to if using OpenSBI
 	uint64_t trampoline_usertrapret =
 		TRAMPOLINE + (uint64_t)(userret - KERNEL_BASE_ADDR) % PGSIZE;
+	p->jiffies = ticks;
 	// jmp to userret in trampoline.S
 	((void (*)(uint64_t))trampoline_usertrapret)(satp);
 }

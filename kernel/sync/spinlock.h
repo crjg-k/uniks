@@ -9,8 +9,7 @@
  * @brief mutual exclusion lock, could reentry by same hart
  */
 struct spinlock {
-	uint32_t locked;
-	uint32_t repeat;   // reentry times
+	volatile uint32_t locked;
 
 // for debugging:
 #if defined(LOG_LEVEL_DEBUG)
@@ -20,8 +19,14 @@ struct spinlock {
 };
 
 void initlock(struct spinlock *lk, char *name);
+int64_t holding(struct spinlock *lk);
+
+void push_off();
+void pop_off();
+
 void do_acquire(struct spinlock *lk);
 void do_release(struct spinlock *lk);
+
 #if defined(LOG_LEVEL_DEBUG)
 	#define acquire(lk) \
 		({ \
@@ -45,6 +50,5 @@ void do_release(struct spinlock *lk);
 	#define release(lk) ({ do_release(lk); })
 #endif
 
-int64_t holding(struct spinlock *lk);
 
 #endif /* !__KERNEL_SYNC_SPINLOCK_H__ */

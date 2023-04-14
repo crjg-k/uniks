@@ -8,6 +8,7 @@ user/bin
 user/*.*sm
 user/absm
 
+*-log
 *.txt
 
 *.img

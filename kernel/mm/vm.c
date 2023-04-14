@@ -284,7 +284,7 @@ int32_t do_cow(struct proc *p, uint64_t va)
 	// note: modification of the page table
 	invalidate(va);
 	mem_map[PA2ARRAYINDEX(pa)]--;
-	assert(myproc()->magic == UNIKS_MAGIC);
+	assert(p->magic == UNIKS_MAGIC);
 	return 0;
 err:
 	return -1;
@@ -292,15 +292,23 @@ err:
 
 /* transmit data between user space and kernel space */
 
-// copy data from user to kernel, return 0 on success, -1 on error
-int64_t copyin(pagetable_t pagetable, char *dst, uint64_t srcva, uint64_t len)
+/**
+ * @brief Copy from kernel to user. Copy len bytes to dst from virtual address
+ * srcva in a given page table. And return 0 on success, -1 on error
+ * @param pagetable
+ * @param dst
+ * @param srcva
+ * @param len
+ * @return int64_t
+ */
+int64_t copyin(pagetable_t pagetable, char *dst, uintptr_t srcva, uint64_t len)
 {
 	uint64_t n, va0, pa0;
 
 	while (len > 0) {
 		va0 = PGROUNDDOWN(srcva);
 		pa0 = walkaddr(pagetable, va0);
-		if (!pa0)
+		if (pa0 == 0)
 			return -1;
 		n = PGSIZE - (srcva - va0);
 		if (n > len)
@@ -310,6 +318,36 @@ int64_t copyin(pagetable_t pagetable, char *dst, uint64_t srcva, uint64_t len)
 		len -= n;
 		dst += n;
 		srcva = va0 + PGSIZE;
+	}
+	return 0;
+}
+
+/**
+ * @brief Copy from kernel to user. Copy len bytes from src to virtual address
+ * dstva in a given page table. And return 0 on success, -1 on error.
+ * @param pagetable
+ * @param dstva
+ * @param src
+ * @param len
+ * @return int32_t
+ */
+int32_t copyout(pagetable_t pagetable, uintptr_t dstva, char *src, uint64_t len)
+{
+	uint64_t n, va0, pa0;
+
+	while (len > 0) {
+		va0 = PGROUNDDOWN(dstva);
+		pa0 = walkaddr(pagetable, va0);
+		if (pa0 == 0)
+			return -1;
+		n = PGSIZE - (dstva - va0);
+		if (n > len)
+			n = len;
+		memcpy((void *)(pa0 + (dstva - va0)), src, n);
+
+		len -= n;
+		src += n;
+		dstva = va0 + PGSIZE;
 	}
 	return 0;
 }

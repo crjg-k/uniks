@@ -70,4 +70,18 @@ __always_inline struct list_node *list_prev(struct list_node *listelm)
 	return listelm->prev;
 }
 
+__always_inline struct list_node *list_next_then_del(struct list_node *listelm)
+{
+	struct list_node *node=listelm->next;
+	list_del(node);
+	return node;
+}
+
+__always_inline struct list_node *list_prev_then_del(struct list_node *listelm)
+{
+	struct list_node *node=listelm->prev;
+	list_del(node);
+	return node;
+}
+
 #endif /* !__LIST_H__ */
