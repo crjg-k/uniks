@@ -1,22 +1,24 @@
 #include <ulib.h>
 #include <usyscall.h>
 
-char info1[] = "child proc start\n";
-char info2[] = "child proc sleep over\n";
-char info3[] = "parent proc: child exit status: 0\n";
+char info[] = "parent proc: child 0 exit with status: 0\n";
 
 
 int main()
 {
-	int id, status;
-	if ((id = fork()) == 0) {
-		write(info1, 17);
-		msleep(1000);
-		write(info2, 22);
-	} else {
-		waitpid(id, &status);
-		info3[32] = status + '0';
-		write(info3, 34);
+	int status;
+#define NPROC 8
+	for (int i = 1; i <= NPROC; i++) {
+		if (fork() == 0) {
+			msleep(i * 1000);
+			exit(i + 1);
+		}
 	}
-	exit(9);
+	for (int i = 1; i <= NPROC; i++) {
+		waitpid(i + 1, &status);
+		info[19] = i + 1 + '0';
+		info[39] = status + '0';
+		write(info, 41);
+	}
+	exit(0);
 }

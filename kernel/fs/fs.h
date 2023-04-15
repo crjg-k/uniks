@@ -8,8 +8,8 @@
 #define BLKSIZE	 1024	// block size
 
 
-#include <defs.h>
 #include <sync/spinlock.h>
+#include <uniks/defs.h>
 
 
 // note: the content of inode is different due to locating at secondary storage

@@ -1,9 +1,9 @@
 #include "mutex.h"
-#include <kassert.h>
 #include <process/proc.h>
+#include <uniks/kassert.h>
 
 
-void mutex_init(struct mutex *m, char *name)
+void mutex_init(struct mutex_t *m, char *name)
 {
 	initlock(&m->spinlk, "mutex");
 	m->locked = 0;
@@ -14,7 +14,7 @@ void mutex_init(struct mutex *m, char *name)
 #endif
 }
 
-int32_t mutex_holding(struct mutex *m)
+int32_t mutex_holding(struct mutex_t *m)
 {
 	int32_t res;
 
@@ -30,7 +30,7 @@ int32_t mutex_holding(struct mutex *m)
 	return res;
 }
 
-void mutex_acquire(struct mutex *m)
+void mutex_acquire(struct mutex_t *m)
 {
 	acquire(&m->spinlk);
 	while (mutex_holding(m)) {
@@ -46,7 +46,7 @@ void mutex_acquire(struct mutex *m)
 	release(&m->spinlk);
 }
 
-void mutex_release(struct mutex *m)
+void mutex_release(struct mutex_t *m)
 {
 	acquire(&m->spinlk);
 	assert(mutex_holding(m));   // ensure that this mutex had been held
@@ -56,16 +56,12 @@ void mutex_release(struct mutex *m)
 #endif
 	while (!list_empty(&m->waiters)) {
 		// waiting queue has item(s), need to wakeup other processes
-		/**
-		 * @brief search from back to front to ensure fair: the last is
-		 * the first comed
-		 */
-		struct proc *p = element_entry(list_prev_then_del(&m->waiters),
-					       struct proc, block_list);
-		assert(p->state == TASK_BLOCK);
-		proc_unblock(p);
-		release(&m->spinlk);
+		struct proc_t *p = proc_unblock(&m->waiters);
+
+		release(&pcblock[p->pid]);
 	}
+	assert(list_empty(&m->waiters));
+
 	release(&m->spinlk);
 	// give other processes a chance to acquire this lock
 	yield();

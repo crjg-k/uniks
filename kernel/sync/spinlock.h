@@ -1,14 +1,12 @@
 #ifndef __KERNEL_SYNC_SPINLOCK_H__
 #define __KERNEL_SYNC_SPINLOCK_H__
 
-#include <defs.h>
-#include <log.h>
+#include <uniks/defs.h>
+#include <uniks/log.h>
 
 
-/**
- * @brief mutual exclusion lock, could reentry by same hart
- */
-struct spinlock {
+// mutual exclusion lock, could reentry by same hart
+struct spinlock_t {
 	volatile uint32_t locked;
 
 // for debugging:
@@ -18,20 +16,20 @@ struct spinlock {
 #endif
 };
 
-void initlock(struct spinlock *lk, char *name);
-int64_t holding(struct spinlock *lk);
+void initlock(struct spinlock_t *lk, char *name);
+int64_t holding(struct spinlock_t *lk);
 
 void push_off();
 void pop_off();
 
-void do_acquire(struct spinlock *lk);
-void do_release(struct spinlock *lk);
+void do_acquire(struct spinlock_t *lk);
+void do_release(struct spinlock_t *lk);
 
 #if defined(LOG_LEVEL_DEBUG)
 	#define acquire(lk) \
 		({ \
 			debugf("acquire %s: %s %d", \
-			       ((struct spinlock *)lk)->name, __FILE__, \
+			       ((struct spinlock_t *)lk)->name, __FILE__, \
 			       __LINE__); \
 			do_acquire(lk); \
 		})
@@ -42,7 +40,7 @@ void do_release(struct spinlock *lk);
 	#define release(lk) \
 		({ \
 			debugf("release %s: %s %d", \
-			       ((struct spinlock *)lk)->name, __FILE__, \
+			       ((struct spinlock_t *)lk)->name, __FILE__, \
 			       __LINE__); \
 			do_release(lk); \
 		})

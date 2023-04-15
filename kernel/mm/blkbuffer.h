@@ -1,12 +1,12 @@
-#ifndef __KERNEL_MM_BLKBUFFER_H__
-#define __KERNEL_MM_BLKBUFFER_H__
+#ifndef __KERNEL_MM_blkbuf_tFER_H__
+#define __KERNEL_MM_blkbuf_tFER_H__
 
-#include <defs.h>
 #include <fs/fs.h>
-#include <list.h>
 #include <sync/spinlock.h>
+#include <uniks/defs.h>
+#include <uniks/list.h>
 
-struct blkbuf {
+struct blkbuf_t {
 	int32_t valid;	 // has data been read from disk?
 	int32_t disk;	 // does disk "own" buffer?
 	uint32_t device;
@@ -16,9 +16,9 @@ struct blkbuf {
 	uint32_t refcnt;
 	uint8_t data[BLKSIZE];
 	// LRU cache list
-	struct list_node node;
+	struct list_node_t node;
 };
 
 void buffer_init();
 
-#endif /* !__KERNEL_MM_BLKBUFFER_H__ */
+#endif /* !__KERNEL_MM_blkbuf_tFER_H__ */

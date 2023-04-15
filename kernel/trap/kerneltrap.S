@@ -5,7 +5,7 @@
 	# and the current stack is a kernel stack.
 	#
 
-#include <asm.inc>
+#include <uniks/asm.inc>
 
 .global kerneltrapvec
 .extern kerneltrap_handler

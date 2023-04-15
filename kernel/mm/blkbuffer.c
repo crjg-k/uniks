@@ -1,9 +1,9 @@
 #include "blkbuffer.h"
-#include <param.h>
+#include <uniks/param.h>
 
 
-struct spinlock bufcache_lock;
-struct blkbuf blkbufcache[NBUF];
+struct spinlock_t bufcache_lock;
+struct blkbuf_t blkbufcache[NBUF];
 /**
  * @brief linked list of all buffers, through prev/next.
  * sorted by how recently the buffer was used.
@@ -14,8 +14,8 @@ LIST_HEAD(blkbuffercache_head);
 void buffer_init()
 {
 	initlock(&bufcache_lock, "bufcache");
-	for (struct blkbuf *bb = blkbufcache; bb < blkbufcache + NBUF; bb++) {
-		// todo: initsleeplock
+	for (struct blkbuf_t *bb = blkbufcache; bb < blkbufcache + NBUF; bb++) {
+		// todo: init mutex lock
 		list_add_front(&bb->node, &blkbuffercache_head);
 	}
 }

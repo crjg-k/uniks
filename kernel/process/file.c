@@ -1,10 +1,10 @@
 #include "file.h"
-#include <param.h>
 #include <sync/spinlock.h>
+#include <uniks/param.h>
 
 struct {
-	struct spinlock lock;
-	struct file file[NFILE];
+	struct spinlock_t lock;
+	struct file_t file[NFILE];
 } fcbtable;
 
 void fileinit()

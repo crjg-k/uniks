@@ -9,19 +9,19 @@
  *
  */
 
-#include <defs.h>
 #include <driver/console.h>
 #include <driver/virtio_disk.h>
 #include <fs/fs.h>
-#include <kstdio.h>
-#include <kstring.h>
-#include <log.h>
 #include <mm/blkbuffer.h>
 #include <mm/memlay.h>
 #include <platform/riscv.h>
 #include <process/file.h>
 #include <process/proc.h>
 #include <trap/trap.h>
+#include <uniks/defs.h>
+#include <uniks/kstdio.h>
+#include <uniks/kstring.h>
+#include <uniks/log.h>
 
 extern void phymem_init(), kvminit(), kvmenable(), clock_init();
 char message[] = "uniks boot over!";

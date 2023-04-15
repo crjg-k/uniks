@@ -1,7 +1,7 @@
 #ifndef __KERNEL_PLATFORM_RISCV_H__
 #define __KERNEL_PLATFORM_RISCV_H__
 
-#include <defs.h>
+#include <uniks/defs.h>
 
 #define read_csr(reg) \
 	({ \

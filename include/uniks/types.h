@@ -30,7 +30,7 @@ typedef uint64_t size_t;
 typedef uint64_t uintptr_t;
 
 typedef uint64_t *pagetable_t;
-typedef uint64_t pte_t;	// page table entry
-typedef uint64_t pde_t;	// page directory entry
+typedef uint64_t pte_t;	  // page table entry
+typedef uint64_t pde_t;	  // page directory entry
 
 #endif /* !__TYPES_H__ */

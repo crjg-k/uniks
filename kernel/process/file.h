@@ -2,13 +2,13 @@
 #define __KERNEL_PROCESS_FILE_H__
 
 
-#include <defs.h>
+#include <uniks/defs.h>
 
 #define NDIRECT 12
 
 
 // todo: maybe some fields of this structure could be transformed into union
-struct file {
+struct file_t {
 	enum {
 		FD_NONE,
 		FD_PIPE,
@@ -18,17 +18,17 @@ struct file {
 	int32_t refnum;
 	int8_t re;
 	int8_t we;
-	struct pipe *pipe;   // FD_PIPE
-	struct inode *ip;    // FD_INODE and FD_DEVICE
-	uint32_t off;	     // FD_INODE
-	int16_t major;	     // FD_DEVICE
+	struct pipe_t *pipe;   // FD_PIPE
+	struct inode_t *ip;    // FD_INODE and FD_DEVICE
+	uint32_t off;	       // FD_INODE
+	int16_t major;	       // FD_DEVICE
 };
 
 // note: the content of inode is different due to locating at secondary storage
 // note: or main memory
 
 // in-memory copy of an inode
-struct inode {
+struct inode_t {
 	uint64_t valid;	  // inode has been read from disk?
 	uint64_t ref;	  // reference count
 	uint32_t device;

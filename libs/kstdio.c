@@ -9,20 +9,15 @@
  *
  */
 
-#include <defs.h>
 #include <driver/console.h>
-#include <kstdio.h>
+#include <uniks/defs.h>
+#include <uniks/kstdio.h>
 
 
 static char digits[] = "0123456789abcdef";
-// struct printflock prf;
 
 
-void printfinit()
-{
-	// initlock(&prf.lock, "kprintf");
-	// prf.locking = 1;
-}
+void printfinit() {}
 
 char getchar()
 {
@@ -120,10 +115,6 @@ void kprintf(const char *fmt, ...)
 {
 	va_list ap;
 	va_start(ap, fmt);
-	// if (prf.locking)
-	// 	acquire(&prf.lock);
 	vkprintf(fmt, ap);
-	// if (prf.locking)
-	// 	release(&prf.lock);
 	va_end(ap);
 }

@@ -1,18 +1,18 @@
 #include "memlay.h"
 #include "mmu.h"
-#include <defs.h>
-#include <kassert.h>
-#include <kstring.h>
-#include <param.h>
 #include <platform/riscv.h>
 #include <process/proc.h>
+#include <uniks/defs.h>
+#include <uniks/kassert.h>
+#include <uniks/kstring.h>
+#include <uniks/param.h>
 
 pagetable_t kernel_pagetable;
 
 extern char trampoline[];
 extern int32_t mem_map[];
-extern void *kalloc();
-extern void kfree(void *);
+extern void *phymem_alloc_page();
+extern void phymem_free_page(void *);
 
 void kvmenable()
 {
@@ -42,7 +42,7 @@ pte_t *walk(pagetable_t pagetable, uint64_t va, int32_t alloc)
 		if (*pte & PTE_V) {
 			pagetable = (pagetable_t)PTE2PA(*pte);
 		} else {   // this page is not valid
-			if (!alloc or (pagetable = (pde_t *)kalloc()) == 0)
+			if (!alloc or (pagetable = (pde_t *)phymem_alloc_page()) == 0)
 				return NULL;
 			memset(pagetable, 0, PGSIZE);
 			*pte = PA2PTE(pagetable) | PTE_V;
@@ -88,7 +88,7 @@ int32_t mappages(pagetable_t pagetable, uintptr_t va, uintptr_t size,
 static pagetable_t kvmmake()
 {
 	pagetable_t kpgtbl;
-	kpgtbl = (pagetable_t)kalloc();
+	kpgtbl = (pagetable_t)phymem_alloc_page();
 	memset(kpgtbl, 0, PGSIZE);
 	// uart registers
 	assert(mappages(kpgtbl, UART0, PGSIZE, UART0, PTE_R | PTE_W, 0) != -1);
@@ -122,7 +122,7 @@ void kvminit()
 void uvmfirst(pagetable_t pagetable, uint32_t *src, uint32_t sz)
 {
 	assert(sz < PGSIZE);
-	char *mem = kalloc();
+	char *mem = phymem_alloc_page();
 	memset(mem, 0, PGSIZE);
 	mappages(pagetable, 0, PGSIZE, (uint64_t)mem,
 		 PTE_W | PTE_R | PTE_X | PTE_U, 1);
@@ -133,7 +133,7 @@ void uvmfirst(pagetable_t pagetable, uint32_t *src, uint32_t sz)
 pagetable_t uvmcreate()
 {
 	pagetable_t pagetable;
-	pagetable = (pagetable_t)kalloc();
+	pagetable = (pagetable_t)phymem_alloc_page();
 	if (pagetable == 0)
 		return 0;
 	memset(pagetable, 0, PGSIZE);
@@ -157,7 +157,7 @@ void freewalk(pagetable_t pagetable)
 		freewalk((pagetable_t)child);
 		pagetable[i] = 0;
 	}
-	kfree((void *)pagetable);
+	phymem_free_page((void *)pagetable);
 }
 
 /**
@@ -181,7 +181,7 @@ void uvmunmap(pagetable_t pagetable, uint64_t va, uint64_t npages,
 		assert(PTE_FLAGS(*pte) != PTE_V);   // assert it is a leaf
 		if (do_free) {
 			uint64_t pa = PTE2PA(*pte);
-			kfree((void *)pa);
+			phymem_free_page((void *)pa);
 		}
 		*pte = 0;   // do unmap operation by clear valid flag
 	}
@@ -243,11 +243,11 @@ int64_t uvmcopy(pagetable_t old, pagetable_t new, uint64_t sz)
 		assert((*pte & PTE_V));
 		pa = PTE2PA(*pte);
 		flags = PTE_FLAGS(*pte);
-		if ((mem = kalloc()) == 0)
+		if ((mem = phymem_alloc_page()) == 0)
 			goto err;
 		memcpy(mem, (char *)pa, PGSIZE);
 		if (mappages(new, i, PGSIZE, (uint64_t)mem, flags, 0) != 0) {
-			kfree(mem);
+			phymem_free_page(mem);
 			goto err;
 		}
 	}
@@ -259,7 +259,7 @@ err:
 	return -1;
 }
 
-int32_t do_cow(struct proc *p, uint64_t va)
+int32_t do_cow(struct proc_t *p, uint64_t va)
 {
 	pte_t *pte = walk(p->pagetable, va, 0);
 	assert(pte != NULL);
@@ -275,7 +275,7 @@ int32_t do_cow(struct proc *p, uint64_t va)
 	}
 	// else duplicate
 	char *mem;
-	if ((mem = kalloc()) == 0)
+	if ((mem = phymem_alloc_page()) == 0)
 		goto err;
 	memcpy(mem, (char *)pa, PGSIZE);
 	register uint64_t perm = *pte & 0xff;
@@ -290,7 +290,8 @@ err:
 	return -1;
 }
 
-/* transmit data between user space and kernel space */
+
+/* === transmit data between user space and kernel space === */
 
 /**
  * @brief Copy from kernel to user. Copy len bytes to dst from virtual address

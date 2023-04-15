@@ -1,8 +1,8 @@
 #ifndef __KASSERT_H__
 #define __KASSERT_H__
 
-#include <defs.h>
-#include <log.h>
+#include <uniks/defs.h>
+#include <uniks/log.h>
 
 #define assert(_Expression) \
 	(void)((!!(_Expression)) or \

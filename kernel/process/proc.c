@@ -1,33 +1,34 @@
 #include "proc.h"
-#include <kassert.h>
-#include <kstring.h>
 #include <mm/memlay.h>
 #include <platform/riscv.h>
 #include <sync/spinlock.h>
 #include <sys/ksyscall.h>
+#include <uniks/kassert.h>
+#include <uniks/kstring.h>
+#include <uniks/list.h>
 
 
-struct proc *pcbtable[NPROC] = {NULL};
-struct proc idlepcb;
-struct spinlock pcblock[NPROC];
-struct cpu cpus[NCPU];
+struct proc_t *pcbtable[NPROC] = {NULL};
+struct proc_t idlepcb;
+struct spinlock_t pcblock[NPROC];
+struct cpu_t cpus[NCPU];
 
 struct pids_queue_t pids_queue;
 struct sleep_queue_t sleep_queue;
 
-struct proc *initproc = NULL;	// init proc
+struct proc_t *initproc = NULL;	  // init proc
 
 extern char trampoline[];
 extern volatile uint64_t ticks;
-extern void *kalloc();
+extern void *phymem_alloc_page();
 extern void usertrapret();
 extern int32_t mappages(pagetable_t pagetable, uintptr_t va, uintptr_t size,
 			uintptr_t pa, int32_t perm, int8_t recordref);
-extern void switch_to(struct context *, struct context *);
+extern void switch_to(struct context_t *, struct context_t *);
 extern void uvmfirst(pagetable_t, uint32_t *, uint32_t);
 extern pagetable_t uvmcreate();
 extern void uvmunmap(pagetable_t, uint64_t, uint64_t, int32_t);
-extern void uvmfree(pagetable_t, uint64_t), kfree(void *);
+extern void uvmfree(pagetable_t, uint64_t), phymem_free_page(void *);
 extern int64_t uvmcopy(pagetable_t old, pagetable_t new, uint64_t sz);
 extern int32_t copyout(pagetable_t pagetable, uintptr_t dstva, char *src,
 		       uint64_t len);
@@ -38,21 +39,21 @@ extern int32_t copyout(pagetable_t pagetable, uintptr_t dstva, char *src,
  * @param proc
  * @param name
  */
-static void set_proc_name(struct proc *proc, const char *name)
+static void set_proc_name(struct proc_t *proc, const char *name)
 {
 	strncpy(proc->name, name, PROC_NAME_LEN);
 }
 
-struct cpu *mycpu()
+struct cpu_t *mycpu()
 {
 	int32_t id = r_mhartid();
-	struct cpu *c = &cpus[id];
+	struct cpu_t *c = &cpus[id];
 	return c;
 }
-__always_inline struct proc *myproc()
+__always_inline struct proc_t *myproc()
 {
 	push_off();
-	struct proc *p = mycpu()->proc;
+	struct proc_t *p = mycpu()->proc;
 	pop_off();
 	return p;
 }
@@ -74,7 +75,7 @@ int32_t allocpid()
  * @param p
  * @return pagetable_t
  */
-pagetable_t proc_makebasicpagetable(struct proc *p)
+pagetable_t proc_makebasicpagetable(struct proc_t *p)
 {
 	pagetable_t pagetable = uvmcreate();
 	if (pagetable == 0)
@@ -120,7 +121,7 @@ static void freeproc(int32_t pid)
 	assert(holding(&pcblock[pid]));
 	if (pcbtable[pid]->pagetable)
 		proc_freepagetable(pcbtable[pid]->pagetable, pcbtable[pid]->sz);
-	kfree(pcbtable[pid]->tf);
+	phymem_free_page(pcbtable[pid]->tf);
 	pcbtable[pid] = NULL;
 }
 
@@ -128,9 +129,9 @@ static void freeproc(int32_t pid)
  * @brief allocate a new process and fill the tiny context and return with
  * holding the lock of the new process if allocate a process successfully
  *
- * @return struct proc *: new allocate process's pcb entry in pcb table
+ * @return struct proc_t *: new allocate process's pcb entry in pcb table
  */
-struct proc *allocproc()
+struct proc_t *allocproc()
 {
 	int32_t newpid = allocpid();
 	if (newpid != -1)
@@ -140,20 +141,21 @@ found:
 	acquire(&pcblock[newpid]);
 	assert(pcbtable[newpid] == NULL);
 
-	struct trapframe *tf;
+	struct trapframe_t *tf;
 	uintptr_t kstack;
 
 	/**
 	 * @brief allocate a kstack page as well as a trapframe page locate at
 	 * the begining of kstack
 	 */
-	if ((tf = kalloc()) == NULL) {
+	if ((tf = phymem_alloc_page()) == NULL) {
 		// if there are no enough memory, failed
 		release(&pcblock[newpid]);
 		return NULL;
 	}
 	kstack = (uintptr_t)tf;
-	pcbtable[newpid] = (struct proc *)(kstack + sizeof(struct trapframe));
+	pcbtable[newpid] =
+		(struct proc_t *)(kstack + sizeof(struct trapframe_t));
 	pcbtable[newpid]->state = TASK_INITING;
 	pcbtable[newpid]->pid = newpid;
 	pcbtable[newpid]->kstack = kstack + PGSIZE;
@@ -209,7 +211,7 @@ void proc_init()
 	queue_init(&pids_queue.qm, NPROC, pids_queue.pids_queue_array);
 	for (int32_t i = 1; i < NPROC; i++)
 		queue_push(&pids_queue.qm, i);
-	for (struct spinlock *plk = pcblock; plk < &pcblock[NPROC]; plk++) {
+	for (struct spinlock_t *plk = pcblock; plk < &pcblock[NPROC]; plk++) {
 		initlock(plk, "proc");
 	}
 	initidleproc();
@@ -220,11 +222,11 @@ void proc_init()
 // each hart will hold its local scheduler context
 void scheduler()
 {
-	struct cpu *c = mycpu();
+	struct cpu_t *c = mycpu();
 	c->proc = pcbtable[0];
 	while (1) {
 		int32_t i = 1;
-		for (struct proc *p; i < NPROC; i++) {
+		for (struct proc_t *p; i < NPROC; i++) {
 			p = pcbtable[i];
 			if (p == NULL)
 				continue;
@@ -258,7 +260,7 @@ void scheduler()
 // switch to kernel thread scheduler
 void sched()
 {
-	struct proc *p = myproc();
+	struct proc_t *p = myproc();
 
 	interrupt_off();
 	switch_to(&p->ctxt, &mycpu()->ctxt);
@@ -270,7 +272,7 @@ void sched()
  */
 void yield()
 {
-	struct proc *p = myproc();
+	struct proc_t *p = myproc();
 	acquire(&pcblock[p->pid]);
 	p->state = TASK_READY;
 	release(&pcblock[p->pid]);
@@ -278,47 +280,44 @@ void yield()
 }
 
 /**
- * @brief make process p blocked and mount it to blocked_list list
- *
+ * @brief Make process p blocked and mount it to wait_list list. Furthermore,
+ * the lock of the wait_list is supposed to be held before call this function.
  * @param p
- * @param list
+ * @param block_list
  * @param state
  */
-void proc_block(struct proc *p, struct list_node *list, enum proc_state state)
+__always_inline void proc_block(struct proc_t *p, struct list_node_t *wait_list,
+				enum proc_state state)
 {
 	acquire(&pcblock[p->pid]);
-	/**
-	 * @brief process can be block only when it hasn't been blocked!
-	 */
-	assert(list_empty(&p->block_list));
-	list_add_front(&p->block_list, list);
+	assert(p->state == TASK_RUNNING or p->state == TASK_READY);
+	list_add_front(&p->block_list, wait_list);
 	p->state = state;
-	if (myproc() == p) {
-		release(&pcblock[p->pid]);
-		sched();
-	} else
-		release(&pcblock[p->pid]);
+	release(&pcblock[p->pid]);
 }
 
 /**
- * @brief unblock process p and remove it from its original block list
- *
- * @param p
+ * @brief Unblock the 1st process that wait on wait_list. Furthermore, this
+ * function will return with holding the lock of the process that it unblocks
+ * just now
+ * @param wait_list
+ * @return struct proc_t*
  */
-void proc_unblock(struct proc *p)
+__always_inline struct proc_t *proc_unblock(struct list_node_t *wait_list)
 {
+	struct list_node_t *next_node = list_next_then_del(wait_list);
+	struct proc_t *p = element_entry(next_node, struct proc_t, block_list);
 	acquire(&pcblock[p->pid]);
-	assert(!list_empty(&p->block_list));
-	list_del(&p->block_list);
+	assert(p->state == TASK_BLOCK);
 	p->state = TASK_READY;
-	release(&pcblock[p->pid]);
+	return p;
 }
 
 void time_wakeup()
 {
 	acquire(&sleep_queue.sleep_lock);
 	while (!priority_queue_empty(&sleep_queue.pqm)) {
-		struct pair temppair = priority_queue_top(&sleep_queue.pqm);
+		struct pair_t temppair = priority_queue_top(&sleep_queue.pqm);
 		if (ticks < temppair.key)
 			break;
 		acquire(&pcblock[temppair.value]);
@@ -330,7 +329,7 @@ void time_wakeup()
 	release(&sleep_queue.sleep_lock);
 }
 
-int8_t killed(struct proc *p)
+int8_t killed(struct proc_t *p)
 {
 	int8_t k;
 
@@ -340,54 +339,59 @@ int8_t killed(struct proc *p)
 	return k;
 }
 
+void recycle_exitedproc() {}
+
 /**
  * @brief a user program that calls fork() then write() which is compiled and
- * assembled from ${cwd}/user/src/forktest.c
+ * assembled from ${cwd}/user/src/forktest.c.
  * hexdata dump command: od user/bin/forktest -t x
  */
 uint32_t initcode[] = {
 	0xff010113, 0x00113423, 0x00813023, 0x01010413, 0x008000ef, 0x0000006f,
-	0xfe010113, 0x00113c23, 0x00813823, 0x02010413, 0x164000ef, 0x00050793,
-	0xfef42623, 0xfec42783, 0x0007879b, 0x02079463, 0x01100593, 0x31000513,
-	0x1ac000ef, 0x3e800513, 0x1ec000ef, 0x01600593, 0x32800513, 0x198000ef,
-	0x03c0006f, 0xfe840713, 0xfec42783, 0x00070593, 0x00078513, 0x20c000ef,
-	0xfe842783, 0x0ff7f793, 0x0307879b, 0x0ff7f713, 0x34000793, 0x02e78023,
-	0x02200593, 0x34000513, 0x15c000ef, 0x00900513, 0x22c000ef, 0x00000013,
-	0x00078513, 0x01813083, 0x01013403, 0x02010113, 0x00008067, 0xf9010113,
-	0x02813423, 0x03010413, 0xfca43c23, 0x00b43423, 0x00c43823, 0x00d43c23,
-	0x02e43023, 0x02f43423, 0x03043823, 0x03143c23, 0x04040793, 0xfcf43823,
-	0xfd043783, 0xfc878793, 0xfef43423, 0xfe843783, 0x00878713, 0xfee43423,
-	0x0007b783, 0x00078513, 0xfe843783, 0x00878713, 0xfee43423, 0x0007b783,
-	0x00078593, 0xfe843783, 0x00878713, 0xfee43423, 0x0007b783, 0x00078613,
-	0xfe843783, 0x00878713, 0xfee43423, 0x0007b783, 0x00078693, 0xfe843783,
-	0x00878713, 0xfee43423, 0x0007b783, 0x00078713, 0xfe843783, 0x00878813,
-	0xff043423, 0x0007b783, 0xfd843883, 0x00000073, 0x00050793, 0x00078513,
-	0x02813403, 0x07010113, 0x00008067, 0xff010113, 0x00113423, 0x00813023,
-	0x01010413, 0x00100513, 0xf1dff0ef, 0x00050793, 0x0007879b, 0x00078513,
-	0x00813083, 0x00013403, 0x01010113, 0x00008067, 0xff010113, 0x00113423,
-	0x00813023, 0x01010413, 0x00b00513, 0xee9ff0ef, 0x00050793, 0x0007879b,
-	0x00078513, 0x00813083, 0x00013403, 0x01010113, 0x00008067, 0xfe010113,
-	0x00113c23, 0x00813823, 0x02010413, 0xfea43423, 0xfeb43023, 0xfe043683,
-	0xfe843603, 0x00000593, 0x01000513, 0xea1ff0ef, 0x00050793, 0x0007879b,
-	0x00078513, 0x01813083, 0x01013403, 0x02010113, 0x00008067, 0xfe010113,
-	0x00113c23, 0x00813823, 0x02010413, 0x00050793, 0xfef42623, 0xfec42783,
-	0x00078593, 0x00d00513, 0xe5dff0ef, 0x00050793, 0x0007879b, 0x00078513,
-	0x01813083, 0x01013403, 0x02010113, 0x00008067, 0xfe010113, 0x00113c23,
-	0x00813823, 0x02010413, 0x00050793, 0xfeb43023, 0xfef42623, 0xfec42783,
-	0xfe043603, 0x00078593, 0x00300513, 0xe11ff0ef, 0x00050793, 0x0007879b,
-	0x00078513, 0x01813083, 0x01013403, 0x02010113, 0x00008067, 0xfe010113,
-	0x00113c23, 0x00813823, 0x02010413, 0x00050793, 0xfef42623, 0xfec42783,
-	0x00078593, 0x00200513, 0xdcdff0ef, 0x00000013, 0x01813083, 0x01013403,
-	0x02010113, 0x00008067, 0x00000000, 0x00000000, 0x6c696863, 0x72702064,
-	0x7320636f, 0x74726174, 0x0000000a, 0x00000000, 0x6c696863, 0x72702064,
-	0x7320636f, 0x7065656c, 0x65766f20, 0x00000a72, 0x65726170, 0x7020746e,
-	0x3a636f72, 0x69686320, 0x6520646c, 0x20746978, 0x74617473, 0x203a7375,
-	0x00000a30, 0x00000000, 0x00000000, 0x00000000,
+	0xfe010113, 0x00113c23, 0x00813823, 0x02010413, 0x00100793, 0xfef42623,
+	0x0480006f, 0x1c4000ef, 0x00050793, 0x02079863, 0xfec42703, 0x3e800793,
+	0x02f707bb, 0x0007879b, 0x00078513, 0x254000ef, 0xfec42783, 0x0017879b,
+	0x0007879b, 0x00078513, 0x2d0000ef, 0xfec42783, 0x0017879b, 0xfef42623,
+	0xfec42783, 0x0007871b, 0x00800793, 0xfae7d8e3, 0x00100793, 0xfef42423,
+	0x0680006f, 0xfe842783, 0x0017879b, 0x0007879b, 0xfe440713, 0x00070593,
+	0x00078513, 0x240000ef, 0xfe842783, 0x0ff7f793, 0x0317879b, 0x0ff7f713,
+	0x38000793, 0x00e789a3, 0xfe442783, 0x0ff7f793, 0x0307879b, 0x0ff7f713,
+	0x38000793, 0x02e783a3, 0x02900593, 0x38000513, 0x178000ef, 0xfe842783,
+	0x0017879b, 0xfef42423, 0xfe842783, 0x0007871b, 0x00800793, 0xf8e7d8e3,
+	0x00000513, 0x22c000ef, 0x00000013, 0x00078513, 0x01813083, 0x01013403,
+	0x02010113, 0x00008067, 0xf9010113, 0x02813423, 0x03010413, 0xfca43c23,
+	0x00b43423, 0x00c43823, 0x00d43c23, 0x02e43023, 0x02f43423, 0x03043823,
+	0x03143c23, 0x04040793, 0xfcf43823, 0xfd043783, 0xfc878793, 0xfef43423,
+	0xfe843783, 0x00878713, 0xfee43423, 0x0007b783, 0x00078513, 0xfe843783,
+	0x00878713, 0xfee43423, 0x0007b783, 0x00078593, 0xfe843783, 0x00878713,
+	0xfee43423, 0x0007b783, 0x00078613, 0xfe843783, 0x00878713, 0xfee43423,
+	0x0007b783, 0x00078693, 0xfe843783, 0x00878713, 0xfee43423, 0x0007b783,
+	0x00078713, 0xfe843783, 0x00878813, 0xff043423, 0x0007b783, 0xfd843883,
+	0x00000073, 0x00050793, 0x00078513, 0x02813403, 0x07010113, 0x00008067,
+	0xff010113, 0x00113423, 0x00813023, 0x01010413, 0x00100513, 0xf1dff0ef,
+	0x00050793, 0x0007879b, 0x00078513, 0x00813083, 0x00013403, 0x01010113,
+	0x00008067, 0xff010113, 0x00113423, 0x00813023, 0x01010413, 0x00b00513,
+	0xee9ff0ef, 0x00050793, 0x0007879b, 0x00078513, 0x00813083, 0x00013403,
+	0x01010113, 0x00008067, 0xfe010113, 0x00113c23, 0x00813823, 0x02010413,
+	0xfea43423, 0xfeb43023, 0xfe043683, 0xfe843603, 0x00000593, 0x01000513,
+	0xea1ff0ef, 0x00050793, 0x0007879b, 0x00078513, 0x01813083, 0x01013403,
+	0x02010113, 0x00008067, 0xfe010113, 0x00113c23, 0x00813823, 0x02010413,
+	0x00050793, 0xfef42623, 0xfec42783, 0x00078593, 0x00d00513, 0xe5dff0ef,
+	0x00050793, 0x0007879b, 0x00078513, 0x01813083, 0x01013403, 0x02010113,
+	0x00008067, 0xfe010113, 0x00113c23, 0x00813823, 0x02010413, 0x00050793,
+	0xfeb43023, 0xfef42623, 0xfec42783, 0xfe043603, 0x00078593, 0x00300513,
+	0xe11ff0ef, 0x00050793, 0x0007879b, 0x00078513, 0x01813083, 0x01013403,
+	0x02010113, 0x00008067, 0xfe010113, 0x00113c23, 0x00813823, 0x02010413,
+	0x00050793, 0xfef42623, 0xfec42783, 0x00078593, 0x00200513, 0xdcdff0ef,
+	0x00000013, 0x01813083, 0x01013403, 0x02010113, 0x00008067, 0x00000000,
+	0x00000000, 0x00000000, 0x65726170, 0x7020746e, 0x3a636f72, 0x69686320,
+	0x3020646c, 0x69786520, 0x69772074, 0x73206874, 0x75746174, 0x30203a73,
+	0x0000000a, 0x00000000,
 };
 
 void user_init(uint32_t priority)
 {
-	struct proc *p = allocproc();
+	struct proc_t *p = allocproc();
 	initproc = p;
 
 	// allocate 1 page and copy initcode's instructions and data into it
@@ -406,10 +410,11 @@ void user_init(uint32_t priority)
 	release(&pcblock[p->pid]);
 }
 
-// process relative syscall
+/* === process relative syscall === */
+
 int64_t do_fork()
 {
-	struct proc *parentproc = myproc(), *childproc = NULL;
+	struct proc_t *parentproc = myproc(), *childproc = NULL;
 	if ((childproc = allocproc()) == NULL) {
 		return -1;
 	}
@@ -424,6 +429,7 @@ int64_t do_fork()
 	childproc->sz = parentproc->sz;
 
 	*(childproc->tf) = *(parentproc->tf);	// copy saved user's registers
+
 	// childproc's ret val of fork need to be set to 0 according to POSIX
 	childproc->tf->a0 = 0;
 
@@ -450,43 +456,43 @@ int64_t do_exec()
 
 /**
  * @brief Exit the current process. Does not return. An exited process remains
- * in the zombie state until its parent calls waitpid().
+ * in the zombie state until its parent calls waitpid(). Futhermore, according
+ * to the POSIX standard, the exit syscall will not release variety of resources
+ * it had retained until another process wait for this process.
  * @param status process exit status
  */
 void do_exit(int32_t status)
 {
-	struct proc *p = myproc();
+	struct proc_t *p = myproc();
 
 	acquire(&pcblock[p->pid]);
 
 	p->exitstate = status;
 	p->state = TASK_ZOMBIE;
 
-	assert(p->magic == UNIKS_MAGIC);
 	release(&pcblock[p->pid]);
 
 	/**
-	 * @brief when wake the process which is waiting for myproc() to exit,
-	 * there are no need to acquire myproc() own process lock
+	 * @brief when wakeup the processes which are waiting for myproc() to
+	 * exit, there is a need to acquire more than 1 lock @ the same time, so
+	 * we hold an order as how we do when block a process in
+	 * sysproc.c:sys_waitpid() function. Now, there is no deadlock
+	 * phenomenon between block-function in sysproc.c:sys_waitpid() and this
+	 * wakeup-function occurred, I'm not sure that if it's okay to avoid it,
+	 * but I hope that's bug free.
 	 */
+	acquire(&pcblock[p->pid]);
 	while (!list_empty(&p->wait_list)) {
-		struct proc *waitp =
-			element_entry(list_next_then_del(&p->wait_list),
-				      struct proc, block_list);
-		assert(waitp->state == TASK_BLOCK);
-		acquire(&pcblock[waitp->pid]);
-		waitp->state = TASK_READY;
+		struct proc_t *waitp = proc_unblock(&p->wait_list);
 		int64_t *status_addr = (int64_t *)argufetch(waitp, 1);
 		copyout(waitp->pagetable, (uintptr_t)status_addr,
 			(char *)&pcbtable[p->pid]->exitstate,
 			sizeof(pcbtable[p->pid]->exitstate));
 		release(&pcblock[waitp->pid]);
 	}
+	release(&pcblock[p->pid]);
 
-	/**
-	 * @brief jump to kernel thread scheduler, and will never return or
-	 * incur a panic at line +3
-	 */
+	assert(p->magic == UNIKS_MAGIC);
 	sched();
 	panic("zombie exit!");
 }

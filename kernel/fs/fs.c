@@ -1,10 +1,10 @@
 #include "fs.h"
-#include <param.h>
 #include <process/file.h>
+#include <uniks/param.h>
 
 struct {
-	struct spinlock lock;
-	struct inode inode[NINODE];
+	struct spinlock_t lock;
+	struct inode_t inode[NINODE];
 } inode_table;
 
 void inode_init()

@@ -1,7 +1,7 @@
-#include <queue.h>
+#include <uniks/queue.h>
 
 
-void queue_init(struct queue_meta *q, int32_t capacity, int32_t *heap_addr)
+void queue_init(struct queue_meta_t *q, int32_t capacity, int32_t *heap_addr)
 {
 	assert(capacity > 0);
 	q->queue_head = q->queue_size = 0;
@@ -10,22 +10,22 @@ void queue_init(struct queue_meta *q, int32_t capacity, int32_t *heap_addr)
 	q->queue_array = heap_addr;
 }
 
-int32_t queue_empty(struct queue_meta *q)
+int32_t queue_empty(struct queue_meta_t *q)
 {
 	return q->queue_size == 0;
 }
 
-int32_t queue_full(struct queue_meta *q)
+int32_t queue_full(struct queue_meta_t *q)
 {
 	return q->queue_size == q->queue_capacity;
 }
 
-int32_t *queue_front(struct queue_meta *q)
+int32_t *queue_front(struct queue_meta_t *q)
 {
 	return &q->queue_array[q->queue_head];
 }
 
-void queue_push(struct queue_meta *q, int32_t push_data)
+void queue_push(struct queue_meta_t *q, int32_t push_data)
 {
 	assert(q->queue_size < q->queue_capacity);
 	q->queue_tail++;
@@ -35,7 +35,7 @@ void queue_push(struct queue_meta *q, int32_t push_data)
 	q->queue_size++;
 }
 
-void queue_pop(struct queue_meta *q)
+void queue_pop(struct queue_meta_t *q)
 {
 	assert(!queue_empty(q));
 	q->queue_head++;

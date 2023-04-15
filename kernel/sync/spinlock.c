@@ -1,11 +1,11 @@
 #include "spinlock.h"
-#include <defs.h>
-#include <kassert.h>
 #include <platform/riscv.h>
 #include <process/proc.h>
+#include <uniks/defs.h>
+#include <uniks/kassert.h>
 
 
-void initlock(struct spinlock *lk, char *name)
+void initlock(struct spinlock_t *lk, char *name)
 {
 	lk->locked = 0;
 #if defined(LOG_LEVEL_DEBUG)
@@ -14,7 +14,7 @@ void initlock(struct spinlock *lk, char *name)
 #endif
 }
 
-int64_t holding(struct spinlock *lk)
+int64_t holding(struct spinlock_t *lk)
 {
 	return (lk->locked and
 #if defined(LOG_LEVEL_DEBUG)
@@ -35,14 +35,14 @@ void push_off()
 	uint64_t old = interrupt_get();
 
 	interrupt_off();
-	struct cpu *c = mycpu();
+	struct cpu_t *c = mycpu();
 	if (c->repeat == 0)
 		c->preintstat = old;
 	c->repeat++;
 }
 void pop_off()
 {
-	struct cpu *c = mycpu();
+	struct cpu_t *c = mycpu();
 	assert(!(interrupt_get() & SSTATUS_SIE));
 	assert(c->repeat >= 1);
 	c->repeat--;
@@ -50,7 +50,7 @@ void pop_off()
 		interrupt_on();
 }
 
-void do_acquire(struct spinlock *lk)
+void do_acquire(struct spinlock_t *lk)
 {
 	/**
 	 * @brief disable interrupts to avoid deadlock incurred by extern
@@ -73,7 +73,7 @@ void do_acquire(struct spinlock *lk)
 #endif
 }
 
-void do_release(struct spinlock *lk)
+void do_release(struct spinlock_t *lk)
 {
 	assert(holding(lk));
 

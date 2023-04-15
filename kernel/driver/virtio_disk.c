@@ -1,19 +1,19 @@
 #include "virtio_disk.h"
-#include <kassert.h>
-#include <kstring.h>
 #include <mm/blkbuffer.h>
 #include <mm/memlay.h>
 #include <process/proc.h>
 #include <sync/spinlock.h>
+#include <uniks/kassert.h>
+#include <uniks/kstring.h>
 
 
 // generate the address of virtio mmio register r
 #define virtio_disk_R(r) ((volatile uint32_t *)(VIRTIO0 + (r)))
 
-extern void *kalloc();
+extern void *phymem_alloc_page();
 
 static struct {
-	struct spinlock virtio_disk_lock;
+	struct spinlock_t virtio_disk_lock;
 
 	/**
 	 * @brief a set (not a ring) of DMA descriptors, with which the
@@ -22,7 +22,7 @@ static struct {
 	 * there are NUM descriptors.
 	 * most commands consist of a list of a couple of these descriptors.
 	 */
-	struct virtq_desc *desc;
+	struct virtq_desc_t *desc;
 
 	/**
 	 * @brief a ring in which the driver writes descriptor numbers
@@ -30,14 +30,14 @@ static struct {
 	 * it only includes the head descriptor of each list.
 	 * the ring has NUM elements.
 	 */
-	struct virtq_avail *avail;
+	struct virtq_avail_t *avail;
 
 	/**
 	 * @brief a ring in which the device writes descriptor numbers that
 	 * the device has finished processing (just the head of each list).
 	 * there are NUM used ring entries.
 	 */
-	struct virtq_used *used;
+	struct virtq_used_t *used;
 
 	// our own book-keeping
 	int8_t free[NUM];      // is a descriptor free?
@@ -48,12 +48,12 @@ static struct {
 	 * interrupt arrives. indexed by first descriptor index of list.
 	 */
 	struct {
-		struct blkbuf *buf;
+		struct blkbuf_t *buf;
 		int8_t status;
 	} info[NUM];
 
 	// disk command headers. one-for-one with descriptors, for convenience.
-	struct virtio_blk_req ops[NUM];
+	struct virtio_blk_req_t ops[NUM];
 } disk;
 
 void virtio_disk_init()
@@ -105,9 +105,9 @@ void virtio_disk_init()
 	assert(max >= NUM);
 
 	// allocate and zero queue memory
-	disk.desc = kalloc();
-	disk.avail = kalloc();
-	disk.used = kalloc();
+	disk.desc = phymem_alloc_page();
+	disk.avail = phymem_alloc_page();
+	disk.used = phymem_alloc_page();
 	assert(disk.desc and disk.avail and disk.used);
 	memset(disk.desc, 0, PGSIZE);
 	memset(disk.avail, 0, PGSIZE);
@@ -196,16 +196,18 @@ static int32_t alloc3_desc(int32_t *index)
 	return 0;
 }
 
-void virtio_disk_rw(struct blkbuf *buf, int32_t write)
+void virtio_disk_rw(struct blkbuf_t *buf, int32_t write)
 {
 #define SECTORSIZE 512
 	uint64_t sector = buf->blknum * (BLKSIZE / SECTORSIZE);
 
 	acquire(&disk.virtio_disk_lock);
 
-	// the spec's Section 5.2 says that legacy block operations use
-	// three descriptors: one for type/reserved/sector, one for the
-	// data, one for a 1-byte status result.
+	/**
+	 * @brief the spec's Section 5.2 says that legacy block operations use
+	 * three descriptors: one for type/reserved/sector, one for the data,
+	 * one for a 1-byte status result.
+	 */
 
 	// allocate the three descriptors.
 	int32_t index[3];
@@ -219,7 +221,7 @@ void virtio_disk_rw(struct blkbuf *buf, int32_t write)
 	// format the three descriptors.
 	// qemu's virtio-blk.c reads them.
 
-	struct virtio_blk_req *buf0 = &disk.ops[index[0]];
+	struct virtio_blk_req_t *buf0 = &disk.ops[index[0]];
 
 	if (write)
 		buf0->type = VIRTIO_BLK_T_OUT;	 // write the disk
@@ -229,7 +231,7 @@ void virtio_disk_rw(struct blkbuf *buf, int32_t write)
 	buf0->sector = sector;
 
 	disk.desc[index[0]].addr = (uint64_t)buf0;
-	disk.desc[index[0]].len = sizeof(struct virtio_blk_req);
+	disk.desc[index[0]].len = sizeof(struct virtio_blk_req_t);
 	disk.desc[index[0]].flags = VRING_DESC_F_NEXT;
 	disk.desc[index[0]].next = index[1];
 
@@ -281,26 +283,29 @@ void virtio_disk_intr()
 {
 	acquire(&disk.virtio_disk_lock);
 
-	// the device won't raise another interrupt until we tell it
-	// we've seen this interrupt, which the following line does.
-	// this may race with the device writing new entries to
-	// the "used" ring, in which case we may process the new
-	// completion entries in this interrupt, and have nothing to do
-	// in the next interrupt, which is harmless.
+	/**
+	 * @brief the device won't raise another interrupt until we tell it
+	 * we've seen this interrupt, which the following line does. this may
+	 * race with the device writing new entries to the "used" ring, in which
+	 * case we may process the new completion entries in this interrupt, and
+	 * have nothing to do in the next interrupt, which is harmless.
+	 */
 	*virtio_disk_R(VIRTIO_MMIO_INTERRUPT_ACK) =
 		*virtio_disk_R(VIRTIO_MMIO_INTERRUPT_STATUS) & 0x3;
 
 	__sync_synchronize();
 
-	// the device increments disk.used->idx when it
-	// adds an entry to the used ring.
+	/**
+	 * @brief the device increments disk.used->idx when it adds an entry to
+	 * the used ring.
+	 */
 	while (disk.used_index != disk.used->index) {
 		__sync_synchronize();
 		int id = disk.used->ring[disk.used_index % NUM].id;
 
 		assert(disk.info[id].status == 0);
 
-		struct blkbuf *buf = disk.info[id].buf;
+		struct blkbuf_t *buf = disk.info[id].buf;
 		buf->disk = 0;	 // disk is done with buf
 		// wakeup(buf);
 

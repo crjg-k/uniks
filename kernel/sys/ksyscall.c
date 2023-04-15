@@ -1,10 +1,10 @@
 #include "ksyscall.h"
-#include <defs.h>
-#include <kassert.h>
-#include <kstdio.h>
-#include <log.h>
 #include <process/proc.h>
-#include <structdef.h>
+#include <uniks/defs.h>
+#include <uniks/kassert.h>
+#include <uniks/kstdio.h>
+#include <uniks/log.h>
+#include <uniks/structdef.h>
 
 
 /**
@@ -14,11 +14,11 @@
  * @param n the nth argument
  * @return uint64_t
  */
-uint64_t argufetch(struct proc *p, int32_t n)
+uint64_t argufetch(struct proc_t *p, int32_t n)
 {
 	assert(n <= 5);
 	return ((uint64_t *)((char *)p->tf +
-			     offsetof(struct trapframe, a0)))[n];
+			     offsetof(struct trapframe_t, a0)))[n];
 }
 
 
@@ -56,7 +56,7 @@ static int64_t (*syscalls[])() = {
 
 void syscall()
 {
-	struct proc *p = myproc();
+	struct proc_t *p = myproc();
 	int64_t num = p->tf->a7;
 	if (num >= 0 and num < NUM_SYSCALLS and syscalls[num]) {
 		p->tf->a0 = syscalls[num]();

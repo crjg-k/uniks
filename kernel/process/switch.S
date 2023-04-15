@@ -1,8 +1,8 @@
 # switch.S
 
-#include <asm.inc>
+#include <uniks/asm.inc>
 
-# void switch_to(struct context *old, struct context *new);
+# void switch_to(struct context_t *old, struct context_t *new);
 .global switch_to
 
 .section .text

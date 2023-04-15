@@ -11,7 +11,7 @@
  *
  */
 
-#include <defs.h>
+#include <uniks/defs.h>
 
 /**
  * virtio mmio control registers, mapped starting at 0x10001000 from qemu
@@ -61,7 +61,7 @@
 #define NUM 8
 
 // a single descriptor, from the spec.
-struct virtq_desc {
+struct virtq_desc_t {
 	uint64_t addr;
 	uint32_t len;
 	uint16_t flags;
@@ -71,36 +71,41 @@ struct virtq_desc {
 #define VRING_DESC_F_WRITE 2   // device writes (vs read)
 
 // the (entire) avail ring, from the spec.
-struct virtq_avail {
+struct virtq_avail_t {
 	uint16_t flags;	      // always zero
 	uint16_t index;	      // driver will write ring[index] next
 	uint16_t ring[NUM];   // descriptor numbers of chain heads
 	uint16_t unused;
 };
 
-// one entry in the "used" ring, with which the
-// device tells the driver about completed requests.
-struct virtq_used_elem {
+/**
+ * @brief one entry in the "used" ring, with which the
+ * device tells the driver about completed requests.
+ */
+struct virtq_used_elem_t {
 	uint32_t id;   // index of start of completed descriptor chain
 	uint32_t len;
 };
 
-struct virtq_used {
+struct virtq_used_t {
 	uint16_t flags;	  // always zero
 	uint16_t index;	  // device increments when it adds a ring[] entry
-	struct virtq_used_elem ring[NUM];
+	struct virtq_used_elem_t ring[NUM];
 };
 
 
-// these are specific to virtio block devices, e.g. disks,
-// described in Section 5.2 of the spec.
+/**
+ * @brief these are specific to virtio block devices, e.g. disks, described in
+ * Section 5.2 of the spec.
+ */
 #define VIRTIO_BLK_T_IN	 0   // read the disk
 #define VIRTIO_BLK_T_OUT 1   // write the disk
 
-// the format of the first descriptor in a disk request.
-// to be followed by two more descriptors containing
-// the block, and a one-byte status.
-struct virtio_blk_req {
+/**
+ * @brief The format of the first descriptor in a disk request. To be followed
+ * by two more descriptors containing the block, and a one-byte status.
+ */
+struct virtio_blk_req_t {
 	uint32_t type;	 // VIRTIO_BLK_T_IN or ..._OUT
 	uint32_t reserved;
 	uint64_t sector;

@@ -1,5 +1,5 @@
 
-#include <kstring.h>
+#include <uniks/kstring.h>
 
 size_t strlen(const char *s)
 {
@@ -74,7 +74,8 @@ int32_t memcmp(const void *v1, const void *v2, size_t n)
 	const char *s2 = (const char *)v2;
 	while (n-- > 0) {
 		if (*s1 != *s2) {
-			return (int32_t)((unsigned char)*s1 - (unsigned char)*s2);
+			return (int32_t)((unsigned char)*s1 -
+					 (unsigned char)*s2);
 		}
 		s1++, s2++;
 	}

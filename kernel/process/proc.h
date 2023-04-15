@@ -1,17 +1,17 @@
 #ifndef __KERNEL_PROCESS_PROC_H__
 #define __KERNEL_PROCESS_PROC_H__
 
-#include <defs.h>
-#include <list.h>
-#include <param.h>
-#include <priority_queue.h>
-#include <queue.h>
 #include <sync/spinlock.h>
+#include <uniks/defs.h>
+#include <uniks/list.h>
+#include <uniks/param.h>
+#include <uniks/priority_queue.h>
+#include <uniks/queue.h>
 
 
 // this is only tiny context for kernel context switch occurred by function
 // calling, so we only need to save the callee saved registers
-struct context {
+struct context_t {
 	/*   0 */ uint64_t ra;
 	/*   8 */ uint64_t sp;
 	/*  16 */ uint64_t s0;
@@ -28,7 +28,7 @@ struct context {
 	/* 104 */ uint64_t s11;
 };
 
-struct trapframe {
+struct trapframe_t {
 	/*   0 */ uint64_t ra;
 	/*   8 */ uint64_t sp;
 	/*  16 */ uint64_t gp;
@@ -60,8 +60,9 @@ struct trapframe {
 	/* 224 */ uint64_t t4;
 	/* 232 */ uint64_t t5;
 	/* 240 */ uint64_t t6;
-	/* 248 */ uint64_t kernel_satp;	    // kernel page table
-	/* 256 */ uint64_t kernel_sp;	    // top of process's kernel stack
+	/* 248 */ uint64_t kernel_satp;	  // kernel page table
+	/* 256 */ uint64_t
+		kernel_sp;   // top of process's kernel stack (sp point to)
 	/* 264 */ uint64_t kernel_trap;	    // usertrap()
 	/* 272 */ uint64_t epc;		    // saved user program counter
 	/* 280 */ uint64_t kernel_hartid;   // saved kernel tp
@@ -76,7 +77,7 @@ enum proc_state {
 	TASK_ZOMBIE
 };
 
-struct proc {
+struct proc_t {
 	// this->lock must be held when using these below:
 	int32_t pid;		 // process ID
 	enum proc_state state;	 // process state
@@ -85,21 +86,22 @@ struct proc {
 	uint32_t priority;	 // process priority
 	uint32_t ticks;		 // remainder time slices
 	uint32_t jiffies;	 // global time slice when last execution
-	struct list_node block_list;   // block list of this process
-	struct list_node wait_list;    // who wait for this process to exit
+	struct list_node_t block_list;	 // block list of this process
+	struct list_node_t wait_list;	 // who wait for this process to exit
 
-	uintptr_t kstack;    // process kernel stack, always point to kstack top
-	uint64_t sz;	     // size of process memory (bytes)
-	int32_t parentpid;   // parent process
+	uintptr_t kstack;	 // always point to own kernel stack bottom
+	uint64_t sz;		 // size of process memory (bytes)
+	int32_t parentpid;	 // parent process
 	pagetable_t pagetable;	 // user page table
-	struct context ctxt;	 // switch here to run process
+	struct context_t ctxt;	 // switch here to run process
+
 	/**
 	 * @brief the trapframe for current interrupt, and furthermore, it point
 	 * to the beginning of kstack at the same time. The layout of kstack:
 	 *
-	 * kernelstacktop ->    +---------------+<=====+ (high address)
+	 * kernelstackbottom -> +---------------+<=====+ (high address)
 	 *                      |               |      |
-	 *                      |               |      |
+	 *    kernel_sp   ->    |               |      |
 	 *                      |               |      |
 	 *                 +----+---------------+      |
 	 *                 |    |     MAGIC     |      |
@@ -117,36 +119,36 @@ struct proc {
 	 *                      |               |   |
 	 *                      |   TRAPFRAME   |   |
 	 *                      |               |   |
-	 * kernelstackbottom -> +---------------+<--+ (low address)
+	 * kernelstacktop   ->  +---------------+<--+ (low address)
 	 */
-	struct trapframe *tf;
+	struct trapframe_t *tf;
 	char name[PROC_NAME_LEN + 1];	// process name
 
 	uint32_t magic;	  // magic number as canary to determine stackoverflow
 };
 
-struct cpu {
-	struct proc *proc;     // The process running on this cpu, or null
-	struct context ctxt;   // swtch() here to enter scheduler()
-	uint32_t repeat;       // reacquire lock times per-cpu
+struct cpu_t {
+	struct proc_t *proc;	 // The process running on this cpu, or null
+	struct context_t ctxt;	 // swtch() here to enter scheduler()
+	uint32_t repeat;	 // reacquire lock times per-cpu
 	uint64_t preintstat;   // pre-interrupt enabled status before push_off()
 };
 
 struct pids_queue_t {
-	struct spinlock pid_lock;
-	struct queue_meta qm;
+	struct spinlock_t pid_lock;
+	struct queue_meta_t qm;
 	int32_t pids_queue_array[NPROC];
 };
 
 struct sleep_queue_t {
-	struct spinlock sleep_lock;
-	struct priority_queue_meta pqm;
-	struct pair sleepqueue[NPROC];
+	struct spinlock_t sleep_lock;
+	struct priority_queue_meta_t pqm;
+	struct pair_t sleepqueue[NPROC];
 };
 
-extern struct proc *pcbtable[];
-extern struct spinlock pcblock[];
-extern struct cpu cpus[];
+extern struct proc_t *pcbtable[];
+extern struct spinlock_t pcblock[];
+extern struct cpu_t cpus[];
 
 void scheduler();
 void sched();
@@ -154,11 +156,13 @@ void proc_init();
 void user_init(uint32_t priority);
 void yield();
 void time_wakeup();
-int8_t killed(struct proc *);
-struct cpu *mycpu();
-struct proc *myproc();
-void proc_block(struct proc *p, struct list_node *list, enum proc_state state);
-void proc_unblock(struct proc *p);
+int8_t killed(struct proc_t *);
+void recycle_exitedproc();
+struct cpu_t *mycpu();
+struct proc_t *myproc();
+void proc_block(struct proc_t *p, struct list_node_t *list,
+		enum proc_state state);
+struct proc_t *proc_unblock(struct list_node_t *wait_list);
 
 
 // process relative syscall

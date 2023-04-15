@@ -22,11 +22,6 @@
 
 int64_t sbi_call(uint64_t sbi_type, ...)
 {
-	// register uint64_t a0 asm("a0") = arg0;
-	// register uint64_t a1 asm("a1") = arg1;
-	// register uint64_t a2 asm("a2") = arg2;
-	// register uint64_t a7 asm("a7") = sbi_type;
-
 	va_list ap;
 	va_start(ap, sbi_type);
 	register uint64_t a0 asm("a0") = va_arg(ap, uint64_t);

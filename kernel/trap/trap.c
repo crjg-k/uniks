@@ -1,14 +1,14 @@
 #include "trap.h"
 #include <driver/clock.h>
-#include <kassert.h>
-#include <kstdio.h>
-#include <log.h>
 #include <mm/memlay.h>
 #include <platform/riscv.h>
 #include <process/proc.h>
+#include <uniks/kassert.h>
+#include <uniks/kstdio.h>
+#include <uniks/log.h>
 
 extern void kerneltrapvec(), scheduler(), usertrap_handler(), syscall(),
-	yield(), do_cow(struct proc *p, uint64_t va);
+	yield(), do_cow(struct proc_t *p, uint64_t va);
 extern char trampoline[], usertrapvec[], userret[];
 extern volatile uint64_t ticks;
 
@@ -45,7 +45,8 @@ static void interrupt_handler(uint64_t cause, int32_t prilevel)
 		kprintf("default interrupt");
 	}
 }
-static void exception_handler(uint64_t cause, struct proc *p, int32_t prilevel)
+static void exception_handler(uint64_t cause, struct proc_t *p,
+			      int32_t prilevel)
 {
 	assert(myproc()->magic == UNIKS_MAGIC);
 	switch (cause) {
@@ -54,8 +55,7 @@ static void exception_handler(uint64_t cause, struct proc *p, int32_t prilevel)
 			prilevel, p->tf->epc);
 		p->tf->epc += 4;
 		break;
-	case EXC_U_ECALL:
-		// system call
+	case EXC_U_ECALL:   // system call
 		tracef("process: %d, system call: %d", p->pid, p->tf->a7);
 		/**
 		 * @note: this inc must lay before syscall() since that the fork
@@ -80,7 +80,7 @@ static void exception_handler(uint64_t cause, struct proc *p, int32_t prilevel)
 // return to user space
 void usertrapret()
 {
-	struct proc *p = myproc();
+	struct proc_t *p = myproc();
 
 	// note: the 2nd operand should change according to if using OpenSBI
 	uint64_t trampoline_uservec =
@@ -144,7 +144,7 @@ void usertrap_handler()
 	 */
 	write_csr(stvec, &kerneltrapvec);
 
-	struct proc *p = myproc();
+	struct proc_t *p = myproc();
 	p->tf->epc = read_csr(sepc);   // save user's pc
 
 	int64_t cause = read_csr(scause);

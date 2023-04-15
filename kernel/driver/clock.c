@@ -10,16 +10,16 @@
  */
 
 #include "clock.h"
-#include <defs.h>
-#include <kassert.h>
-#include <param.h>
 #include <platform/riscv.h>
 #include <platform/sbi.h>
 #include <process/proc.h>
+#include <uniks/defs.h>
+#include <uniks/kassert.h>
+#include <uniks/param.h>
 
 // the ticks will inc in each 0.001s namely 1ms
 volatile uint64_t ticks = 0;
-struct spinlock tickslock;
+struct spinlock_t tickslock;
 
 // hardcode jiffy = 1ms and timebase
 uint64_t jiffy = 1000 / TIMESPERSEC, timebase = CPUFREQ / TIMESPERSEC;
@@ -56,7 +56,7 @@ __always_inline void clock_interrupt_handler(int32_t prilevel)
 	release(&tickslock);
 
 	if (prilevel == PRILEVEL_U) {
-		struct proc *p = myproc();
+		struct proc_t *p = myproc();
 		acquire(&pcblock[p->pid]);
 		p->jiffies = ticks;
 		p->ticks--;

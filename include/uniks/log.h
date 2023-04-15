@@ -1,9 +1,9 @@
 #ifndef __LOG_H__
 #define __LOG_H__
 
-#include <defs.h>
-#include <kstdio.h>
 #include <platform/riscv.h>
+#include <uniks/defs.h>
+#include <uniks/kstdio.h>
 
 
 #if defined(LOG_LEVEL_ERROR)
@@ -112,8 +112,6 @@ enum LOG_COLOR {
 #define panic(fmt, ...) \
 	({ \
 		extern void sbi_shutdown(); \
-		/*extern struct printflock prf; \
-		prf.locking = 0;*/ \
 		int64_t tid = r_mhartid(); \
 		kprintf("\x1b[%dm[%s %d] %s:%d: " fmt "\x1b[0m\n", RED, \
 			"PANIC", tid, __FILE__, __LINE__, ##__VA_ARGS__); \

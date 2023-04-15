@@ -1,7 +1,7 @@
-#include <defs.h>
 #include <driver/console.h>
 #include <process/proc.h>
 #include <sys/ksyscall.h>
+#include <uniks/defs.h>
 
 char dst[32];
 
@@ -15,7 +15,7 @@ uint64_t fileswrite(int32_t n)
 	return n;
 }
 
-uint64_t sys_write(struct proc *p)
+uint64_t sys_write(struct proc_t *p)
 {
 	// hint: now, temporary output to console directly
 	int64_t n = argufetch(p, 2);

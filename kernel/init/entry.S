@@ -9,10 +9,10 @@
 .section .text
 kernel_entry:
 	# now, in S mode!
-	mv	tp, a0			# this argu is passed by OpenSBI
+	mv tp, a0			# this argu is passed by OpenSBI
 
-	la	sp, bootstacktop0	# set sp pointer
-	tail	kernel_start
+	la sp, bootstacktop0		# set sp pointer
+	tail kernel_start
 
 
 .section .data

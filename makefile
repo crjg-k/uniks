@@ -1,5 +1,6 @@
 
 LOG ?= debug
+# QEMULOG ?= trace
 
 # basic tools
 SHELL = /bin/bash

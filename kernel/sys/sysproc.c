@@ -1,10 +1,10 @@
-#include <defs.h>
 #include <driver/clock.h>
-#include <kassert.h>
-#include <list.h>
-#include <priority_queue.h>
 #include <process/proc.h>
 #include <sys/ksyscall.h>
+#include <uniks/defs.h>
+#include <uniks/kassert.h>
+#include <uniks/list.h>
+#include <uniks/priority_queue.h>
 
 extern uint64_t jiffy;
 extern volatile uint64_t ticks;
@@ -30,7 +30,7 @@ int64_t sys_exec()
 
 int64_t sys_msleep()
 {
-	struct proc *p = myproc();
+	struct proc_t *p = myproc();
 
 	int64_t ms = argufetch(p, 0);
 	uint64_t target_ticks = ms / jiffy;   // timeslice need sleep
@@ -48,7 +48,7 @@ int64_t sys_msleep()
 	p->state = TASK_BLOCK;
 
 	// push process into priority_queue which record the time to wakeup
-	struct pair temppair = {target_ticks, p->pid};
+	struct pair_t temppair = {target_ticks, p->pid};
 	release(&pcblock[p->pid]);
 
 	priority_queue_push(&sleep_queue.pqm, &temppair);
@@ -60,14 +60,20 @@ int64_t sys_msleep()
 	return 0;
 }
 
-void sys_waitpid()
+int64_t sys_waitpid()
 {
-	struct proc *p = myproc();
+	struct proc_t *p = myproc();
 	int32_t pid = argufetch(p, 0);
 	assert(p->pid != pid);
 	assert(p != pcbtable[0]);
 
-	if (pcbtable[pid] != NULL and pcbtable[pid]->state == TASK_ZOMBIE) {
+	acquire(&pcblock[pid]);
+	if (pcbtable[pid] == NULL) {
+		release(&pcblock[pid]);
+		return -1;
+	}
+	if (pcbtable[pid]->state == TASK_ZOMBIE) {
+		pcbtable[pid]->state = TASK_UNUSED;
 		// if the proc[pid] has exited, tackle and return immediately
 		acquire(&pcblock[p->pid]);
 		int64_t *status_addr = (int64_t *)argufetch(p, 1);
@@ -75,22 +81,35 @@ void sys_waitpid()
 			(char *)&pcbtable[pid]->exitstate,
 			sizeof(pcbtable[pid]->exitstate));
 		release(&pcblock[p->pid]);
-		/**
-		 * @brief free all memorys that the process holds, including
-		 * the kstack, the pagetable, physical memory page which is
-		 * mapped by pagetable and etc.
-		 */
-
-	} else {   // the proc with pid didn't exit, then push it into wait list
-		/**
-		 * @brief there are no need to acquire own process lock
-		 */
-		acquire(&pcblock[pid]);
-		p->state = TASK_BLOCK;
-		list_add_front(&p->block_list, &pcbtable[pid]->wait_list);
 		release(&pcblock[pid]);
+	} else { /**
+		  * @brief the proc with pid didn't exit, then block self and
+		  * push it into wait list.
+		  */
+
+		/**
+		 * @brief when block this process which will wait for the
+		 * process with pid to exit, there is a need to acquire more
+		 * than 1 lock @ the same time, so we hold the order that get
+		 * the lock of the opposite side first and then get own's lock.
+		 * Now, there is no deadlock phenomenon between wakeup-function
+		 * in proc.c:do_exit() and this block-function occurred, I'm
+		 * not sure that if it's okay to avoid it, but I hope that's bug
+		 * free.
+		 */
+		proc_block(p, &pcbtable[pid]->wait_list, TASK_BLOCK);
+		release(&pcblock[pid]);
+
+		assert(p->magic == UNIKS_MAGIC);
 		sched();
 	}
+	/**
+	 * @brief free all memorys that the process holds, including
+	 * the kstack, the pagetable, physical memory page which is
+	 * mapped by pagetable and etc.
+	 */
+	recycle_exitedproc();
+	return 0;
 }
 
 void sys_exit()

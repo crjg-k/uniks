@@ -1,7 +1,7 @@
 # trampoline.S
 
 #include <mm/memlay.h>
-#include <asm.inc>
+#include <uniks/asm.inc>
 
 
 .global trampoline
