@@ -34,9 +34,14 @@ int getpid()
 	return syscall(SYS_getpid);
 }
 
-int write(char *buf, long len)
+int read(char *buf, long count)
 {
-	return syscall(SYS_write, 0, buf, len);
+	return syscall(SYS_read, 0, buf, count);
+}
+
+int write(char *buf, long count)
+{
+	return syscall(SYS_write, 0, buf, count);
 }
 
 int msleep(int msec){

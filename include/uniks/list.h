@@ -2,10 +2,18 @@
 #define __LIST_H__
 
 #include <uniks/defs.h>
-#include <uniks/structdef.h>
 
 /* this list template is excerpted from linux:include/linux/list.h with url:
  * [https://github.com/torvalds/linux/blob/master/include/linux/list.h] */
+
+
+#define offsetof(type, member) ((size_t)(&((type *)0)->member))
+
+#define element_entry(ptr, type, member) \
+	({ \
+		const typeof(((type *)0)->member) *__mptr = (ptr); \
+		(type *)((char *)__mptr - offsetof(type, member)); \
+	})
 
 
 struct list_node_t {

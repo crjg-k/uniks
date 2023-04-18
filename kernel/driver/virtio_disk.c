@@ -1,14 +1,12 @@
 #include "virtio_disk.h"
 #include <mm/blkbuffer.h>
 #include <mm/memlay.h>
+#include <platform/platform.h>
 #include <process/proc.h>
 #include <sync/spinlock.h>
 #include <uniks/kassert.h>
 #include <uniks/kstring.h>
 
-
-// generate the address of virtio mmio register r
-#define virtio_disk_R(r) ((volatile uint32_t *)(VIRTIO0 + (r)))
 
 extern void *phymem_alloc_page();
 
@@ -62,21 +60,21 @@ void virtio_disk_init()
 
 	initlock(&disk.virtio_disk_lock, "virtio_disk");
 
-	assert(!(*virtio_disk_R(VIRTIO_MMIO_MAGIC_VALUE) != 0x74726976 or
-		 *virtio_disk_R(VIRTIO_MMIO_VERSION) != 2 or
-		 *virtio_disk_R(VIRTIO_MMIO_DEVICE_ID) != 2 or
-		 *virtio_disk_R(VIRTIO_MMIO_VENDOR_ID) != 0x554d4551));
+	assert(!(*VIRTIO_DISK_R(VIRTIO_MMIO_MAGIC_VALUE) != 0x74726976 or
+		 *VIRTIO_DISK_R(VIRTIO_MMIO_VERSION) != 2 or
+		 *VIRTIO_DISK_R(VIRTIO_MMIO_DEVICE_ID) != 2 or
+		 *VIRTIO_DISK_R(VIRTIO_MMIO_VENDOR_ID) != 0x554d4551));
 
 	// reset device
-	*virtio_disk_R(VIRTIO_MMIO_STATUS) = status;
+	*VIRTIO_DISK_R(VIRTIO_MMIO_STATUS) = status;
 
 
 	status |= VIRTIO_CONFIG_S_ACKNOWLEDGE;	 // set ACKNOWLEDGE status bit
 	status |= VIRTIO_CONFIG_S_DRIVER;	 // set DRIVER status bit
-	*virtio_disk_R(VIRTIO_MMIO_STATUS) = status;
+	*VIRTIO_DISK_R(VIRTIO_MMIO_STATUS) = status;
 
 	// negotiate features
-	uint64_t features = *virtio_disk_R(VIRTIO_MMIO_DEVICE_FEATURES);
+	uint64_t features = *VIRTIO_DISK_R(VIRTIO_MMIO_DEVICE_FEATURES);
 	features &= ~(1 << VIRTIO_BLK_F_RO);
 	features &= ~(1 << VIRTIO_BLK_F_SCSI);
 	features &= ~(1 << VIRTIO_BLK_F_CONFIG_WCE);
@@ -84,23 +82,23 @@ void virtio_disk_init()
 	features &= ~(1 << VIRTIO_F_ANY_LAYOUT);
 	features &= ~(1 << VIRTIO_RING_F_EVENT_IDX);
 	features &= ~(1 << VIRTIO_RING_F_INDIRECT_DESC);
-	*virtio_disk_R(VIRTIO_MMIO_DRIVER_FEATURES) = features;
+	*VIRTIO_DISK_R(VIRTIO_MMIO_DRIVER_FEATURES) = features;
 
 	// tell device that feature negotiation is complete
 	status |= VIRTIO_CONFIG_S_FEATURES_OK;
-	*virtio_disk_R(VIRTIO_MMIO_STATUS) = status;
+	*VIRTIO_DISK_R(VIRTIO_MMIO_STATUS) = status;
 
 	// re-read status to ensure FEATURES_OK is set
-	status = *virtio_disk_R(VIRTIO_MMIO_STATUS);
+	status = *VIRTIO_DISK_R(VIRTIO_MMIO_STATUS);
 	assert((status & VIRTIO_CONFIG_S_FEATURES_OK));
 
 	// initialize queue 0
-	*virtio_disk_R(VIRTIO_MMIO_QUEUE_SEL) = 0;
+	*VIRTIO_DISK_R(VIRTIO_MMIO_QUEUE_SEL) = 0;
 	// ensure queue 0 is not in use
-	assert(!*virtio_disk_R(VIRTIO_MMIO_QUEUE_READY));
+	assert(!*VIRTIO_DISK_R(VIRTIO_MMIO_QUEUE_READY));
 
 	// check max queue size
-	uint32_t max = *virtio_disk_R(VIRTIO_MMIO_QUEUE_NUM_MAX);
+	uint32_t max = *VIRTIO_DISK_R(VIRTIO_MMIO_QUEUE_NUM_MAX);
 	assert(max != 0);
 	assert(max >= NUM);
 
@@ -114,20 +112,20 @@ void virtio_disk_init()
 	memset(disk.used, 0, PGSIZE);
 
 	// set queue size
-	*virtio_disk_R(VIRTIO_MMIO_QUEUE_NUM) = NUM;
+	*VIRTIO_DISK_R(VIRTIO_MMIO_QUEUE_NUM) = NUM;
 
 	// write physical addresses
-	*virtio_disk_R(VIRTIO_MMIO_QUEUE_DESC_LOW) = (uint64_t)disk.desc;
-	*virtio_disk_R(VIRTIO_MMIO_QUEUE_DESC_HIGH) = (uint64_t)disk.desc >> 32;
-	*virtio_disk_R(VIRTIO_MMIO_DRIVER_DESC_LOW) = (uint64_t)disk.avail;
-	*virtio_disk_R(VIRTIO_MMIO_DRIVER_DESC_HIGH) =
+	*VIRTIO_DISK_R(VIRTIO_MMIO_QUEUE_DESC_LOW) = (uint64_t)disk.desc;
+	*VIRTIO_DISK_R(VIRTIO_MMIO_QUEUE_DESC_HIGH) = (uint64_t)disk.desc >> 32;
+	*VIRTIO_DISK_R(VIRTIO_MMIO_DRIVER_DESC_LOW) = (uint64_t)disk.avail;
+	*VIRTIO_DISK_R(VIRTIO_MMIO_DRIVER_DESC_HIGH) =
 		(uint64_t)disk.avail >> 32;
-	*virtio_disk_R(VIRTIO_MMIO_DEVICE_DESC_LOW) = (uint64_t)disk.used;
-	*virtio_disk_R(VIRTIO_MMIO_DEVICE_DESC_HIGH) =
+	*VIRTIO_DISK_R(VIRTIO_MMIO_DEVICE_DESC_LOW) = (uint64_t)disk.used;
+	*VIRTIO_DISK_R(VIRTIO_MMIO_DEVICE_DESC_HIGH) =
 		(uint64_t)disk.used >> 32;
 
 	// queue is ready
-	*virtio_disk_R(VIRTIO_MMIO_QUEUE_READY) = 0x1;
+	*VIRTIO_DISK_R(VIRTIO_MMIO_QUEUE_READY) = 0x1;
 
 	// all NUM descriptors start out unused
 	for (int32_t i = 0; i < NUM; i++)
@@ -135,9 +133,9 @@ void virtio_disk_init()
 
 	// tell device we're completely ready
 	status |= VIRTIO_CONFIG_S_DRIVER_OK;
-	*virtio_disk_R(VIRTIO_MMIO_STATUS) = status;
+	*VIRTIO_DISK_R(VIRTIO_MMIO_STATUS) = status;
 
-	// plic.c and trap.c arrange for interrupts from VIRTIO0_IRQ
+	// plic.c and trap.c arrange for interrupts from VIRTIO_IRQ
 }
 
 // find a free descriptor, mark it non-free, then return its index
@@ -266,7 +264,7 @@ void virtio_disk_rw(struct blkbuf_t *buf, int32_t write)
 
 	__sync_synchronize();
 
-	*virtio_disk_R(VIRTIO_MMIO_QUEUE_NOTIFY) = 0;	// value is queue number
+	*VIRTIO_DISK_R(VIRTIO_MMIO_QUEUE_NOTIFY) = 0;	// value is queue number
 
 	// Wait for virtio_disk_intr() to say request has finished.
 	while (buf->disk == 1) {
@@ -290,8 +288,8 @@ void virtio_disk_intr()
 	 * case we may process the new completion entries in this interrupt, and
 	 * have nothing to do in the next interrupt, which is harmless.
 	 */
-	*virtio_disk_R(VIRTIO_MMIO_INTERRUPT_ACK) =
-		*virtio_disk_R(VIRTIO_MMIO_INTERRUPT_STATUS) & 0x3;
+	*VIRTIO_DISK_R(VIRTIO_MMIO_INTERRUPT_ACK) =
+		*VIRTIO_DISK_R(VIRTIO_MMIO_INTERRUPT_STATUS) & 0x3;
 
 	__sync_synchronize();
 

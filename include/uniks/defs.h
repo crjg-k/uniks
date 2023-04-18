@@ -12,6 +12,10 @@
 	#define or ||
 #endif
 
+#ifndef EOF
+	#define EOF (char)-1
+#endif
+
 
 #include <uniks/types.h>
 

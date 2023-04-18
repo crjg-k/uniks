@@ -74,9 +74,9 @@
 #define EXC_SD_PAGEFAULT       15
 
 /* trap and interrupt related */
-#define MIP_SSIP (1 << IRQ_S_SOFT)
-#define MIP_STIP (1 << IRQ_S_TIMER)
-#define MIP_SEIP (1 << IRQ_S_EXT)
+#define SIE_SSIE (1 << IRQ_S_SOFT)
+#define SIE_STIE (1 << IRQ_S_TIMER)
+#define SIE_SEIE (1 << IRQ_S_EXT)
 
 #define SSTATUS_UIE  0x00000001
 #define SSTATUS_SIE  0x00000002
@@ -100,12 +100,14 @@
 #define PTE_FLAGS(pte)	     ((pte)&0x3FF)
 
 
+// assmue that tp register will never be tamperred by user-space process
 #define r_mhartid() \
 	({ \
 		uint64_t __tmp; \
 		asm volatile("mv %0, tp" : "=r"(__tmp)); \
 		__tmp; \
 	})
+
 // enable device interrupts
 __always_inline static void interrupt_on()
 {
@@ -128,6 +130,28 @@ __always_inline static uint64_t interrupt_get()
 __always_inline static void interrupt_set(uint64_t val)
 {
 	write_csr(sstatus, val);
+}
+
+__always_inline static void external_interrupt_enable()
+{
+	set_csr(sie, SIE_SEIE);	  // enable external interrupt in sie
+}
+
+__always_inline static void timer_interrupt_enable()
+{
+	set_csr(sie, SIE_STIE);	  // enable timer interrupt in sie
+}
+
+__always_inline static void software_interrupt_enable()
+{
+	set_csr(sie, SIE_SSIE);	  // enable software interrupt in sie
+}
+
+__always_inline static void all_interrupt_enable()
+{
+	set_csr(sie,
+		SIE_SEIE | SIE_STIE |
+			SIE_SSIE);   // enable all kinds of interrupt in sie
 }
 
 // zero, zero means flush all TLB entries

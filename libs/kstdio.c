@@ -10,24 +10,17 @@
  */
 
 #include <driver/console.h>
-#include <uniks/defs.h>
 #include <uniks/kstdio.h>
 
 
 static char digits[] = "0123456789abcdef";
 
 
-void printfinit() {}
-
-char getchar()
-{
-	return (char)console_getchar();
-}
-
 void kputc(char c)
 {
 	console_putchar(c);
 }
+
 void kputs(const char *str)
 {
 	char c;

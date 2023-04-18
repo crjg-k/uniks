@@ -13,10 +13,13 @@ struct queue_meta_t {
 	int32_t queue_capacity;
 	int32_t queue_head;
 	int32_t queue_tail;
-	int32_t *queue_array;
+	union {
+		int32_t *queue_array_int32type;
+		char *queue_array_chartype;
+	} queue_array;
 };
 
-void queue_init(struct queue_meta_t *q, int32_t capacity, int32_t *heap_addr);
+void queue_init(struct queue_meta_t *q, int32_t capacity, void *heap_addr);
 
 int32_t queue_empty(struct queue_meta_t *q);
 
@@ -28,9 +31,10 @@ int32_t queue_full(struct queue_meta_t *q);
  * @param q
  * @return int32_t*
  */
-int32_t *queue_front(struct queue_meta_t *q);
+void *queue_front(struct queue_meta_t *q);
 
-void queue_push(struct queue_meta_t *q, int32_t push_data);
+void queue_push_int32type(struct queue_meta_t *q, int32_t push_data);
+void queue_push_chartype(struct queue_meta_t *q, char push_data);
 
 void queue_pop(struct queue_meta_t *q);
 

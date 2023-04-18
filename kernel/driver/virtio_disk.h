@@ -13,6 +13,7 @@
 
 #include <uniks/defs.h>
 
+
 /**
  * virtio mmio control registers, mapped starting at 0x10001000 from qemu
  * virtio_mmio.h
@@ -56,6 +57,9 @@
 #define VIRTIO_F_ANY_LAYOUT	    27
 #define VIRTIO_RING_F_INDIRECT_DESC 28
 #define VIRTIO_RING_F_EVENT_IDX	    29
+
+// generate the address of virtio mmio register r
+#define VIRTIO_DISK_R(r) ((volatile uint32_t *)(VIRTIO0 + (r)))
 
 // this many virtio descriptors must be a power of 2
 #define NUM 8

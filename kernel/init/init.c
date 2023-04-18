@@ -14,6 +14,7 @@
 #include <fs/fs.h>
 #include <mm/blkbuffer.h>
 #include <mm/memlay.h>
+#include <platform/plic.h>
 #include <platform/riscv.h>
 #include <process/file.h>
 #include <process/proc.h>
@@ -23,7 +24,8 @@
 #include <uniks/kstring.h>
 #include <uniks/log.h>
 
-extern void phymem_init(), kvminit(), kvmenable(), clock_init();
+extern void phymem_init(), kvminit(), kvmenable(), clock_init(),
+	all_interrupt_enable();
 char message[] = "uniks boot over!";
 extern int32_t freepagenum;
 volatile static int8_t started = 0;
@@ -41,7 +43,6 @@ void kernel_start()
 	if (!r_mhartid()) {
 		memset(sbss, 0, ebss - sbss);
 		consoleinit();
-		printfinit();
 		debugf("stext: %p\tetext: %p", stext, etext);
 		debugf("sdata: %p\tedata: %p", sdata, edata);
 		debugf("sbss: %p\tebss: %p", sbss, ebss);
@@ -55,7 +56,8 @@ void kernel_start()
 		// now, in vaddr space!
 		proc_init();
 		trap_init();
-		// plicinit();
+		plicinit();
+		plicinithart();
 
 		// hint: below 4 init functions maybe could let other harts do
 		buffer_init();
@@ -70,6 +72,7 @@ void kernel_start()
 		kprintf("\n%s\n", message);
 		kprintf("hart %d start\n\n", r_mhartid());
 
+		all_interrupt_enable();
 		interrupt_on();
 		started = 1;
 	} else {

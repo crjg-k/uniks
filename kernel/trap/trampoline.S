@@ -24,7 +24,6 @@ usertrapvec:
 	sd t5, 240(t6)
 
 	ld sp, 256(t6)		# set kernel stack pointer, from p->tf->kernel_sp
-	ld tp, 280(t6)		# make tp hold the current hartid, from p->tf->kernel_hartid
 	ld t0, 264(t6)		# load the address of usertrap_handler(), from p->tf->kernel_trap
 	ld t1, 248(t6)		# fetch the kernel page table address, from p->tf->kernel_satp
 

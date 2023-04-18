@@ -1,7 +1,6 @@
 #include "spinlock.h"
 #include <platform/riscv.h>
 #include <process/proc.h>
-#include <uniks/defs.h>
 #include <uniks/kassert.h>
 
 

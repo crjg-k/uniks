@@ -13,7 +13,6 @@
 #include <platform/riscv.h>
 #include <platform/sbi.h>
 #include <process/proc.h>
-#include <uniks/defs.h>
 #include <uniks/kassert.h>
 #include <uniks/param.h>
 
@@ -39,7 +38,6 @@ __always_inline void clock_set_next_event()
 void clock_init()
 {
 	initlock(&tickslock, "tickslock");
-	set_csr(sie, MIP_STIP);	  // enable timer interrupt in sie
 	clock_set_next_event();
 }
 

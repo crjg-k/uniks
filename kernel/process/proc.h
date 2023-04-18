@@ -63,9 +63,8 @@ struct trapframe_t {
 	/* 248 */ uint64_t kernel_satp;	  // kernel page table
 	/* 256 */ uint64_t
 		kernel_sp;   // top of process's kernel stack (sp point to)
-	/* 264 */ uint64_t kernel_trap;	    // usertrap()
-	/* 272 */ uint64_t epc;		    // saved user program counter
-	/* 280 */ uint64_t kernel_hartid;   // saved kernel tp
+	/* 264 */ uint64_t kernel_trap;	  // usertrap()
+	/* 272 */ uint64_t epc;		  // saved user program counter
 };
 
 enum proc_state {
@@ -143,7 +142,7 @@ struct pids_queue_t {
 struct sleep_queue_t {
 	struct spinlock_t sleep_lock;
 	struct priority_queue_meta_t pqm;
-	struct pair_t sleepqueue[NPROC];
+	struct pair_t sleep_queue_array[NPROC];
 };
 
 extern struct proc_t *pcbtable[];

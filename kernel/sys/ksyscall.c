@@ -1,10 +1,9 @@
 #include "ksyscall.h"
 #include <process/proc.h>
-#include <uniks/defs.h>
 #include <uniks/kassert.h>
 #include <uniks/kstdio.h>
+#include <uniks/list.h>
 #include <uniks/log.h>
-#include <uniks/structdef.h>
 
 
 /**
@@ -49,7 +48,7 @@ static int64_t (*syscalls[])() = {
 	[SYS_fork] sys_fork,	   [SYS_exec] sys_exec,
 	[SYS_write] sys_write,	   [SYS_msleep] sys_msleep,
 	[SYS_getpid] sys_getpid,   [SYS_exit] sys_exit,
-	[SYS_waitpid] sys_waitpid,
+	[SYS_waitpid] sys_waitpid, [SYS_read] sys_read,
 };
 
 #define NUM_SYSCALLS ((sizeof(syscalls)) / (sizeof(syscalls[0])))

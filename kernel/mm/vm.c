@@ -1,5 +1,6 @@
 #include "memlay.h"
 #include "mmu.h"
+#include <platform/platform.h>
 #include <platform/riscv.h>
 #include <process/proc.h>
 #include <uniks/defs.h>
@@ -42,7 +43,8 @@ pte_t *walk(pagetable_t pagetable, uint64_t va, int32_t alloc)
 		if (*pte & PTE_V) {
 			pagetable = (pagetable_t)PTE2PA(*pte);
 		} else {   // this page is not valid
-			if (!alloc or (pagetable = (pde_t *)phymem_alloc_page()) == 0)
+			if (!alloc or
+			    (pagetable = (pde_t *)phymem_alloc_page()) == 0)
 				return NULL;
 			memset(pagetable, 0, PGSIZE);
 			*pte = PA2PTE(pagetable) | PTE_V;

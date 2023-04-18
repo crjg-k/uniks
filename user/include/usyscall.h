@@ -37,7 +37,8 @@
 
 // system call
 int fork();
-int write(char *buf, long len);
+int read(char *buf, long count);
+int write(char *buf, long count);
 int getpid();
 int msleep(int msec);
 int waitpid(int pid, int *status);

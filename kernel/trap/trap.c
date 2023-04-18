@@ -1,6 +1,7 @@
 #include "trap.h"
 #include <driver/clock.h>
 #include <mm/memlay.h>
+#include <platform/plic.h>
 #include <platform/riscv.h>
 #include <process/proc.h>
 #include <uniks/kassert.h>
@@ -39,10 +40,10 @@ static void interrupt_handler(uint64_t cause, int32_t prilevel)
 		kprintf("User external interrupt");
 		break;
 	case IRQ_S_EXT:
-		kprintf("Supervisor external interrupt");
+		external_interrupt_handler();
 		break;
 	default:
-		kprintf("default interrupt");
+		panic("default interrupt");
 	}
 }
 static void exception_handler(uint64_t cause, struct proc_t *p,
@@ -106,7 +107,6 @@ void usertrapret()
 	p->tf->kernel_satp = read_csr(satp);   // kernel page table
 	p->tf->kernel_sp = p->kstack;	       // process's kernel stack
 	p->tf->kernel_trap = (uint64_t)usertrap_handler;
-	p->tf->kernel_hartid = r_mhartid();
 
 	/**
 	 * @brief set up the registers that trampoline.S's sret will use to
