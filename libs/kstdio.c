@@ -9,7 +9,7 @@
  *
  */
 
-#include <driver/console.h>
+#include <platform/sbi.h>
 #include <uniks/kstdio.h>
 
 
@@ -18,7 +18,7 @@ static char digits[] = "0123456789abcdef";
 
 void kputc(char c)
 {
-	console_putchar(c);
+	sbi_console_putchar(c);
 }
 
 void kputs(const char *str)

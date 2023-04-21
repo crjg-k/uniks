@@ -1,6 +1,8 @@
-#ifndef __KERNEL_DRIVER_TTY_H__
-#define __KERNEL_DRIVER_TTY_H__
+#ifndef __KERNEL_DEVICE_TTY_H__
+#define __KERNEL_DEVICE_TTY_H__
 
+#include "device.h"
+#include "uart.h"
 #include <sync/spinlock.h>
 #include <uniks/defs.h>
 #include <uniks/list.h>
@@ -21,19 +23,23 @@ struct tty_queue_t {
 struct tty_struct_t {
 	// data struct of terminal I/O attribute and control characters
 	struct termios_t termios;
-	int32_t pgrp;	      // process group it belongs to
-	int32_t (*read)();    // oop but C version, interface thought
-	int32_t (*write)();   // oop but C version, interface thought
+	struct uart_struct_t *uart_associated;
+	int32_t (*read)(void *ttyptr, void *buf, size_t cnt);
+	int32_t (*write)(void *ttyptr, void *buf, size_t cnt);
+	void (*tty_interrupt_handler)(void *ttyptr);
 	// tty secondary queue (after process with termios standard) for read
 	struct tty_queue_t secondary_q;
 };
 
 extern struct tty_struct_t tty_table[];	  // tty struct array
+extern int32_t current_tty;
 
 
 void tty_init();
-void do_tty_interrupt(int32_t tty);
 void copy_to_cooked(struct tty_struct_t *tty);
+void do_tty_interrupt(void *ttyptr);
+int32_t tty_read(void *ttyptr, void *buf, size_t cnt);
+int32_t tty_write(void *ttyptr, void *buf, size_t cnt);
 
 
-#endif /* !__KERNEL_DRIVER_TTY_H__ */
+#endif /* !__KERNEL_DEVICE_TTY_H__ */

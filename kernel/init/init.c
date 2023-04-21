@@ -9,8 +9,8 @@
  *
  */
 
-#include <driver/console.h>
-#include <driver/virtio_disk.h>
+#include <device/device.h>
+#include <device/virtio_disk.h>
 #include <fs/fs.h>
 #include <mm/blkbuffer.h>
 #include <mm/memlay.h>
@@ -42,7 +42,8 @@ void kernel_start()
 {
 	if (!r_mhartid()) {
 		memset(sbss, 0, ebss - sbss);
-		consoleinit();
+		device_init();
+
 		debugf("stext: %p\tetext: %p", stext, etext);
 		debugf("sdata: %p\tedata: %p", sdata, edata);
 		debugf("sbss: %p\tebss: %p", sbss, ebss);
@@ -60,19 +61,18 @@ void kernel_start()
 		plicinithart();
 
 		// hint: below 4 init functions maybe could let other harts do
-		buffer_init();
-		inode_init();
-		fileinit();
-		virtio_disk_init();
+		// buffer_init();
+		// inode_init();
+		// file_init();
+		// virtio_disk_init();
 
 		user_init(1);
-		__sync_synchronize();
 		clock_init();
+		all_interrupt_enable();
+		__sync_synchronize();
 
 		kprintf("\n%s\n", message);
 		kprintf("hart %d start\n\n", r_mhartid());
-
-		all_interrupt_enable();
 		interrupt_on();
 		started = 1;
 	} else {

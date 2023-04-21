@@ -1,5 +1,5 @@
 
-LOG ?= debug
+# LOG ?= debug
 # QEMULOG ?= trace
 
 # basic tools
@@ -18,7 +18,7 @@ INC_DIR = \
 	./${SRC_KERNEL_DIR}
 SRC_FILES = \
 	./${SRC_KERNEL_DIR}/init/* \
-	./${SRC_KERNEL_DIR}/driver/* \
+	./${SRC_KERNEL_DIR}/device/* \
 	./${SRC_KERNEL_DIR}/platform/* \
 	./${SRC_KERNEL_DIR}/trap/* \
 	./${SRC_KERNEL_DIR}/mm/* \

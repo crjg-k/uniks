@@ -1,5 +1,5 @@
-#ifndef __KERNEL_DRIVER_VIRTIO_DISK_H__
-#define __KERNEL_DRIVER_VIRTIO_DISK_H__
+#ifndef __KERNEL_DEVICE_VIRTIO_DISK_H__
+#define __KERNEL_DEVICE_VIRTIO_DISK_H__
 
 /**
  * @brief virtio device definitions.
@@ -119,4 +119,4 @@ struct virtio_blk_req_t {
 void virtio_disk_init();
 
 
-#endif /* !__KERNEL_DRIVER_VIRTIO_DISK_H__ */
+#endif /* !__KERNEL_DEVICE_VIRTIO_DISK_H__ */

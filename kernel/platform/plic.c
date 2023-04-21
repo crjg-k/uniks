@@ -1,5 +1,6 @@
 #include "plic.h"
-#include <driver/uart.h>
+#include <device/device.h>
+#include <device/uart.h>
 #include <platform/platform.h>
 #include <platform/riscv.h>
 
@@ -60,15 +61,6 @@ __always_inline void plic_complete(int32_t irq)
 void external_interrupt_handler()
 {
 	int32_t irq = plic_claim();
-	switch (irq) {
-	case UART0_IRQ:
-		uartinterrupt_handler();
-		break;
-	case VIRTIO_IRQ:
-		break;
-	default:
-		panic("unexpected interrupt irq = %d\n", irq);
-		break;
-	}
+	device_interrupt_handler(irq);
 	plic_complete(irq);
 }

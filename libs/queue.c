@@ -20,9 +20,14 @@ int32_t queue_full(struct queue_meta_t *q)
 	return q->queue_size == q->queue_capacity;
 }
 
-void *queue_front(struct queue_meta_t *q)
+void *queue_front_int32type(struct queue_meta_t *q)
 {
 	return &q->queue_array.queue_array_int32type[q->queue_head];
+}
+
+void *queue_front_chartype(struct queue_meta_t *q)
+{
+	return &q->queue_array.queue_array_chartype[q->queue_head];
 }
 
 void queue_push_int32type(struct queue_meta_t *q, int32_t push_data)

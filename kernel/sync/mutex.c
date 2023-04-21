@@ -36,6 +36,9 @@ void mutex_acquire(struct mutex_t *m)
 	while (mutex_holding(m)) {
 		// this mutex had been held by others, then block
 		proc_block(myproc(), &m->waiters, TASK_BLOCK);
+		release(&m->spinlk);
+		sched();
+		acquire(&m->spinlk);
 	}
 	assert(!mutex_holding(m));   // no process hold this mutex
 

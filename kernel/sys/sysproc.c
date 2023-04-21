@@ -1,4 +1,4 @@
-#include <driver/clock.h>
+#include <device/clock.h>
 #include <process/proc.h>
 #include <sys/ksyscall.h>
 #include <uniks/defs.h>
@@ -112,6 +112,7 @@ int64_t sys_waitpid()
 	return 0;
 }
 
+// will never return since process had exited
 void sys_exit()
 {
 	do_exit(argufetch(myproc(), 0));

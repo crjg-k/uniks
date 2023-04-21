@@ -8,8 +8,9 @@
  * @copyright Copyright (c) 2023 crjg-k
  *
  */
-#ifndef __KERNEL_DRIVER_UART_H__
-#define __KERNEL_DRIVER_UART_H__
+#ifndef __KERNEL_DEVICE_UART_H__
+#define __KERNEL_DEVICE_UART_H__
+
 
 #include <platform/platform.h>
 #include <sync/spinlock.h>
@@ -59,11 +60,24 @@ struct uart_rx_queue_t {
 	struct queue_meta_t qm;
 };
 
-extern struct uart_rx_queue_t uart_rx_queue;
+// UART transmit queue (no buffer and write through)
+struct uart_tx_queue_t {
+	struct spinlock_t uart_txbuf_lock;
+};
 
-void uartinit();
-char uartgetc();
-void uartinterrupt_handler();
+// UART structure contain transmit queue and recieve queue
+struct uart_struct_t {
+	struct uart_rx_queue_t uart_rx_queue;
+	struct uart_tx_queue_t uart_tx_queue;
+};
+
+extern struct uart_struct_t uart_struct;
+
+void uart_init();
+char uart_getchar();
+int32_t uart_read(void *uartptr, void *buf, size_t cnt);
+int32_t uart_write(void *uartptr, void *buf, size_t cnt);
+void do_uart_interrupt(void *uartptr);
 
 
-#endif
+#endif /* !__KERNEL_DEVICE_UART_H__ */

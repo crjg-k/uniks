@@ -304,23 +304,24 @@ err:
  * @param len
  * @return int64_t
  */
-int64_t copyin(pagetable_t pagetable, char *dst, uintptr_t srcva, uint64_t len)
+int64_t copyin(pagetable_t pagetable, void *dst, void *srcva, uint64_t len)
 {
 	uint64_t n, va0, pa0;
+	uintptr_t src_vaddr = (uintptr_t)srcva;
 
 	while (len > 0) {
-		va0 = PGROUNDDOWN(srcva);
+		va0 = PGROUNDDOWN(src_vaddr);
 		pa0 = walkaddr(pagetable, va0);
 		if (pa0 == 0)
 			return -1;
-		n = PGSIZE - (srcva - va0);
+		n = PGSIZE - (src_vaddr - va0);
 		if (n > len)
 			n = len;
-		memcpy(dst, (void *)(pa0 + (srcva - va0)), n);
+		memcpy(dst, (void *)(pa0 + (src_vaddr - va0)), n);
 
 		len -= n;
 		dst += n;
-		srcva = va0 + PGSIZE;
+		src_vaddr = va0 + PGSIZE;
 	}
 	return 0;
 }
@@ -334,23 +335,24 @@ int64_t copyin(pagetable_t pagetable, char *dst, uintptr_t srcva, uint64_t len)
  * @param len
  * @return int32_t
  */
-int32_t copyout(pagetable_t pagetable, uintptr_t dstva, char *src, uint64_t len)
+int32_t copyout(pagetable_t pagetable, void *dstva, void *src, uint64_t len)
 {
 	uint64_t n, va0, pa0;
+	uintptr_t dst_vaddr = (uintptr_t)dstva;
 
 	while (len > 0) {
-		va0 = PGROUNDDOWN(dstva);
+		va0 = PGROUNDDOWN(dst_vaddr);
 		pa0 = walkaddr(pagetable, va0);
 		if (pa0 == 0)
 			return -1;
-		n = PGSIZE - (dstva - va0);
+		n = PGSIZE - (dst_vaddr - va0);
 		if (n > len)
 			n = len;
-		memcpy((void *)(pa0 + (dstva - va0)), src, n);
+		memcpy((void *)(pa0 + (dst_vaddr - va0)), src, n);
 
 		len -= n;
 		src += n;
-		dstva = va0 + PGSIZE;
+		dst_vaddr = va0 + PGSIZE;
 	}
 	return 0;
 }

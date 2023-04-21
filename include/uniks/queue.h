@@ -29,9 +29,10 @@ int32_t queue_full(struct queue_meta_t *q);
  * @brief if the queue is empty, this function will perform a ub
  *
  * @param q
- * @return int32_t*
+ * @return void*
  */
-void *queue_front(struct queue_meta_t *q);
+void *queue_front_int32type(struct queue_meta_t *q);
+void *queue_front_chartype(struct queue_meta_t *q);
 
 void queue_push_int32type(struct queue_meta_t *q, int32_t push_data);
 void queue_push_chartype(struct queue_meta_t *q, char push_data);

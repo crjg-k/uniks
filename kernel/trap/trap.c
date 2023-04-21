@@ -1,5 +1,5 @@
 #include "trap.h"
-#include <driver/clock.h>
+#include <device/clock.h>
 #include <mm/memlay.h>
 #include <platform/plic.h>
 #include <platform/riscv.h>

@@ -78,7 +78,7 @@ enum proc_state {
 
 struct proc_t {
 	// this->lock must be held when using these below:
-	int32_t pid;		 // process ID
+	pid_t pid;		 // process ID
 	enum proc_state state;	 // process state
 	int8_t killed;		 // if non-zero, have been killed
 	int32_t exitstate;	 // exit status to be returned to parent's wait
@@ -87,13 +87,13 @@ struct proc_t {
 	uint32_t jiffies;	 // global time slice when last execution
 	struct list_node_t block_list;	 // block list of this process
 	struct list_node_t wait_list;	 // who wait for this process to exit
+	int16_t files[NFD];   // fd table pointing to the index of sys fcbtable
 
 	uintptr_t kstack;	 // always point to own kernel stack bottom
 	uint64_t sz;		 // size of process memory (bytes)
 	int32_t parentpid;	 // parent process
 	pagetable_t pagetable;	 // user page table
 	struct context_t ctxt;	 // switch here to run process
-
 	/**
 	 * @brief the trapframe for current interrupt, and furthermore, it point
 	 * to the beginning of kstack at the same time. The layout of kstack:
@@ -121,7 +121,7 @@ struct proc_t {
 	 * kernelstacktop   ->  +---------------+<--+ (low address)
 	 */
 	struct trapframe_t *tf;
-	char name[PROC_NAME_LEN + 1];	// process name
+	char name[PROC_NAME_LEN];	// process name
 
 	uint32_t magic;	  // magic number as canary to determine stackoverflow
 };

@@ -29,8 +29,11 @@ char *strncpy(char *dst, const char *src, size_t len)
 	while (len > 0) {
 		if ((*p = *src) != 0)
 			src++;
+		else
+			return dst;
 		p++, len--;
 	}
+	*(--p) = '\0';
 	return dst;
 }
 

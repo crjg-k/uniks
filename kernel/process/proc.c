@@ -9,7 +9,26 @@
 
 
 struct proc_t *pcbtable[NPROC] = {NULL};
-struct proc_t idlepcb;
+struct proc_t idlepcb = {
+	0,
+	TASK_READY,
+	0,
+	0,
+	0,
+	0,
+	0,
+	{},
+	{},
+	{0},
+	(uintptr_t)&bootstacktop0,
+	0,
+	0,
+	0,
+	{},
+	NULL,
+	"idleproc",
+	UNIKS_MAGIC,
+};   // learn from Linux-0.11 which also did such this - "hard code initing"
 struct spinlock_t pcblock[NPROC];
 struct cpu_t cpus[NCPU];
 
@@ -60,9 +79,9 @@ __always_inline struct proc_t *myproc()
 
 int32_t allocpid()
 {
-	int32_t pid;
+	pid_t pid;
 	acquire(&pids_queue.pid_lock);
-	pid = *(int32_t *)queue_front(&pids_queue.qm);
+	pid = *(pid_t *)queue_front_int32type(&pids_queue.qm);
 	queue_pop(&pids_queue.qm);
 	release(&pids_queue.pid_lock);
 	return pid;
@@ -116,7 +135,7 @@ void proc_freepagetable(pagetable_t pagetable, uint64_t sz)
  * p->lock must be held before calling this function
  * @param p
  */
-static void freeproc(int32_t pid)
+static void freeproc(pid_t pid)
 {
 	assert(holding(&pcblock[pid]));
 	if (pcbtable[pid]->pagetable)
@@ -133,7 +152,7 @@ static void freeproc(int32_t pid)
  */
 struct proc_t *allocproc()
 {
-	int32_t newpid = allocpid();
+	pid_t newpid = allocpid();
 	if (newpid != -1)
 		goto found;
 	return NULL;
@@ -196,12 +215,7 @@ void forkret()
 
 __always_inline void initidleproc()
 {
-	pcbtable[0] = &idlepcb;
-	pcbtable[0]->pid = 0;
-	pcbtable[0]->kstack = (uintptr_t)&bootstacktop0;
-	strcpy(pcbtable[0]->name, "idleproc");
-	pcbtable[0]->magic = UNIKS_MAGIC;
-	mycpu()->proc = pcbtable[0];
+	mycpu()->proc = pcbtable[0] = &idlepcb;
 }
 
 // initialize the pcb table lock
@@ -212,7 +226,7 @@ void proc_init()
 	for (int32_t i = 1; i < NPROC; i++)
 		queue_push_int32type(&pids_queue.qm, i);
 	for (struct spinlock_t *plk = pcblock; plk < &pcblock[NPROC]; plk++) {
-		initlock(plk, "proc");
+		initlock(plk, "proclock");
 	}
 	initidleproc();
 	initlock(&sleep_queue.sleep_lock, "sleeplock");
