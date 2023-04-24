@@ -39,6 +39,7 @@ void push_off()
 		c->preintstat = old;
 	c->repeat++;
 }
+
 void pop_off()
 {
 	struct cpu_t *c = mycpu();
@@ -63,7 +64,7 @@ void do_acquire(struct spinlock_t *lk)
 	assert(!holding(lk));
 
 	while (__sync_lock_test_and_set(&lk->locked, 1) != 0)
-		debugf("kkk");
+		tracef("kkk");
 
 	__sync_synchronize();
 

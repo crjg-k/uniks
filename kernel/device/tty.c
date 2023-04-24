@@ -71,10 +71,7 @@ void copy_to_cooked(struct tty_struct_t *tty)
 		queue_push_chartype(&tty->secondary_q.qm, ch);
 	}
 
-	while (!list_empty(&tty->secondary_q.wait_list)) {
-		struct proc_t *p = proc_unblock(&tty->secondary_q.wait_list);
-		release(&pcblock[p->pid]);
-	}
+	proc_unblock_all(&tty->secondary_q.wait_list);
 	release(&tty->secondary_q.tty_queue_lock);
 }
 
@@ -103,7 +100,7 @@ int32_t tty_read(void *ttyptr, void *buf, size_t cnt)
 
 	acquire(&tty->secondary_q.tty_queue_lock);
 	while (n < cnt) {
-		if (queue_empty(&tty->secondary_q.qm)) {
+		while (queue_empty(&tty->secondary_q.qm)) {
 			if (n == 0) {
 				proc_block(myproc(),
 					   &tty->secondary_q.wait_list,
@@ -116,10 +113,12 @@ int32_t tty_read(void *ttyptr, void *buf, size_t cnt)
 		}
 		ch = *(char *)queue_front_chartype(&tty->secondary_q.qm);
 		queue_pop(&tty->secondary_q.qm);
+		if (ch == EOF)
+			goto over;
 		*(buffer++) = ch;
+		n++;
 		if (ch == '\n' or ch == '\r')
 			goto over;
-		n++;
 	}
 over:
 	release(&tty->secondary_q.tty_queue_lock);

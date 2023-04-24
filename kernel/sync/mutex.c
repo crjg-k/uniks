@@ -57,12 +57,7 @@ void mutex_release(struct mutex_t *m)
 #if defined(LOG_LEVEL_DEBUG)
 	m->pid = -1;
 #endif
-	while (!list_empty(&m->waiters)) {
-		// waiting queue has item(s), need to wakeup other processes
-		struct proc_t *p = proc_unblock(&m->waiters);
-
-		release(&pcblock[p->pid]);
-	}
+	proc_unblock_all(&m->waiters);
 	assert(list_empty(&m->waiters));
 
 	release(&m->spinlk);

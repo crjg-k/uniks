@@ -11,6 +11,7 @@ extern volatile uint64_t ticks;
 extern struct sleep_queue_t sleep_queue;
 extern int32_t copyout(pagetable_t pagetable, uintptr_t dstva, char *src,
 		       uint64_t len);
+extern void verify_area(void *addr, int64_t size);
 
 
 int64_t sys_getpid()
@@ -77,6 +78,7 @@ int64_t sys_waitpid()
 		// if the proc[pid] has exited, tackle and return immediately
 		acquire(&pcblock[p->pid]);
 		int64_t *status_addr = (int64_t *)argufetch(p, 1);
+		verify_area(status_addr, sizeof(pcbtable[pid]->exitstate));
 		copyout(p->pagetable, (uintptr_t)status_addr,
 			(char *)&pcbtable[pid]->exitstate,
 			sizeof(pcbtable[pid]->exitstate));

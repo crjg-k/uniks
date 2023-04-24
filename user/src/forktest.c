@@ -15,6 +15,6 @@ int main()
 output:
 	info[9] = getpid() + '0';
 	while (1) {
-		write(info, 11);
+		write(1, info, 11);
 	};
 }

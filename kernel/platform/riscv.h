@@ -98,6 +98,11 @@
 #define PXSHIFT(level)	     (PGSHIFT + (9 * (level)))
 #define PX(level, va)	     ((((uint64_t)(va)) >> PXSHIFT(level)) & 0x1ff)
 #define PTE_FLAGS(pte)	     ((pte)&0x3FF)
+#define ISVALID(pte)	     ((pte)&PTE_V)
+#define ISREADABLE(pte)	     ((pte)&PTE_R)
+#define ISWRITABLE(pte)	     ((pte)&PTE_W)
+#define ISEXECABLE(pte)	     ((pte)&PTE_X)
+#define ISUSPACE(pte)	     ((pte)&PTE_U)
 
 
 // assmue that tp register will never be tamperred by user-space process

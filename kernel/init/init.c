@@ -16,7 +16,7 @@
 #include <mm/memlay.h>
 #include <platform/plic.h>
 #include <platform/riscv.h>
-#include <process/file.h>
+#include <file/file.h>
 #include <process/proc.h>
 #include <trap/trap.h>
 #include <uniks/defs.h>
@@ -62,8 +62,8 @@ void kernel_start()
 
 		// hint: below 4 init functions maybe could let other harts do
 		// buffer_init();
-		// inode_init();
-		// file_init();
+		mount_root();
+		sysfile_init();
 		// virtio_disk_init();
 
 		user_init(1);

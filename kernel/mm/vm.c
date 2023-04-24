@@ -4,6 +4,7 @@
 #include <platform/riscv.h>
 #include <process/proc.h>
 #include <uniks/defs.h>
+#include <uniks/errno.h>
 #include <uniks/kassert.h>
 #include <uniks/kstring.h>
 #include <uniks/param.h>
@@ -197,7 +198,7 @@ void uvmfree(pagetable_t pagetable, uint64_t sz)
 	freewalk(pagetable);
 }
 
-__always_inline void invalidate(uint64_t va)
+__always_inline void invalidate(uintptr_t va)
 {
 	asm volatile("sfence.vma %0, zero\n\tnop" : "=r"(va));
 }
@@ -261,37 +262,83 @@ err:
 	return -1;
 }
 
-int32_t do_cow(struct proc_t *p, uint64_t va)
+int32_t un_wp_page(pte_t *pte)
 {
-	pte_t *pte = walk(p->pagetable, va, 0);
-	assert(pte != NULL);
 	uint64_t pa = PTE2PA(*pte);
 	assert(mem_map[PA2ARRAYINDEX(pa)] >= 1);
 	// if it is referred one time, only add write permission
 	if (mem_map[PA2ARRAYINDEX(pa)] == 1) {
 		*pte |= PTE_W;
-		// note: must must must flush the TLB to validate the
-		// note: modification of the page table
-		invalidate(va);
 		return 0;
 	}
-	// else duplicate
+	// else duplicate page content
 	char *mem;
 	if ((mem = phymem_alloc_page()) == 0)
 		goto err;
 	memcpy(mem, (char *)pa, PGSIZE);
-	register uint64_t perm = *pte & 0xff;
+	register uint64_t perm = PTE_FLAGS(*pte);
 	*pte = PA2PTE(mem) | PTE_W | perm;
-	// note: must must must flush the TLB to validate the
-	// note: modification of the page table
-	invalidate(va);
 	mem_map[PA2ARRAYINDEX(pa)]--;
-	assert(p->magic == UNIKS_MAGIC);
 	return 0;
 err:
-	return -1;
+	return -ENOMEM;
 }
 
+// tackle cow mechanism
+__always_inline void do_wp_page(pte_t *pte, uintptr_t va)
+{
+	// hint: don't cope with the oom situation
+	un_wp_page(pte);
+	// note: must flush the TLB after modifying page table
+	invalidate(va);
+}
+
+// lazy load ELF page from secondary storage
+void do_no_page() {}
+
+void do_sd_page_fault(uintptr_t fault_vaddr)
+{
+	struct proc_t *p = myproc();
+	pte_t *pte = walk(p->pagetable, fault_vaddr, 0);
+	assert(pte != NULL);
+	if (!ISVALID(*pte)) {
+		do_no_page();
+	} else if (ISWRITABLE(*pte)) {
+		return;
+	} else {
+		do_wp_page(pte, fault_vaddr);
+	}
+	assert(p->magic == UNIKS_MAGIC);
+}
+
+/**
+ * @brief page writing verify, and if the page can't be written resulting from
+ * the COW mechanism, then copy it
+ * @param address must be aligned to page
+ */
+__always_inline void write_verify(uintptr_t address)
+{
+	do_sd_page_fault(address);
+}
+
+/**
+ * @brief verify function before writing to user space, and the names of this
+ * series of functions come from Linux-0.11
+ * @param addr
+ * @param size
+ */
+void verify_area(void *addr, int64_t size)
+{
+	uintptr_t start = (uintptr_t)addr;
+	size = OFFSETPAGE(size);
+	start = PGROUNDDOWN(start);
+
+	while (size > 0) {
+		size -= PGSIZE;
+		write_verify(start);
+		start += PGSIZE;
+	}
+}
 
 /* === transmit data between user space and kernel space === */
 

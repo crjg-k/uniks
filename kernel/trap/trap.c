@@ -9,7 +9,7 @@
 #include <uniks/log.h>
 
 extern void kerneltrapvec(), scheduler(), usertrap_handler(), syscall(),
-	yield(), do_cow(struct proc_t *p, uint64_t va);
+	yield(), do_sd_page_fault(uintptr_t fault_vaddr);
 extern char trampoline[], usertrapvec[], userret[];
 extern volatile uint64_t ticks;
 
@@ -57,7 +57,7 @@ static void exception_handler(uint64_t cause, struct proc_t *p,
 		p->tf->epc += 4;
 		break;
 	case EXC_U_ECALL:   // system call
-		tracef("process: %d, system call: %d", p->pid, p->tf->a7);
+		// tracef("process: %d, system call: %d", p->pid, p->tf->a7);
 		/**
 		 * @note: this inc must lay before syscall() since that the fork
 		 * syscall need the right instruction address
@@ -68,7 +68,7 @@ static void exception_handler(uint64_t cause, struct proc_t *p,
 	case EXC_SD_PAGEFAULT:
 		tracef("process: %d, sd page fault from prilevel: %d, addr: %p\n",
 		       p->pid, prilevel, p->tf->epc);
-		do_cow(p, p->tf->epc);
+		do_sd_page_fault(p->tf->epc);
 		break;
 	default:
 		kprintf("exception_handler(): unexpected scause %p pid=%d",

@@ -3,6 +3,7 @@
 #include <device/uart.h>
 #include <platform/platform.h>
 #include <platform/riscv.h>
+#include <uniks/kassert.h>
 
 
 void plicinit()
@@ -39,8 +40,10 @@ void plicinithart()
  */
 __always_inline int32_t plic_claim()
 {
+	push_off();
 	int32_t hart = r_mhartid();
 	int32_t irq = *(int32_t *)PLIC_S_CLAIM(hart);
+	pop_off();
 	return irq;
 }
 
@@ -54,13 +57,16 @@ __always_inline int32_t plic_claim()
  */
 __always_inline void plic_complete(int32_t irq)
 {
+	push_off();
 	int32_t hart = r_mhartid();
 	*(uint32_t *)PLIC_S_CLAIM(hart) = irq;
+	pop_off();
 }
 
 void external_interrupt_handler()
 {
 	int32_t irq = plic_claim();
+	assert(irq != 0);
 	device_interrupt_handler(irq);
 	plic_complete(irq);
 }

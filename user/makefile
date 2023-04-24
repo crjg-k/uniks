@@ -33,6 +33,11 @@ LDFLAGS = \
 SRCS := $(wildcard ./src/*.c)
 OBJS := $(patsubst ./src/%.c, %, $(SRCS))
 
+.PHONY: init
+init:
+	mkdir ${BIN_DIR}
+	mkdir ${ABSM_DIR}
+
 .PHONY: build
 build: $(OBJS)
 
@@ -46,8 +51,8 @@ build: $(OBJS)
 	rm bin/$@
 	rm *.o
 
-.PHONY: initasm
-initasm: src/initcode.S
+.PHONY: initcode
+initcode: src/initcode.S
 	${CC} $< ${CFLAGS} -o ${BIN_DIR}/initcode.o
 	${LD} ${LDFLAGS} ${BIN_DIR}/initcode.o -o ${BIN_DIR}/initcode.tmp
 	${OBJDUMP} -d ${BIN_DIR}/initcode.tmp > ${ABSM_DIR}/initcode.asm

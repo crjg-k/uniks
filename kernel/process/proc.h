@@ -87,7 +87,8 @@ struct proc_t {
 	uint32_t jiffies;	 // global time slice when last execution
 	struct list_node_t block_list;	 // block list of this process
 	struct list_node_t wait_list;	 // who wait for this process to exit
-	int16_t files[NFD];   // fd table pointing to the index of sys fcbtable
+	int16_t fdtable[NFD];	// fd table pointing to the index of sys
+				// fcbtable
 
 	uintptr_t kstack;	 // always point to own kernel stack bottom
 	uint64_t sz;		 // size of process memory (bytes)
@@ -121,7 +122,7 @@ struct proc_t {
 	 * kernelstacktop   ->  +---------------+<--+ (low address)
 	 */
 	struct trapframe_t *tf;
-	char name[PROC_NAME_LEN];	// process name
+	char name[PROC_NAME_LEN];   // process name
 
 	uint32_t magic;	  // magic number as canary to determine stackoverflow
 };
@@ -162,6 +163,7 @@ struct proc_t *myproc();
 void proc_block(struct proc_t *p, struct list_node_t *list,
 		enum proc_state state);
 struct proc_t *proc_unblock(struct list_node_t *wait_list);
+void proc_unblock_all(struct list_node_t *wait_list);
 
 
 // process relative syscall

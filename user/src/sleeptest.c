@@ -18,7 +18,7 @@ int main()
 		waitpid(i + 1, &status);
 		info[19] = i + 1 + '0';
 		info[39] = status + '0';
-		write(info, 41);
+		write(1, info, 41);
 	}
 	exit(0);
 }

@@ -49,6 +49,8 @@ static int64_t (*syscalls[])() = {
 	[SYS_write] sys_write,	   [SYS_msleep] sys_msleep,
 	[SYS_getpid] sys_getpid,   [SYS_exit] sys_exit,
 	[SYS_waitpid] sys_waitpid, [SYS_read] sys_read,
+	[SYS_open] sys_open,	   [SYS_dup] sys_dup,
+	[SYS_close] sys_close,
 };
 
 #define NUM_SYSCALLS ((sizeof(syscalls)) / (sizeof(syscalls[0])))

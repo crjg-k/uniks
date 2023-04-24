@@ -15,17 +15,19 @@ OBJDUMP = ${CROSS_PREFIX}objdump
 SRC_KERNEL_DIR = kernel
 INC_DIR = \
 	./include \
-	./${SRC_KERNEL_DIR}
+	./${SRC_KERNEL_DIR} \
+	./
 SRC_FILES = \
 	./${SRC_KERNEL_DIR}/init/* \
 	./${SRC_KERNEL_DIR}/device/* \
+	./${SRC_KERNEL_DIR}/file/* \
 	./${SRC_KERNEL_DIR}/platform/* \
 	./${SRC_KERNEL_DIR}/trap/* \
 	./${SRC_KERNEL_DIR}/mm/* \
 	./${SRC_KERNEL_DIR}/sys/* \
-	./${SRC_KERNEL_DIR}/fs/* \
 	./${SRC_KERNEL_DIR}/sync/* \
 	./${SRC_KERNEL_DIR}/process/* \
+	./fs/* \
 	./libs/*
 LINKER = ./script/kernel.ld
 TARGET = ./bin/kernel.elf
@@ -90,7 +92,7 @@ QFLAGS = \
 QEMUGDB = \
 	-gdb tcp::1234
 
-ifeq ($(LOG), trace)
+ifeq ($(QEMULOG), trace)
 	QFLAGS += -D ${QEMULOGPATH} -d exec
 endif
 

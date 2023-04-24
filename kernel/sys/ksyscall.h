@@ -11,7 +11,7 @@
  */
 
 
-// system call numbers
+// todo: change to Linux syscall number standard
 #define SYS_fork    1
 #define SYS_exit    2
 #define SYS_waitpid 3

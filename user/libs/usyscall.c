@@ -34,24 +34,27 @@ int getpid()
 	return syscall(SYS_getpid);
 }
 
-int read(char *buf, long count)
+int read(int fd, char *buf, long count)
 {
 	return syscall(SYS_read, 0, buf, count);
 }
 
-int write(char *buf, long count)
+int write(int fd, char *buf, long count)
 {
 	return syscall(SYS_write, 0, buf, count);
 }
 
-int msleep(int msec){
+int msleep(int msec)
+{
 	return syscall(SYS_msleep, msec);
 }
 
-int waitpid(int pid, int *status){
+int waitpid(int pid, int *status)
+{
 	return syscall(SYS_waitpid, pid, status);
 }
 
-void exit(int status){
+void exit(int status)
+{
 	syscall(SYS_exit, status);
 }
