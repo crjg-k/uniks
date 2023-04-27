@@ -45,7 +45,7 @@ extern int64_t sys_mkdir();
 extern int64_t sys_close();
 
 static int64_t (*syscalls[])() = {
-	[SYS_fork] sys_fork,	   [SYS_exec] sys_exec,
+	[SYS_fork] sys_fork,	   [SYS_execve] sys_exec,
 	[SYS_write] sys_write,	   [SYS_msleep] sys_msleep,
 	[SYS_getpid] sys_getpid,   [SYS_exit] sys_exit,
 	[SYS_waitpid] sys_waitpid, [SYS_read] sys_read,

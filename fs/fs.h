@@ -6,7 +6,7 @@
 
 
 #define ROOTINUM 1	// root inode-number
-#define BLKSIZE	 1024	// block size
+#define BLKSIZE	 4096	// block size
 
 
 // in-memory copy of an inode

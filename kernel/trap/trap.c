@@ -72,9 +72,9 @@ static void exception_handler(uint64_t cause, struct proc_t *p,
 		break;
 	default:
 		kprintf("exception_handler(): unexpected scause %p pid=%d",
-			read_csr(scause), p->pid);
-		kprintf("\tepc=%p stval=%p, from prilevel: %d\n",
-			read_csr(sepc), read_csr(stval), prilevel);
+			cause, p->pid);
+		kprintf("\tepc=%p, from prilevel: %d\n",
+			p->tf->epc, prilevel);
 	}
 }
 

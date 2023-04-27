@@ -130,6 +130,9 @@ void uvmfirst(pagetable_t pagetable, uint32_t *src, uint32_t sz)
 	mappages(pagetable, 0, PGSIZE, (uint64_t)mem,
 		 PTE_W | PTE_R | PTE_X | PTE_U, 1);
 	memcpy(mem, src, sz);
+	mem = phymem_alloc_page();
+	mappages(pagetable, PGSIZE, PGSIZE, (uint64_t)mem,
+		 PTE_W | PTE_R | PTE_X | PTE_U, 1);
 }
 
 // create an empty user page table and returns 0 if out of memory
@@ -224,7 +227,8 @@ int64_t uvmcopy(pagetable_t old, pagetable_t new, uint64_t sz)
 		assert((pte = walk(old, i, 0)) != NULL);
 		assert((*pte & PTE_V) != 0);
 		pa = PTE2PA(*pte);
-		*pte &= ~PTE_W;	  // clear the write permission bit
+		clear_variable_bit(*pte,
+				   PTE_W);   // clear the write permission bit
 		flags = PTE_FLAGS(*pte);
 		// add mapping to childproc pagetable
 		if (mappages(new, i, PGSIZE, (uint64_t)pa, flags, 1) != 0) {
@@ -268,7 +272,7 @@ int32_t un_wp_page(pte_t *pte)
 	assert(mem_map[PA2ARRAYINDEX(pa)] >= 1);
 	// if it is referred one time, only add write permission
 	if (mem_map[PA2ARRAYINDEX(pa)] == 1) {
-		*pte |= PTE_W;
+		set_variable_bit(*pte, PTE_W);
 		return 0;
 	}
 	// else duplicate page content

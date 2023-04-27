@@ -33,9 +33,9 @@ struct device_t {
 	// device controlling
 	int32_t (*ioctl)(void *ptr);
 	// device reading
-	int32_t (*read)(void *ptr, void *buf, size_t cnt);
+	int32_t (*read)(void *ptr, void *, size_t);
 	// device writing
-	int32_t (*write)(void *ptr, void *buf, size_t cnt);
+	int32_t (*write)(void *ptr, void *, size_t);
 };
 
 extern struct device_t devices[];

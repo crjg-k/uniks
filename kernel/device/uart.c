@@ -49,8 +49,10 @@ __always_inline void uart_soft_init()
 	assert(current_tty != -1);
 	uart_queue_init();
 	struct device_t *devptr = &devices[UART0_IRQ];
-	device_install(DEV_CHAR, DEV_SERIAL, &uart_struct, "uart0", current_tty,
-		       do_uart_interrupt, NULL, uart_read, uart_write, devptr);
+	char uart0_name[] = "uart0";
+	device_install(DEV_CHAR, DEV_SERIAL, &uart_struct, uart0_name,
+		       current_tty, do_uart_interrupt, NULL, uart_read,
+		       uart_write, devptr);
 }
 
 void uart_init()
@@ -109,7 +111,8 @@ int32_t uart_read(void *uartptr, void *buf, size_t cnt)
 	while (n < cnt) {
 		if (queue_empty(&uart->uart_rx_queue.qm))
 			goto over;
-		*(buffer++) = *(char *)queue_front_chartype(&uart->uart_rx_queue.qm);
+		*(buffer++) =
+			*(char *)queue_front_chartype(&uart->uart_rx_queue.qm);
 		queue_pop(&uart->uart_rx_queue.qm);
 		n++;
 	}

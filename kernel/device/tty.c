@@ -69,6 +69,8 @@ void copy_to_cooked(struct tty_struct_t *tty)
 					.qm))	// discard the oldest simply
 			queue_pop(&tty->secondary_q.qm);
 		queue_push_chartype(&tty->secondary_q.qm, ch);
+		// echo mode
+		uart_write(tty->uart_associated, &ch, 1);
 	}
 
 	proc_unblock_all(&tty->secondary_q.wait_list);

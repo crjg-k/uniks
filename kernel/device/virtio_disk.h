@@ -7,12 +7,20 @@
  * only tested with qemu.
  *
  * the virtio spec:
- * https://docs.oasis-open.org/virtio/virtio/v1.1/virtio-v1.1.pdf
+ * https://docs.oasis-open.org/virtio/virtio/v1.2/virtio-v1.2.pdf
  *
  */
 
+#include <fs/blkbuf.h>
+#include <platform/platform.h>
 #include <uniks/defs.h>
 
+
+#define MMIO_MAGIC	    0x74726976
+#define MMIO_VERSION	    2
+#define MMIO_NET_DEVICE_ID  1
+#define MMIO_DISK_DEVICE_ID 2
+#define MMIO_VENDOR_ID	    0x554d4551
 
 /**
  * virtio mmio control registers, mapped starting at 0x10001000 from qemu
@@ -61,8 +69,8 @@
 // generate the address of virtio mmio register r
 #define VIRTIO_DISK_R(r) ((volatile uint32_t *)(VIRTIO0 + (r)))
 
-// this many virtio descriptors must be a power of 2
-#define NUM 8
+// the number of virtio descriptors must be a power of 2
+#define VIRTIO_DESC_NUM 32
 
 // a single descriptor, from the spec.
 struct virtq_desc_t {
@@ -72,13 +80,14 @@ struct virtq_desc_t {
 	uint16_t next;
 };
 #define VRING_DESC_F_NEXT  1   // chained with another descriptor
+#define VRING_DESC_F_READ  0   // device reads
 #define VRING_DESC_F_WRITE 2   // device writes (vs read)
 
 // the (entire) avail ring, from the spec.
 struct virtq_avail_t {
-	uint16_t flags;	      // always zero
-	uint16_t index;	      // driver will write ring[index] next
-	uint16_t ring[NUM];   // descriptor numbers of chain heads
+	uint16_t flags;			  // always zero
+	uint16_t index;			  // driver will write ring[index] next
+	uint16_t ring[VIRTIO_DESC_NUM];	  // descriptor numbers of chain heads
 	uint16_t unused;
 };
 
@@ -94,7 +103,7 @@ struct virtq_used_elem_t {
 struct virtq_used_t {
 	uint16_t flags;	  // always zero
 	uint16_t index;	  // device increments when it adds a ring[] entry
-	struct virtq_used_elem_t ring[NUM];
+	struct virtq_used_elem_t ring[VIRTIO_DESC_NUM];
 };
 
 
@@ -117,6 +126,9 @@ struct virtio_blk_req_t {
 
 
 void virtio_disk_init();
+void virtio_disk_read(struct blkbuf_t *buf);
+void virtio_disk_write(struct blkbuf_t *buf);
+void do_virtio_disk_interrupt(void *ptr);
 
 
 #endif /* !__KERNEL_DEVICE_VIRTIO_DISK_H__ */

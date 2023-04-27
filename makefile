@@ -112,7 +112,7 @@ debug-vscode: build
 
 .PHONY: dump
 dump: build
-	${OBJDUMP} -d ${TARGET} > ./bin/kerneldump.asm
+	${OBJDUMP} -S ${TARGET} > ./bin/kerneldump.asm
 	# vim ./bin/kerneldump.txt
 
 .PHONY: hint

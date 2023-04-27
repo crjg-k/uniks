@@ -24,6 +24,13 @@
 #define __noreturn	__attribute__((noreturn))
 
 
+#define set_variable_bit(var, bit)   ({ (var) |= (bit); })
+#define clear_variable_bit(var, bit) ({ (var) &= ~(bit); })
+#define get_variable_bit(var, bit)   ({ (var) & (bit); })
+
+#define get_high_32bit(var) ({ (var) >> 32; })
+
+
 extern char stext[], etext[];
 extern char sdata[], edata[];
 extern char sbss[], ebss[];

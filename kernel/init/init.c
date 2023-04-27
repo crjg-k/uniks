@@ -11,12 +11,12 @@
 
 #include <device/device.h>
 #include <device/virtio_disk.h>
+#include <file/file.h>
+#include <fs/blkbuf.h>
 #include <fs/fs.h>
-#include <mm/blkbuffer.h>
 #include <mm/memlay.h>
 #include <platform/plic.h>
 #include <platform/riscv.h>
-#include <file/file.h>
 #include <process/proc.h>
 #include <trap/trap.h>
 #include <uniks/defs.h>
@@ -61,10 +61,10 @@ void kernel_start()
 		plicinithart();
 
 		// hint: below 4 init functions maybe could let other harts do
-		// buffer_init();
+		blkbuf_init();
 		mount_root();
 		sysfile_init();
-		// virtio_disk_init();
+		virtio_disk_init();
 
 		user_init(1);
 		clock_init();

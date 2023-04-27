@@ -1,6 +1,9 @@
 #include <device/device.h>
 #include <device/tty.h>
+#include <device/virtio_disk.h>
 #include <file/file.h>
+#include <fs/blkbuf.h>
+#include <fs/fs.h>
 #include <process/proc.h>
 #include <sys/ksyscall.h>
 #include <uniks/defs.h>
@@ -28,16 +31,17 @@ extern void *phymem_alloc_page();
 	file = &fcbtable[p->files[fd]]; \
 	inode = file->f_inode;
 
+
 uint64_t sys_read()
 {
+	static int32_t i = 0;
 	struct proc_t *p = myproc();
-	char *buf = (char *)argufetch(p, 1), kernelch;
+	char *buf = (char *)argufetch(p, 1);
 	size_t count = argufetch(p, 2);
-	int32_t res = devices[current_tty].read(devices[current_tty].ptr,
-						&kernelch, count);
+	struct blkbuf_t *bb = blk_read(VIRTIO_IRQ, i++);
 	verify_area(buf, count);
-	copyout(p->pagetable, buf, &kernelch, res);
-
+	copyout(p->pagetable, buf, bb->b_data, BLKSIZE);
+	brelease(bb);
 	// sys_file_rw_common();
 	// if PIPE
 
@@ -45,7 +49,7 @@ uint64_t sys_read()
 
 	// else if ordinary disk file, both directory or common file are okay
 
-	return res;
+	return BLKSIZE;
 }
 
 uint64_t sys_write()
@@ -125,7 +129,6 @@ uint64_t do_close(uint32_t fd)
 	p->fdtable[fd] = 0;
 	release(&pcblock[p->pid]);
 
-	acquire(&fcblock[fcb_idx]);
 	f = &fcbtable[fcb_idx];
 
 	assert(f->f_count != 0);
@@ -136,7 +139,6 @@ uint64_t do_close(uint32_t fd)
 	// release an inode
 	// iput(f->f_inode);
 over:
-	release(&fcblock[fcb_idx]);
 	return 0;
 }
 

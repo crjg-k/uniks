@@ -32,16 +32,16 @@ int32_t mutex_holding(struct mutex_t *m)
 
 void mutex_acquire(struct mutex_t *m)
 {
-	acquire(&m->spinlk);
 	while (mutex_holding(m)) {
+		acquire(&m->spinlk);
 		// this mutex had been held by others, then block
 		proc_block(myproc(), &m->waiters, TASK_BLOCK);
 		release(&m->spinlk);
 		sched();
-		acquire(&m->spinlk);
 	}
 	assert(!mutex_holding(m));   // no process hold this mutex
 
+	acquire(&m->spinlk);
 	m->locked = 1;
 #if defined(LOG_LEVEL_DEBUG)
 	m->pid = myproc()->pid;
@@ -51,8 +51,9 @@ void mutex_acquire(struct mutex_t *m)
 
 void mutex_release(struct mutex_t *m)
 {
-	acquire(&m->spinlk);
 	assert(mutex_holding(m));   // ensure that this mutex had been held
+
+	acquire(&m->spinlk);
 	m->locked = 0;
 #if defined(LOG_LEVEL_DEBUG)
 	m->pid = -1;

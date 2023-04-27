@@ -10,29 +10,41 @@
  * 			retval=>a0
  */
 
+// below header file has Linux syscall number
+#if 0
+#include <asm/unistd_32.h>
+#endif
 
-// todo: change to Linux syscall number standard
-#define SYS_fork    1
-#define SYS_exit    2
-#define SYS_waitpid 3
-#define SYS_pipe    4
-#define SYS_read    5
-#define SYS_kill    6
-#define SYS_exec    7
-#define SYS_fstat   8
-#define SYS_chdir   9
-#define SYS_dup	    10
-#define SYS_getpid  11
-#define SYS_sbrk    12
-#define SYS_msleep  13
-#define SYS_uptime  14
-#define SYS_open    15
-#define SYS_write   16
-#define SYS_mknod   17
-#define SYS_unlink  18
-#define SYS_link    19
-#define SYS_mkdir   20
-#define SYS_close   21
+#define SYS_exit    1
+#define SYS_fork    2
+#define SYS_read    3
+#define SYS_write   4
+#define SYS_open    5
+#define SYS_close   6
+#define SYS_waitpid 7
+#define SYS_creat   8
+#define SYS_link    9
+#define SYS_unlink  10
+#define SYS_execve  11
+#define SYS_lseek   19
+#define SYS_getpid  20
+#define SYS_kill    37
+#define SYS_mkdir   39
+#define SYS_rmdir   40
+#define SYS_dup	    41
+#define SYS_pipe    42
+#define SYS_brk	    45
+#define SYS_chroot  61
+#define SYS_dup2    63
+#define SYS_getppid 64
+#define SYS_readdir 89
+#define SYS_mmap    90
+#define SYS_munmap  91
+#define SYS_yield   158
+#define SYS_sleep   162
+#define SYS_getcwd  183
+
+#define SYS_msleep 13
 
 
 void syscall();

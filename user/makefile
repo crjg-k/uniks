@@ -44,7 +44,7 @@ build: $(OBJS)
 %: src/%.c ${LIBS_DIR}/ulib.c ${LIBS_DIR}/usyscall.c
 	${CC} $^ ${CFLAGS}
 	${LD} ${LDFLAGS} ulib.o $@.o usyscall.o -o ${BIN_DIR}/$@.o
-	${OBJDUMP} -d ${BIN_DIR}/$@.o > ${ABSM_DIR}/$@.asm
+	${OBJDUMP} -S ${BIN_DIR}/$@.o > ${ABSM_DIR}/$@.asm
 	${OBJDUMP} -s ${BIN_DIR}/$@.o > ${ABSM_DIR}/$@.bsm
 	${OBJCOPY} ${BIN_DIR}/$@.o --strip-all -O binary ${BIN_DIR}/$@
 	od -t x ${BIN_DIR}/$@
@@ -55,7 +55,7 @@ build: $(OBJS)
 initcode: src/initcode.S
 	${CC} $< ${CFLAGS} -o ${BIN_DIR}/initcode.o
 	${LD} ${LDFLAGS} ${BIN_DIR}/initcode.o -o ${BIN_DIR}/initcode.tmp
-	${OBJDUMP} -d ${BIN_DIR}/initcode.tmp > ${ABSM_DIR}/initcode.asm
+	${OBJDUMP} -S ${BIN_DIR}/initcode.tmp > ${ABSM_DIR}/initcode.asm
 	${OBJDUMP} -s ${BIN_DIR}/initcode.tmp > ${ABSM_DIR}/initcode.bsm
 	${OBJCOPY} ${BIN_DIR}/initcode.tmp --strip-all -O binary ${BIN_DIR}/initcode
 	od -t x ${BIN_DIR}/initcode
