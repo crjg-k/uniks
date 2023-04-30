@@ -63,6 +63,7 @@ struct blkbuf_t *get_hash_table(dev_t dev, uint32_t blkno)
 		if ((bb = find_buffer(dev, blkno)) == NULL)
 			return NULL;
 
+		assert(bb->b_count == 0);
 		/**
 		 * @brief inc reference count, and wait for unlock (if it had
 		 * been locked by other processes)
@@ -126,7 +127,7 @@ repeat:
 
 	/**
 	 * @brief don't find in hash table (namely not buffered and need to
-	 * read from disk)
+	 * get a new block and read from disk)
 	 */
 	acquire(&free_list_head.free_list_head_lock);
 	if (list_empty(&free_list_head.free_head)) {
@@ -142,11 +143,7 @@ repeat:
 	bb = element_entry(list_prev(&free_list_head.free_head),
 			   struct blkbuf_t, free_node);
 	mutex_acquire(&bb->b_mtx);
-	if (bb->b_count) {
-		release(&free_list_head.free_list_head_lock);
-		mutex_release(&bb->b_mtx);
-		goto repeat;
-	}
+	assert(bb->b_count == 0);
 
 	/**
 	 * @brief if this block is dirty, we are supposed to write it back to
@@ -154,17 +151,13 @@ repeat:
 	 * above procedure as this block had been used by another processes.
 	 */
 	while (bb->b_dirty) {
-		blk_write(bb);
-		if (bb->b_count) {
-			release(&free_list_head.free_list_head_lock);
-			mutex_release(&bb->b_mtx);
-			goto repeat;
-		}
+		virtio_disk_write(bb);
 	}
+	assert(bb->b_count == 0);
 
 	/**
 	 * note: when this process blocked because of waiting this block, other
-	 * note: process may have add this block to the hash table, so check
+	 * note: process may have added this block to the hash table, so check
 	 * note: hash table again and repeat above procedure if it is true.
 	 */
 	if (find_buffer(dev, blkno)) {
@@ -174,13 +167,13 @@ repeat:
 	}
 
 	/**
-	 * @brief OK! Now, we have a unused(b_count=0), unlocked and clean
+	 * @brief OK! Now, we have an unused(b_count=0), unlocked and clean
 	 * buffered block which is one2one mapping to the argument <dev, blkno>,
 	 * so we occupy this by set b_count as 1 and reset another flags.
 	 */
 	assert(bb->b_count == 0);
 	assert(bb->b_dirty == 0);
-	bb->b_count = 1;
+	bb->b_count++;
 	// push it into corresponding hash table
 	remove_then_insert_newhash(bb, dev, blkno);
 	bb->b_dev = dev;
@@ -225,9 +218,8 @@ struct blkbuf_t *blk_read(dev_t dev, uint32_t blockno)
 }
 
 // write bb's contents to disk and must be locked before called this function
-void blk_write(struct blkbuf_t *bb)
+void blk_write_over(struct blkbuf_t *bb)
 {
 	assert(mutex_holding(&bb->b_mtx));
-	virtio_disk_write(bb);
-	bb->b_dirty = 0;
+	bb->b_dirty = 1;
 }

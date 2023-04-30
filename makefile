@@ -21,18 +21,19 @@ SRC_FILES = \
 	./${SRC_KERNEL_DIR}/init/* \
 	./${SRC_KERNEL_DIR}/device/* \
 	./${SRC_KERNEL_DIR}/file/* \
-	./${SRC_KERNEL_DIR}/platform/* \
 	./${SRC_KERNEL_DIR}/trap/* \
 	./${SRC_KERNEL_DIR}/mm/* \
 	./${SRC_KERNEL_DIR}/sys/* \
 	./${SRC_KERNEL_DIR}/sync/* \
 	./${SRC_KERNEL_DIR}/process/* \
+	./platform/* \
 	./fs/* \
 	./libs/*
 LINKER = ./script/kernel.ld
 TARGET = ./bin/kernel.elf
 OSNAME = uniks.bin
 OSBIN = ./bin/${OSNAME}
+DISKIMG = disk.img
 
 CFLAGS = \
 	-mcmodel=medany \
@@ -61,17 +62,13 @@ else ifeq ($(LOG), trace)
 endif
 
 .PHONY: run
-run: clean build qemu dump
+run: clean qemu dump
 
 .PHONY: build
 build:
 	$(shell if [ ! -e bin ]; then mkdir bin; fi)
 	${CC} ${SRC_FILES} ${CFLAGS} -o ${TARGET}
 	${OBJCOPY} ${TARGET} --strip-all -O binary ${OSBIN}
-
-.PHONY: user
-user:
-	cd ./user ; make
 
 
 # qemu option
@@ -87,7 +84,7 @@ QFLAGS = \
 	-bios ${BOOTLOADER} \
 	-kernel ${OSBIN} \
 	-global virtio-mmio.force-legacy=false \
-	-drive file=fs.img,if=none,format=raw,id=x0 \
+	-drive file=${DISKIMG},if=none,format=raw,id=x0 \
 	-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 QEMUGDB = \
 	-gdb tcp::1234
@@ -115,10 +112,14 @@ dump: build
 	${OBJDUMP} -S ${TARGET} > ./bin/kerneldump.asm
 	# vim ./bin/kerneldump.txt
 
-.PHONY: hint
-hint:
-	bear -- make build
-	mv compile_commands.json .vscode/
+FSIMGSIZE = 1M
+BLOCKSIZE = 4096
+.PHONY: ${DISKIMG}
+${DISKIMG}:
+	$(shell if [ -e ${DISKIMG} ]; then rm ${DISKIMG}; fi)
+	touch ${DISKIMG}
+	fallocate ${DISKIMG} -l ${FSIMGSIZE}
+	echo y | mkfs.ext2 -b ${BLOCKSIZE} ${DISKIMG}
 
 .PHONY: clean
 clean:

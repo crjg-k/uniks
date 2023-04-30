@@ -1,4 +1,6 @@
 
+# DEBUG ?= gdb
+
 # basic tools
 SHELL = /bin/bash
 CROSS_PREFIX = riscv64-unknown-elf-
@@ -14,12 +16,13 @@ INC_DIR = ./include
 LIBS_DIR= ./libs
 BIN_DIR = ./bin
 ABSM_DIR = ./absm
+INITCODE = initcode
 
 LINKER = ./user.ld
 
 CFLAGS = \
 	-c \
-	-g3 \
+	-static \
 	-march=rv64g \
 	-nostdlib \
 	-fno-builtin \
@@ -27,19 +30,23 @@ CFLAGS = \
 
 CFLAGS += $(foreach dir, ${INC_DIR}, -I${dir})
 
+ifeq ($(DEBUG), gdb)
+	CFLAGS += -g3
+endif
+
 LDFLAGS = \
 	-T ${LINKER}
 
 SRCS := $(wildcard ./src/*.c)
 OBJS := $(patsubst ./src/%.c, %, $(SRCS))
 
+.PHONY: build
+build: init $(OBJS)
+
 .PHONY: init
 init:
-	mkdir ${BIN_DIR}
-	mkdir ${ABSM_DIR}
-
-.PHONY: build
-build: $(OBJS)
+	$(shell if [ ! -e ${BIN_DIR} ]; then mkdir ${BIN_DIR}; fi)
+	$(shell if [ ! -e ${ABSM_DIR} ]; then mkdir ${ABSM_DIR}; fi)
 
 %: src/%.c ${LIBS_DIR}/ulib.c ${LIBS_DIR}/usyscall.c
 	${CC} $^ ${CFLAGS}
@@ -48,21 +55,21 @@ build: $(OBJS)
 	${OBJDUMP} -s ${BIN_DIR}/$@.o > ${ABSM_DIR}/$@.bsm
 	${OBJCOPY} ${BIN_DIR}/$@.o --strip-all -O binary ${BIN_DIR}/$@
 	od -t x ${BIN_DIR}/$@
-	rm bin/$@
+	rm ${BIN_DIR}/$@
 	rm *.o
 
-.PHONY: initcode
-initcode: src/initcode.S
-	${CC} $< ${CFLAGS} -o ${BIN_DIR}/initcode.o
-	${LD} ${LDFLAGS} ${BIN_DIR}/initcode.o -o ${BIN_DIR}/initcode.tmp
-	${OBJDUMP} -S ${BIN_DIR}/initcode.tmp > ${ABSM_DIR}/initcode.asm
-	${OBJDUMP} -s ${BIN_DIR}/initcode.tmp > ${ABSM_DIR}/initcode.bsm
-	${OBJCOPY} ${BIN_DIR}/initcode.tmp --strip-all -O binary ${BIN_DIR}/initcode
-	od -t x ${BIN_DIR}/initcode
-	mv ${BIN_DIR}/initcode ${BIN_DIR}/initcode.o
-	rm ${BIN_DIR}/initcode.tmp
+.PHONY: ${INITCODE}
+${INITCODE}: init src/${INITCODE}.S
+	${CC} src/${INITCODE}.S ${CFLAGS}
+	${LD} ${LDFLAGS} ${INITCODE}.o -o ${BIN_DIR}/${INITCODE}.o
+	${OBJDUMP} -S ${BIN_DIR}/${INITCODE}.o > ${ABSM_DIR}/${INITCODE}.asm
+	${OBJDUMP} -s ${BIN_DIR}/${INITCODE}.o > ${ABSM_DIR}/${INITCODE}.bsm
+	${OBJCOPY} ${BIN_DIR}/${INITCODE}.o --strip-all -O binary ${BIN_DIR}/${INITCODE}
+	od -t x ${BIN_DIR}/${INITCODE}
+	rm ${BIN_DIR}/${INITCODE}
+	rm *.o
 
 .PHONY: clean
-clean: 
+clean:
 	rm ${BIN_DIR}/*
 	rm ${ABSM_DIR}/*

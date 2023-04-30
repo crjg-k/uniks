@@ -345,12 +345,14 @@ void do_virtio_disk_interrupt(void *ptr)
 	release(&disk.virtio_disk_lock);
 }
 
-void virtio_disk_read(struct blkbuf_t *buf)
+void virtio_disk_read(struct blkbuf_t *bb)
 {
-	virtio_disk_rw(buf, 0);
+	virtio_disk_rw(bb, 0);
 }
 
-void virtio_disk_write(struct blkbuf_t *buf)
+void virtio_disk_write(struct blkbuf_t *bb)
 {
-	virtio_disk_rw(buf, 1);
+	assert(bb->b_dirty == 1);
+	virtio_disk_rw(bb, 1);
+	bb->b_dirty = 0;
 }
