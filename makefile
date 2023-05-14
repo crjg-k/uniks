@@ -22,6 +22,7 @@ SRC_FILES = \
 	./${SRC_KERNEL_DIR}/device/* \
 	./${SRC_KERNEL_DIR}/file/* \
 	./${SRC_KERNEL_DIR}/trap/* \
+	./${SRC_KERNEL_DIR}/loader/* \
 	./${SRC_KERNEL_DIR}/mm/* \
 	./${SRC_KERNEL_DIR}/sys/* \
 	./${SRC_KERNEL_DIR}/sync/* \
@@ -44,7 +45,8 @@ CFLAGS = \
 	-Werror \
 	-march=rv64g \
 	-fno-stack-protector \
-	-fno-omit-frame-pointer
+	-fno-omit-frame-pointer \
+	-fno-stack-protector
 
 CFLAGS += -T ${LINKER}
 CFLAGS += -g3

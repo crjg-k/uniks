@@ -87,8 +87,8 @@ struct proc_t {
 	uint32_t jiffies;	 // global time slice when last execution
 	struct list_node_t block_list;	 // block list of this process
 	struct list_node_t wait_list;	 // who wait for this process to exit
-	int16_t fdtable[NFD];	// fd table pointing to the index of sys
-				// fcbtable
+	int16_t fdtable[NFD];	 // fd table pointing to the index of sys
+				 // fcbtable
 
 	uintptr_t kstack;	 // always point to own kernel stack bottom
 	uint64_t sz;		 // size of process memory (bytes)
@@ -99,7 +99,7 @@ struct proc_t {
 	 * @brief the trapframe for current interrupt, and furthermore, it point
 	 * to the beginning of kstack at the same time. The layout of kstack:
 	 *
-	 * kernelstackbottom -> +---------------+<=====+ (high address)
+	 * kernelstacktop    -> +---------------+<=====+ (high address)
 	 *                      |               |      |
 	 *    kernel_sp   ->    |               |      |
 	 *                      |               |      |
@@ -119,7 +119,7 @@ struct proc_t {
 	 *                      |               |   |
 	 *                      |   TRAPFRAME   |   |
 	 *                      |               |   |
-	 * kernelstacktop   ->  +---------------+<--+ (low address)
+	 * kernelstackbottom->  +---------------+<--+ (low address)
 	 */
 	struct trapframe_t *tf;
 	char name[PROC_NAME_LEN];   // process name
@@ -168,7 +168,6 @@ void proc_unblock_all(struct list_node_t *wait_list);
 
 // process relative syscall
 int64_t do_fork();
-int64_t do_exec();
 void do_exit(int32_t status);
 
 #endif /* !__KERNEL_PROCESS_PROC_H__ */

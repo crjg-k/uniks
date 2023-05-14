@@ -13,7 +13,7 @@
 #endif
 
 #ifndef EOF
-	#define EOF (char)-1
+	#define EOF ((char)-1)
 #endif
 
 
@@ -22,6 +22,7 @@
 #define __always_inline inline __attribute__((always_inline))
 #define __noinline	__attribute__((noinline))
 #define __noreturn	__attribute__((noreturn))
+#define __packed	__attribute__((packed))
 
 
 #define set_variable_bit(var, bit)   ({ (var) |= (bit); })

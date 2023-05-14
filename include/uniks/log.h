@@ -46,7 +46,7 @@
 
 #endif	 // LOG_LEVEL_TRACE
 
-enum LOG_COLOR {
+enum {
 	RED = 31,
 	GREEN = 32,
 	BLUE = 34,

@@ -47,42 +47,42 @@
 	})
 
 
-#define PRILEVEL_U 0
-#define PRILEVEL_S 1
-#define PRILEVEL_M 3
+#define PRILEVEL_U (0)
+#define PRILEVEL_S (1)
+#define PRILEVEL_M (3)
 
 // trap->interrupt
-#define IRQ_U_SOFT	       0
-#define IRQ_S_SOFT	       1
-#define IRQ_U_TIMER	       4
-#define IRQ_S_TIMER	       5
-#define IRQ_U_EXT	       8
-#define IRQ_S_EXT	       9
+#define IRQ_U_SOFT	       (0)
+#define IRQ_S_SOFT	       (1)
+#define IRQ_U_TIMER	       (4)
+#define IRQ_S_TIMER	       (5)
+#define IRQ_U_EXT	       (8)
+#define IRQ_S_EXT	       (9)
 // trap->exception
-#define EXC_INST_ADDR_MISALIGN 0
-#define EXC_INST_ACCESSFAULT   1
-#define EXC_INST_ILLEGAL       2
-#define EXC_BREAK	       3
-#define EXC_LD_ADDR_MISALIGN   4
-#define EXC_LD_ACCESSFAULT     5
-#define EXC_SD_ADDR_MISALIGN   6
-#define EXC_SD_ACCESSFAULT     7
-#define EXC_U_ECALL	       8
-#define EXC_S_ECALL	       9
-#define EXC_INST_PAGEFAULT     12
-#define EXC_LD_PAGEFAULT       13
-#define EXC_SD_PAGEFAULT       15
+#define EXC_INST_ADDR_MISALIGN (0)
+#define EXC_INST_ACCESSFAULT   (1)
+#define EXC_INST_ILLEGAL       (2)
+#define EXC_BREAK	       (3)
+#define EXC_LD_ADDR_MISALIGN   (4)
+#define EXC_LD_ACCESSFAULT     (5)
+#define EXC_SD_ADDR_MISALIGN   (6)
+#define EXC_SD_ACCESSFAULT     (7)
+#define EXC_U_ECALL	       (8)
+#define EXC_S_ECALL	       (9)
+#define EXC_INST_PAGEFAULT     (12)
+#define EXC_LD_PAGEFAULT       (13)
+#define EXC_SD_PAGEFAULT       (15)
 
 /* trap and interrupt related */
 #define SIE_SSIE (1 << IRQ_S_SOFT)
 #define SIE_STIE (1 << IRQ_S_TIMER)
 #define SIE_SEIE (1 << IRQ_S_EXT)
 
-#define SSTATUS_UIE  0x00000001
-#define SSTATUS_SIE  0x00000002
-#define SSTATUS_UPIE 0x00000010
-#define SSTATUS_SPIE 0x00000020
-#define SSTATUS_SPP  0x00000100
+#define SSTATUS_UIE  (0x00000001)
+#define SSTATUS_SIE  (0x00000002)
+#define SSTATUS_UPIE (0x00000010)
+#define SSTATUS_SPIE (0x00000020)
+#define SSTATUS_SPP  (0x00000100)
 
 #define PTE_V		     (1 << 0)
 #define PTE_R		     (1 << 1)
@@ -90,7 +90,7 @@
 #define PTE_X		     (1 << 3)
 #define PTE_U		     (1 << 4)
 #define SATP_SV39	     (8l << 60)	  // RISCV Sv39 page table scheme
-#define PTENUM		     PGSIZE / 8
+#define PTENUM		     (PGSIZE / 8)
 #define MAKE_SATP(pagetable) (SATP_SV39 | (((uint64_t)pagetable) >> 12))
 #define w_satp(x)	     ({ asm volatile("csrw satp, %0" : : "r"(x)); })
 #define PA2PTE(pa)	     ((((uint64_t)pa) >> 12) << 10)   // pysical addr to pte
@@ -98,11 +98,11 @@
 #define PXSHIFT(level)	     (PGSHIFT + (9 * (level)))
 #define PX(level, va)	     ((((uint64_t)(va)) >> PXSHIFT(level)) & 0x1ff)
 #define PTE_FLAGS(pte)	     ((pte)&0x3FF)
-#define ISVALID(pte)	     ((pte)&PTE_V)
-#define ISREADABLE(pte)	     ((pte)&PTE_R)
-#define ISWRITABLE(pte)	     ((pte)&PTE_W)
-#define ISEXECABLE(pte)	     ((pte)&PTE_X)
-#define ISUSPACE(pte)	     ((pte)&PTE_U)
+#define PAGE_ISVALID(pte)    ((pte)&PTE_V)
+#define PAGE_ISREADABLE(pte) ((pte)&PTE_R)
+#define PAGE_ISWRITABLE(pte) ((pte)&PTE_W)
+#define PAGE_ISEXECABLE(pte) ((pte)&PTE_X)
+#define PAGE_ISUSPACE(pte)   ((pte)&PTE_U)
 
 
 // assmue that tp register will never be tamperred by user-space process
@@ -162,5 +162,9 @@ __always_inline static void all_interrupt_enable()
 // zero, zero means flush all TLB entries
 #define sfence_vma() ({ asm volatile("sfence.vma zero, zero\n\tnop"); })
 
+__always_inline void invalidate(uintptr_t va)
+{
+	asm volatile("sfence.vma %0, zero\n\tnop" : "=r"(va));
+}
 
 #endif /* !__KERNEL_PLATFORM_RISCV_H__ */

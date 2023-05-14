@@ -1,35 +1,51 @@
 #include <usyscall.h>
 
+/**
+ * The writing format for the read-only data segment just below comes from
+ * the online compiler explorer:
+ * https://godbolt.org/
+ */
+
+
 .global _start
+
+
+.section .rodata
+# char file[] = "/bin/echo";
+file:
+	.string "/bin/echo"
+# char *argv[]={"hello", "uniks", "world", NULL};
+.LC0:
+        .string "hello"
+.LC1:
+        .string "uniks"
+.LC2:
+        .string "world"
+argv:
+        .dword  .LC0
+        .dword  .LC1
+        .dword  .LC2
+        .dword  0
+# char *envp[]={"HOME=/", "PATH=/bin", NULL};
+.LC3:
+        .string "HOME=/"
+.LC4:
+        .string "PATH=/bin"
+envp:
+        .dword  .LC3
+        .dword  .LC4
+        .dword  0
 
 .section .text
 _start:
-	li a7, SYS_fork
+# execve(file, argv, envp);
+	li a7, SYS_execve
+	la a0, file
+	la a1, argv
+	la a2, envp
 	ecall
-## if(fork()==0) { info[10]='2';
-	bne a0, zero, exit
-	la a1, info
-	li a2, '2'
-	sb a2, 9(a1)
 
-	li a7, SYS_fork
+# exit(-1);
+	li a7, SYS_exit
+	li a0,-1
 	ecall
-## if(fork()==0) { info[10]='3'; }
-	bne a0, zero, exit
-	la a1, info
-	li a2, '3'
-	sb a2, 9(a1)
-# }
-
-# while(1) { write(info, 12); };
-exit:
-	la a1, info
-	li a2, 11
-	li a7, SYS_write
-	ecall
-	j exit
-
-# char info[] = "initproc 1\n";
-.section .data
-info:
-	.string "initproc 1\n\0"

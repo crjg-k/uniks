@@ -28,18 +28,18 @@
  * @brief the UART control registers. some have different meanings for read vs
  * write. More information see http://byterunner.com/16550.html
  */
-#define RHR		0   // Receive Holding Register (read mode)
-#define THR		0   // Transmit Holding Register (write mode)
-#define DLL		0   // LSB of Divisor Latch (write mode)
-#define IER		1   // Interrupt Enable Register (write mode)
-#define DLM		1   // MSB of Divisor Latch (write mode)
-#define FCR		2   // FIFO Control Register (write mode)
-#define ISR		2   // Interrupt Status Register (read mode)
-#define LCR		3   // Line Control Register
-#define MCR		4   // Modem Control Register
-#define LSR		5   // Line Status Register
-#define MSR		6   // Modem Status Register
-#define SPR		7   // ScratchPad Registers
+#define RHR		(0)   // Receive Holding Register (read mode)
+#define THR		(0)   // Transmit Holding Register (write mode)
+#define DLL		(0)   // LSB of Divisor Latch (write mode)
+#define IER		(1)   // Interrupt Enable Register (write mode)
+#define DLM		(1)   // MSB of Divisor Latch (write mode)
+#define FCR		(2)   // FIFO Control Register (write mode)
+#define ISR		(2)   // Interrupt Status Register (read mode)
+#define LCR		(3)   // Line Control Register
+#define MCR		(4)   // Modem Control Register
+#define LSR		(5)   // Line Status Register
+#define MSR		(6)   // Modem Status Register
+#define SPR		(7)   // ScratchPad Registers
 #define IER_RX_ENABLE	(1 << 0)
 #define IER_TX_ENABLE	(1 << 1)
 #define FCR_FIFO_ENABLE (1 << 0)

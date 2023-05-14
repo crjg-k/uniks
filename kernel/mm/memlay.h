@@ -4,10 +4,10 @@
 
 #include "mmu.h"
 
-#define KSTACKPAGE 4			   // number of pages in kernel stack
+#define KSTACKPAGE (4)			   // number of pages in kernel stack
 #define KSTACKSIZE (KSTACKPAGE * PGSIZE)   // sizeof kernel stack
-#define PHYSIZE	   128 * 1024 * 1024
-#define RAMSTART   0x80000000
+#define PHYSIZE	   (128 * 1024 * 1024)
+#define RAMSTART   (0x80000000)
 #define PHYSTOP	   (RAMSTART + PHYSIZE)	  // 128MiB RAM main memory
 #define MAXVA	   (1l << (39 - 1))
 
@@ -25,6 +25,11 @@
  */
 #define KSTACK(p)  (TRAMPOLINE - ((p) + 1) * 2 * PGSIZE)
 #define TRAPFRAME  (TRAMPOLINE - PGSIZE)
+
+// user process vaddr space
+#define USER_TEXT_START			(0x10000)
+#define USER_STACK_TOP			(TRAPFRAME)
+#define USER_STACK_ARGV_ENVP_UPPERLIMIT (32)
 
 
 #endif /* !__KERNEL_MM_MEMLAY_H__ */

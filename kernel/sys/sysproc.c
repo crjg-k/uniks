@@ -1,4 +1,5 @@
 #include <device/clock.h>
+#include <loader/elfloader.h>
 #include <process/proc.h>
 #include <sys/ksyscall.h>
 #include <uniks/defs.h>
@@ -6,12 +7,17 @@
 #include <uniks/list.h>
 #include <uniks/priority_queue.h>
 
+
 extern uint64_t jiffy;
 extern volatile uint64_t ticks;
 extern struct sleep_queue_t sleep_queue;
-extern int32_t copyout(pagetable_t pagetable, uintptr_t dstva, char *src,
-		       uint64_t len);
+extern int32_t copyout(pagetable_t pagetable, void *dstva, void *src,
+		       uint64_t len),
+	copyin_string(pagetable_t pagetable, char *dst, uintptr_t srcva,
+		      uint64_t max);
 extern void verify_area(void *addr, int64_t size);
+extern int64_t do_execve(char *pathname, char *argv[], char *envp[]);
+extern uintptr_t vaddr2paddr(pagetable_t pagetable, uintptr_t va);
 
 
 int64_t sys_getpid()
@@ -24,9 +30,13 @@ int64_t sys_fork()
 	return do_fork();
 }
 
-int64_t sys_exec()
+int64_t sys_execve()
 {
-	return do_exec();
+	struct proc_t *p = myproc();
+	char *file = (char *)vaddr2paddr(p->pagetable, argufetch(p, 0)),
+	     **argv = (char **)vaddr2paddr(p->pagetable, argufetch(p, 1)),
+	     **envp = (char **)vaddr2paddr(p->pagetable, argufetch(p, 2));
+	return do_execve(file, argv, envp);
 }
 
 int64_t sys_msleep()
@@ -34,7 +44,7 @@ int64_t sys_msleep()
 	struct proc_t *p = myproc();
 
 	int64_t ms = argufetch(p, 0);
-	uint64_t target_ticks = ms / jiffy;   // timeslice need sleep
+	uint64_t target_ticks = ms / jiffy;    // timeslice need sleep
 	target_ticks = target_ticks > 0 ? target_ticks
 					: 1;   // at least sleep 1 timeslice
 
@@ -79,8 +89,8 @@ int64_t sys_waitpid()
 		acquire(&pcblock[p->pid]);
 		int64_t *status_addr = (int64_t *)argufetch(p, 1);
 		verify_area(status_addr, sizeof(pcbtable[pid]->exitstate));
-		copyout(p->pagetable, (uintptr_t)status_addr,
-			(char *)&pcbtable[pid]->exitstate,
+		copyout(p->pagetable, (void *)status_addr,
+			(void *)&pcbtable[pid]->exitstate,
 			sizeof(pcbtable[pid]->exitstate));
 		release(&pcblock[p->pid]);
 		release(&pcblock[pid]);

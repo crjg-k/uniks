@@ -11,7 +11,7 @@
 #include <uniks/termios.h>
 
 
-#define NTTY 3
+#define NTTY (3)
 
 struct tty_queue_t {
 	struct spinlock_t tty_queue_lock;

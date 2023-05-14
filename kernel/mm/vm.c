@@ -54,8 +54,14 @@ pte_t *walk(pagetable_t pagetable, uint64_t va, int32_t alloc)
 	return &pagetable[PX(0, va)];
 }
 
-// look up a vaddr in user space, return the paddr, or 0 if not mapped
-uint64_t walkaddr(pagetable_t pagetable, uint64_t va)
+/**
+ * @brief look up a vaddr in user space, return the paddr of page it is
+ * located, or 0 if not mapped
+ * @param pagetable
+ * @param va
+ * @return uintptr_t
+ */
+uintptr_t walkaddr(pagetable_t pagetable, uintptr_t va)
 {
 	pte_t *pte = walk(pagetable, va, 0);
 	if (pte == 0)
@@ -67,8 +73,16 @@ uint64_t walkaddr(pagetable_t pagetable, uint64_t va)
 	return PTE2PA(*pte);
 }
 
-int32_t mappages(pagetable_t pagetable, uintptr_t va, uintptr_t size,
-		 uintptr_t pa, int32_t perm, int8_t recordref)
+uintptr_t vaddr2paddr(pagetable_t pagetable, uintptr_t va)
+{
+	uintptr_t pgstart = walkaddr(pagetable, va);
+	if (pgstart == 0)
+		return 0;
+	return OFFSETPAGE(va) + pgstart;
+}
+
+int32_t mappages(pagetable_t pagetable, uintptr_t va, size_t size, uintptr_t pa,
+		 int32_t perm, int8_t recordref)
 {
 	assert(size != 0);
 
@@ -76,9 +90,8 @@ int32_t mappages(pagetable_t pagetable, uintptr_t va, uintptr_t size,
 	pte_t *pte;
 	while (a < last) {
 		// potential optimization: deeper interweaving with walk()
-		if ((pte = walk(pagetable, a, 1)) == 0)
+		if ((pte = walk(pagetable, a, 1)) == NULL)
 			return -1;
-		assert(!(*pte & PTE_V));
 		*pte = PA2PTE(pa) | perm | PTE_V;
 		if (recordref)
 			mem_map[PA2ARRAYINDEX(pa)]++;
@@ -121,18 +134,13 @@ void kvminit()
 	kernel_pagetable = kvmmake();
 }
 
-// load the user/initcode into address 0 of pagetable
+// load the user/initcode into address USER_TEXT_START of pagetable
 void uvmfirst(pagetable_t pagetable, uint32_t *src, uint32_t sz)
 {
-	assert(sz < PGSIZE);
-	char *mem = phymem_alloc_page();
-	memset(mem, 0, PGSIZE);
-	mappages(pagetable, 0, PGSIZE, (uint64_t)mem,
-		 PTE_W | PTE_R | PTE_X | PTE_U, 1);
-	memcpy(mem, src, sz);
-	mem = phymem_alloc_page();
-	mappages(pagetable, PGSIZE, PGSIZE, (uint64_t)mem,
-		 PTE_W | PTE_R | PTE_X | PTE_U, 1);
+	char *pgstart = phymem_alloc_page();
+	mappages(pagetable, USER_TEXT_START, PGSIZE, (uintptr_t)pgstart,
+		 PTE_R | PTE_X | PTE_U, 1);
+	memcpy(pgstart, src, sz);
 }
 
 // create an empty user page table and returns 0 if out of memory
@@ -199,11 +207,6 @@ void uvmfree(pagetable_t pagetable, uint64_t sz)
 	if (sz > 0)
 		uvmunmap(pagetable, 0, PGROUNDUP(sz) / PGSIZE, 1);
 	freewalk(pagetable);
-}
-
-__always_inline void invalidate(uintptr_t va)
-{
-	asm volatile("sfence.vma %0, zero\n\tnop" : "=r"(va));
 }
 
 /**
@@ -305,9 +308,9 @@ void do_sd_page_fault(uintptr_t fault_vaddr)
 	struct proc_t *p = myproc();
 	pte_t *pte = walk(p->pagetable, fault_vaddr, 0);
 	assert(pte != NULL);
-	if (!ISVALID(*pte)) {
+	if (!PAGE_ISVALID(*pte)) {
 		do_no_page();
-	} else if (ISWRITABLE(*pte)) {
+	} else if (PAGE_ISWRITABLE(*pte)) {
 		return;
 	} else {
 		do_wp_page(pte, fault_vaddr);
@@ -375,6 +378,50 @@ int64_t copyin(pagetable_t pagetable, void *dst, void *srcva, uint64_t len)
 		src_vaddr = va0 + PGSIZE;
 	}
 	return 0;
+}
+
+/**
+ * @brief Copy a null-terminated string from user to kernel.
+ * Copy bytes to dst from virtual address srcva in a given page table, until a
+ * '\0', or max. Return 0 on success, -1 on error.
+ * @param pagetable
+ * @param dst
+ * @param srcva
+ * @param max
+ * @return int32_t
+ */
+int32_t copyin_string(pagetable_t pagetable, char *dst, uintptr_t srcva,
+		      uint64_t max)
+{
+	uint64_t n, va0, pa0;
+	int32_t got_null = 0;
+
+	while (got_null == 0 and max > 0) {
+		va0 = PGROUNDDOWN(srcva);
+		pa0 = walkaddr(pagetable, va0);
+		if (pa0 == 0)
+			return -1;
+		n = PGSIZE - (srcva - va0);
+		if (n > max)
+			n = max;
+
+		char *p = (char *)(pa0 + (srcva - va0));
+		while (n > 0) {
+			if (*p == '\0') {
+				*dst = '\0';
+				got_null = 1;
+				break;
+			} else {
+				*dst = *p;
+			}
+			--n;
+			--max;
+			p++;
+			dst++;
+		}
+		srcva = va0 + PGSIZE;
+	}
+	return got_null ? 0 : -1;
 }
 
 /**

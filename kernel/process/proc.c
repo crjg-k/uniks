@@ -35,13 +35,13 @@ struct cpu_t cpus[NCPU];
 struct pids_queue_t pids_queue;
 struct sleep_queue_t sleep_queue;   // call sys_sleep waiting process
 
-struct proc_t *initproc = NULL;	  // init proc
+struct proc_t *initproc = NULL;	    // init proc
 
 extern char trampoline[];
 extern volatile uint64_t ticks;
 extern void *phymem_alloc_page();
 extern void usertrapret(), verify_area(void *addr, int64_t size);
-extern int32_t mappages(pagetable_t pagetable, uintptr_t va, uintptr_t size,
+extern int32_t mappages(pagetable_t pagetable, uintptr_t va, size_t size,
 			uintptr_t pa, int32_t perm, int8_t recordref);
 extern void switch_to(struct context_t *, struct context_t *);
 extern void uvmfirst(pagetable_t, uint32_t *, uint32_t);
@@ -49,7 +49,7 @@ extern pagetable_t uvmcreate();
 extern void uvmunmap(pagetable_t, uint64_t, uint64_t, int32_t);
 extern void uvmfree(pagetable_t, uint64_t), phymem_free_page(void *);
 extern int64_t uvmcopy(pagetable_t old, pagetable_t new, uint64_t sz);
-extern int32_t copyout(pagetable_t pagetable, uintptr_t dstva, char *src,
+extern int32_t copyout(pagetable_t pagetable, void *dstva, void *src,
 		       uint64_t len);
 
 /**
@@ -365,56 +365,18 @@ int8_t killed(struct proc_t *p)
 void recycle_exitedproc() {}
 
 /**
- * @brief a user program that calls fork() then write() which is compiled and
- * assembled from ${cwd}/user/src/forktest.c.
- * hexdata dump command: od user/bin/forktest -t x
+ * @brief a user program that calls fork() then execve() to invoke a shell to
+ * interact with I/O which is compiled and assembled from
+ * ${cwd}/user/src/initcode.S, and the hexdata dump command is:
+ * od user/bin/initcode.o -t x -v
  */
 uint32_t initcode[] = {
-	0xff010113, 0x00113423, 0x00813023, 0x01010413, 0x008000ef, 0x0000006f,
-	0xfe010113, 0x00113c23, 0x00813823, 0x02010413, 0xfe042623, 0x0f80006f,
-	0x00001637, 0x44000593, 0x00000513, 0x250000ef, 0xfe042423, 0x0b40006f,
-	0x44000713, 0xfe842783, 0x00f707b3, 0x0007c783, 0x0047d79b, 0x0ff7f793,
-	0x0007879b, 0x00f7f793, 0x0007879b, 0x42000713, 0x00f707b3, 0x0007c703,
-	0x41000793, 0x00e78123, 0x44000713, 0xfe842783, 0x00f707b3, 0x0007c783,
-	0x0007879b, 0x00f7f793, 0x0007879b, 0x42000713, 0x00f707b3, 0x0007c703,
-	0x41000793, 0x00e781a3, 0x00500613, 0x41000593, 0x00100513, 0x220000ef,
-	0xfe842783, 0x0017879b, 0x0007879b, 0x0007879b, 0x00f7f793, 0x0007879b,
-	0x00079a63, 0x00100613, 0x40000593, 0x00100513, 0x1f4000ef, 0xfe842783,
-	0x0017879b, 0xfef42423, 0xfe842783, 0x0007871b, 0x000017b7, 0xf4f742e3,
-	0x00100613, 0x40000593, 0x00100513, 0x1c8000ef, 0xfec42783, 0x0017879b,
-	0xfef42623, 0xfec42783, 0x0007871b, 0x00200793, 0xf0e7d0e3, 0x00000513,
-	0x284000ef, 0x00000013, 0x00078513, 0x01813083, 0x01013403, 0x02010113,
-	0x00008067, 0xf9010113, 0x02813423, 0x03010413, 0xfca43c23, 0x00b43423,
-	0x00c43823, 0x00d43c23, 0x02e43023, 0x02f43423, 0x03043823, 0x03143c23,
-	0x04040793, 0xfcf43823, 0xfd043783, 0xfc878793, 0xfef43423, 0xfe843783,
-	0x00878713, 0xfee43423, 0x0007b783, 0x00078513, 0xfe843783, 0x00878713,
-	0xfee43423, 0x0007b783, 0x00078593, 0xfe843783, 0x00878713, 0xfee43423,
-	0x0007b783, 0x00078613, 0xfe843783, 0x00878713, 0xfee43423, 0x0007b783,
-	0x00078693, 0xfe843783, 0x00878713, 0xfee43423, 0x0007b783, 0x00078713,
-	0xfe843783, 0x00878813, 0xff043423, 0x0007b783, 0xfd843883, 0x00000073,
-	0x00050793, 0x00078513, 0x02813403, 0x07010113, 0x00008067, 0xff010113,
-	0x00113423, 0x00813023, 0x01010413, 0x00200513, 0xf1dff0ef, 0x00050793,
-	0x0007879b, 0x00078513, 0x00813083, 0x00013403, 0x01010113, 0x00008067,
-	0xff010113, 0x00113423, 0x00813023, 0x01010413, 0x01400513, 0xee9ff0ef,
-	0x00050793, 0x0007879b, 0x00078513, 0x00813083, 0x00013403, 0x01010113,
-	0x00008067, 0xfd010113, 0x02113423, 0x02813023, 0x03010413, 0x00050793,
-	0xfeb43023, 0xfcc43c23, 0xfef42623, 0xfd843683, 0xfe043603, 0x00000593,
-	0x00300513, 0xe99ff0ef, 0x00050793, 0x0007879b, 0x00078513, 0x02813083,
-	0x02013403, 0x03010113, 0x00008067, 0xfd010113, 0x02113423, 0x02813023,
-	0x03010413, 0x00050793, 0xfeb43023, 0xfcc43c23, 0xfef42623, 0xfd843683,
-	0xfe043603, 0x00000593, 0x00400513, 0xe49ff0ef, 0x00050793, 0x0007879b,
-	0x00078513, 0x02813083, 0x02013403, 0x03010113, 0x00008067, 0xfe010113,
-	0x00113c23, 0x00813823, 0x02010413, 0x00050793, 0xfef42623, 0xfec42783,
-	0x00078593, 0x00d00513, 0xe05ff0ef, 0x00050793, 0x0007879b, 0x00078513,
-	0x01813083, 0x01013403, 0x02010113, 0x00008067, 0xfe010113, 0x00113c23,
-	0x00813823, 0x02010413, 0x00050793, 0xfeb43023, 0xfef42623, 0xfec42783,
-	0xfe043603, 0x00078593, 0x00700513, 0xdb9ff0ef, 0x00050793, 0x0007879b,
-	0x00078513, 0x01813083, 0x01013403, 0x02010113, 0x00008067, 0xfe010113,
-	0x00113c23, 0x00813823, 0x02010413, 0x00050793, 0xfef42623, 0xfec42783,
-	0x00078593, 0x00100513, 0xd75ff0ef, 0x00000013, 0x01813083, 0x01013403,
-	0x02010113, 0x00008067, 0x00000000, 0x00000000, 0x0000000a, 0x00000000,
-	0x00000000, 0x00000000, 0x20207830, 0x00000020, 0x00000000, 0x00000000,
-	0x33323130, 0x37363534, 0x62613938, 0x66656463, 0x00000000, 0x00000000,
+	0x00b00893, 0x00000517, 0x02c50513, 0x00000597, 0x04058593, 0x00000617,
+	0x06960613, 0x00000073, 0x00100893, 0xfff00513, 0x00000073, 0x00000000,
+	0x6e69622f, 0x6863652f, 0x6568006f, 0x006f6c6c, 0x6b696e75, 0x6f770073,
+	0x00646c72, 0x0001003a, 0x00000000, 0x00010040, 0x00000000, 0x00010046,
+	0x00000000, 0x00000000, 0x00000000, 0x454d4f48, 0x50002f3d, 0x3d485441,
+	0x6e69622f, 0x01006c00, 0x00000000, 0x01007300, 0x00000000, 0x00000000,
 	0x00000000, 0x00000000,
 };
 
@@ -427,9 +389,12 @@ void user_init(uint32_t priority)
 	uvmfirst(p->pagetable, initcode, sizeof(initcode));
 	p->sz = PGSIZE;
 
-	// forgery context: prepare for the 1st time return from kernel to user
-	p->tf->epc = 0;		   // user code start executing at addr 0x0
-	p->tf->sp = PGSIZE << 1;   // user stack pointer
+	/**
+	 * @brief forgery context: prepare for the 1st time return from kernel
+	 * to user user code start executing at addr USER_TEXT_START
+	 */
+	p->tf->epc = USER_TEXT_START;
+	// initcode will not do any stack operation
 	set_proc_name(initproc, "initcode");
 	p->parentpid = 0;
 	p->state = TASK_READY;
@@ -477,12 +442,6 @@ int64_t do_fork()
 	return childproc->pid;
 }
 
-int64_t do_exec()
-{
-	kprintf("do exec syscall\n");
-	return 0;
-}
-
 /**
  * @brief Exit the current process. Does not return. An exited process remains
  * in the zombie state until its parent calls waitpid(). Futhermore, according
@@ -515,8 +474,8 @@ void do_exit(int32_t status)
 		struct proc_t *waitp = proc_unblock(&p->wait_list);
 		int64_t *status_addr = (int64_t *)argufetch(waitp, 1);
 		verify_area(status_addr, sizeof(pcbtable[p->pid]->exitstate));
-		copyout(waitp->pagetable, (uintptr_t)status_addr,
-			(char *)&pcbtable[p->pid]->exitstate,
+		copyout(waitp->pagetable, (void *)status_addr,
+			(void *)&pcbtable[p->pid]->exitstate,
 			sizeof(pcbtable[p->pid]->exitstate));
 		release(&pcblock[waitp->pid]);
 	}

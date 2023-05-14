@@ -6,7 +6,7 @@ ENTRY(_start)
 
 SECTIONS
 {
-	. = 0x0;
+	. = 0x10000;
 
 	.text : {
 		*(.text .text.*)
@@ -17,11 +17,15 @@ SECTIONS
 		*(.srodata .srodata.*)	/* do not need to distinguish this from .rodata */
 		. = ALIGN(16);
 		*(.rodata .rodata.*)
-		/* . = ALIGN(0x1000); */
 	}
 
+	/* 
+	 * This will result in a large gap between two parts,
+	 * so that ld will divide them into two different segments 
+	*/
+	. = ALIGN(0x1000);
+
 	.data : {
-		. = ALIGN(16);
 		*(.sdata .sdata.*)	/* do not need to distinguish this from .data */
 		. = ALIGN(16);
 		*(.data .data.*)

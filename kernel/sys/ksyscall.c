@@ -28,7 +28,7 @@ extern int64_t sys_waitpid();
 extern int64_t sys_pipe();
 extern int64_t sys_read();
 extern int64_t sys_kill();
-extern int64_t sys_exec();
+extern int64_t sys_execve();
 extern int64_t sys_fstat();
 extern int64_t sys_chdir();
 extern int64_t sys_dup();
@@ -45,7 +45,7 @@ extern int64_t sys_mkdir();
 extern int64_t sys_close();
 
 static int64_t (*syscalls[])() = {
-	[SYS_fork] sys_fork,	   [SYS_execve] sys_exec,
+	[SYS_fork] sys_fork,	   [SYS_execve] sys_execve,
 	[SYS_write] sys_write,	   [SYS_msleep] sys_msleep,
 	[SYS_getpid] sys_getpid,   [SYS_exit] sys_exit,
 	[SYS_waitpid] sys_waitpid, [SYS_read] sys_read,

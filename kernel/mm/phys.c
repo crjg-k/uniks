@@ -4,8 +4,8 @@
 #include <uniks/kassert.h>
 #include <uniks/kstring.h>
 
-#define USED   1
-#define UNUSED 0
+#define USED   (1)
+#define UNUSED (0)
 
 int16_t mem_map[PHYSIZE >> PGSHIFT];
 int32_t freepagenum;

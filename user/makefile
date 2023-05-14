@@ -29,6 +29,7 @@ CFLAGS = \
 	-ffreestanding
 
 CFLAGS += $(foreach dir, ${INC_DIR}, -I${dir})
+CFLAGS += -DUNIKS
 
 ifeq ($(DEBUG), gdb)
 	CFLAGS += -g3
@@ -53,9 +54,6 @@ init:
 	${LD} ${LDFLAGS} ulib.o $@.o usyscall.o -o ${BIN_DIR}/$@.o
 	${OBJDUMP} -S ${BIN_DIR}/$@.o > ${ABSM_DIR}/$@.asm
 	${OBJDUMP} -s ${BIN_DIR}/$@.o > ${ABSM_DIR}/$@.bsm
-	${OBJCOPY} ${BIN_DIR}/$@.o --strip-all -O binary ${BIN_DIR}/$@
-	od -t x ${BIN_DIR}/$@
-	rm ${BIN_DIR}/$@
 	rm *.o
 
 .PHONY: ${INITCODE}
