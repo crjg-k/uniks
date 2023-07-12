@@ -1,5 +1,7 @@
+#include "vm.h"
 #include "memlay.h"
 #include "mmu.h"
+#include <mm/phys.h>
 #include <platform/platform.h>
 #include <platform/riscv.h>
 #include <process/proc.h>
@@ -9,12 +11,10 @@
 #include <uniks/kstring.h>
 #include <uniks/param.h>
 
-pagetable_t kernel_pagetable;
 
-extern char trampoline[];
-extern int32_t mem_map[];
-extern void *phymem_alloc_page();
-extern void phymem_free_page(void *);
+pagetable_t kernel_pagetable;
+int32_t mem_map[PHYMEMSIZE >> PGSHIFT];
+
 
 void kvmenable()
 {
@@ -45,7 +45,7 @@ pte_t *walk(pagetable_t pagetable, uint64_t va, int32_t alloc)
 			pagetable = (pagetable_t)PTE2PA(*pte);
 		} else {   // this page is not valid
 			if (!alloc or
-			    (pagetable = (pde_t *)phymem_alloc_page()) == 0)
+			    (pagetable = (pde_t *)pages_alloc(1)) == 0)
 				return NULL;
 			memset(pagetable, 0, PGSIZE);
 			*pte = PA2PTE(pagetable) | PTE_V;
@@ -104,7 +104,7 @@ int32_t mappages(pagetable_t pagetable, uintptr_t va, size_t size, uintptr_t pa,
 static pagetable_t kvmmake()
 {
 	pagetable_t kpgtbl;
-	kpgtbl = (pagetable_t)phymem_alloc_page();
+	kpgtbl = (pagetable_t)pages_alloc(1);
 	memset(kpgtbl, 0, PGSIZE);
 	// uart registers
 	assert(mappages(kpgtbl, UART0, PGSIZE, UART0, PTE_R | PTE_W, 0) != -1);
@@ -137,7 +137,7 @@ void kvminit()
 // load the user/initcode into address USER_TEXT_START of pagetable
 void uvmfirst(pagetable_t pagetable, uint32_t *src, uint32_t sz)
 {
-	char *pgstart = phymem_alloc_page();
+	char *pgstart = pages_alloc(1);
 	mappages(pagetable, USER_TEXT_START, PGSIZE, (uintptr_t)pgstart,
 		 PTE_R | PTE_X | PTE_U, 1);
 	memcpy(pgstart, src, sz);
@@ -147,7 +147,7 @@ void uvmfirst(pagetable_t pagetable, uint32_t *src, uint32_t sz)
 pagetable_t uvmcreate()
 {
 	pagetable_t pagetable;
-	pagetable = (pagetable_t)phymem_alloc_page();
+	pagetable = (pagetable_t)pages_alloc(1);
 	if (pagetable == 0)
 		return 0;
 	memset(pagetable, 0, PGSIZE);
@@ -171,7 +171,7 @@ void freewalk(pagetable_t pagetable)
 		freewalk((pagetable_t)child);
 		pagetable[i] = 0;
 	}
-	phymem_free_page((void *)pagetable);
+	pages_free((void *)pagetable);
 }
 
 /**
@@ -183,7 +183,7 @@ void freewalk(pagetable_t pagetable)
  * @param npages
  * @param do_free
  */
-void uvmunmap(pagetable_t pagetable, uint64_t va, uint64_t npages,
+void uvmunmap(pagetable_t pagetable, uintptr_t va, uintptr_t npages,
 	      int32_t do_free)
 {
 	assert((va % PGSIZE) == 0);
@@ -195,7 +195,7 @@ void uvmunmap(pagetable_t pagetable, uint64_t va, uint64_t npages,
 		assert(PTE_FLAGS(*pte) != PTE_V);   // assert it is a leaf
 		if (do_free) {
 			uint64_t pa = PTE2PA(*pte);
-			phymem_free_page((void *)pa);
+			pages_free((void *)pa);
 		}
 		*pte = 0;   // do unmap operation by clear valid flag
 	}
@@ -221,7 +221,6 @@ void uvmfree(pagetable_t pagetable, uint64_t sz)
 int64_t uvmcopy(pagetable_t old, pagetable_t new, uint64_t sz)
 {
 	// note: COW mechanism is not applicable to kstack page!!
-#if (UNSEALCOW == 1)
 	pte_t *pte;
 	uint64_t pa, i;
 	uint32_t flags;
@@ -242,26 +241,6 @@ int64_t uvmcopy(pagetable_t old, pagetable_t new, uint64_t sz)
 		// note: modification of the page table
 		invalidate(i);
 	}
-#else
-	pte_t *pte;
-	uint64_t pa, i;
-	uint32_t flags;
-	char *mem;
-
-	for (i = 0; i < sz; i += PGSIZE) {
-		assert((pte = walk(old, i, 0)));
-		assert((*pte & PTE_V));
-		pa = PTE2PA(*pte);
-		flags = PTE_FLAGS(*pte);
-		if ((mem = phymem_alloc_page()) == 0)
-			goto err;
-		memcpy(mem, (char *)pa, PGSIZE);
-		if (mappages(new, i, PGSIZE, (uint64_t)mem, flags, 0) != 0) {
-			phymem_free_page(mem);
-			goto err;
-		}
-	}
-#endif
 	return 0;
 
 err:
@@ -280,7 +259,7 @@ int32_t un_wp_page(pte_t *pte)
 	}
 	// else duplicate page content
 	char *mem;
-	if ((mem = phymem_alloc_page()) == 0)
+	if ((mem = pages_alloc(1)) == 0)
 		goto err;
 	memcpy(mem, (char *)pa, PGSIZE);
 	register uint64_t perm = PTE_FLAGS(*pte);
@@ -302,7 +281,8 @@ __always_inline void do_wp_page(pte_t *pte, uintptr_t va)
 
 // lazy load ELF page from secondary storage
 void do_no_page() {}
-
+void do_inst_page_fault(uintptr_t fault_vaddr) {}
+void do_ld_page_fault(uintptr_t fault_vaddr) {}
 void do_sd_page_fault(uintptr_t fault_vaddr)
 {
 	struct proc_t *p = myproc();

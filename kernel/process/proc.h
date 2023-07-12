@@ -9,8 +9,10 @@
 #include <uniks/queue.h>
 
 
-// this is only tiny context for kernel context switch occurred by function
-// calling, so we only need to save the callee saved registers
+/**
+ * @brief this is only tiny context for kernel context switch occurred by
+ * function calling, so we only need to save the callee saved registers
+ */
 struct context_t {
 	/*   0 */ uint64_t ra;
 	/*   8 */ uint64_t sp;

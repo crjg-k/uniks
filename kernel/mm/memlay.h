@@ -4,12 +4,13 @@
 
 #include "mmu.h"
 
-#define KSTACKPAGE (4)			   // number of pages in kernel stack
-#define KSTACKSIZE (KSTACKPAGE * PGSIZE)   // sizeof kernel stack
-#define PHYSIZE	   (128 * 1024 * 1024)
-#define RAMSTART   (0x80000000)
-#define PHYSTOP	   (RAMSTART + PHYSIZE)	  // 128MiB RAM main memory
-#define MAXVA	   (1l << (39 - 1))
+#define KSTACKPAGE     (4)   // number of pages in kernel stack
+#define KSTACKSIZE     (KSTACKPAGE * PGSIZE)   // sizeof kernel stack
+#define PHYMEMSIZE_MiB 128
+#define PHYMEMSIZE     (PHYMEMSIZE_MiB * 1024 * 1024)
+#define RAMSTART       (0x80000000)
+#define PHYSTOP	       (RAMSTART + PHYMEMSIZE)	 // 128MiB RAM main memory
+#define MAXVA	       (1l << (39 - 1))
 
 #define PA2ARRAYINDEX(pa)    ((pa - RAMSTART) >> PGSHIFT)
 #define ARRAYINDEX2PA(index) ((index << PGSHIFT) + RAMSTART)

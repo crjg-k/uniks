@@ -5,8 +5,9 @@
 #include <uniks/defs.h>
 
 
-#define ROOTINUM (1)	  // root inode-number
-#define BLKSIZE	 (4096)	  // block size
+#define ROOTINUM    (1)	     // root inode-number
+#define BLKSIZE	    (4096)   // block size
+#define FILENAMELEN (255)
 
 
 // in-memory copy of an inode

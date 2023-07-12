@@ -41,10 +41,8 @@
 #define SYS_mmap    (90)
 #define SYS_munmap  (91)
 #define SYS_yield   (158)
-#define SYS_sleep   (162)
+#define SYS_msleep  (162)
 #define SYS_getcwd  (183)
-
-#define SYS_msleep (13)
 
 
 void syscall();

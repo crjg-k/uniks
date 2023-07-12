@@ -1,5 +1,6 @@
 #include "proc.h"
 #include <mm/memlay.h>
+#include <mm/phys.h>
 #include <platform/riscv.h>
 #include <sync/spinlock.h>
 #include <sys/ksyscall.h>
@@ -39,7 +40,6 @@ struct proc_t *initproc = NULL;	    // init proc
 
 extern char trampoline[];
 extern volatile uint64_t ticks;
-extern void *phymem_alloc_page();
 extern void usertrapret(), verify_area(void *addr, int64_t size);
 extern int32_t mappages(pagetable_t pagetable, uintptr_t va, size_t size,
 			uintptr_t pa, int32_t perm, int8_t recordref);
@@ -47,7 +47,7 @@ extern void switch_to(struct context_t *, struct context_t *);
 extern void uvmfirst(pagetable_t, uint32_t *, uint32_t);
 extern pagetable_t uvmcreate();
 extern void uvmunmap(pagetable_t, uint64_t, uint64_t, int32_t);
-extern void uvmfree(pagetable_t, uint64_t), phymem_free_page(void *);
+extern void uvmfree(pagetable_t, uint64_t);
 extern int64_t uvmcopy(pagetable_t old, pagetable_t new, uint64_t sz);
 extern int32_t copyout(pagetable_t pagetable, void *dstva, void *src,
 		       uint64_t len);
@@ -140,7 +140,7 @@ static void freeproc(pid_t pid)
 	assert(holding(&pcblock[pid]));
 	if (pcbtable[pid]->pagetable)
 		proc_freepagetable(pcbtable[pid]->pagetable, pcbtable[pid]->sz);
-	phymem_free_page(pcbtable[pid]->tf);
+	pages_free(pcbtable[pid]->tf);
 	pcbtable[pid] = NULL;
 }
 
@@ -167,7 +167,7 @@ found:
 	 * @brief allocate a kstack page as well as a trapframe page locate at
 	 * the begining of kstack
 	 */
-	if ((tf = phymem_alloc_page()) == NULL) {
+	if ((tf = pages_alloc(1)) == NULL) {
 		// if there are no enough memory, failed
 		release(&pcblock[newpid]);
 		return NULL;
@@ -239,6 +239,7 @@ void scheduler()
 {
 	struct cpu_t *c = mycpu();
 	c->proc = pcbtable[0];
+	interrupt_on();
 	while (1) {
 		int32_t i = 1;
 		for (struct proc_t *p; i < NPROC; i++) {

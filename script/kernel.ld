@@ -50,5 +50,6 @@ SECTIONS
 		*(.eh_frame .note.GNU-stack)
 	}
 
+	. = ALIGN(4096);
 	PROVIDE(end = .);
 }

@@ -15,6 +15,8 @@
 #include <fs/blkbuf.h>
 #include <fs/fs.h>
 #include <mm/memlay.h>
+#include <mm/phys.h>
+#include <mm/vm.h>
 #include <platform/plic.h>
 #include <platform/riscv.h>
 #include <process/proc.h>
@@ -24,11 +26,9 @@
 #include <uniks/kstring.h>
 #include <uniks/log.h>
 
-extern void phymem_init(), kvminit(), kvmenable(), clock_init(),
-	all_interrupt_enable();
-char message[] = "uniks boot over!";
-extern int32_t freepagenum;
-volatile static int8_t started = 0;
+extern void clock_init(), all_interrupt_enable();
+char boot_message[] = "uniks boot over!";
+volatile static int32_t started = 0;
 
 
 __noreturn __always_inline void idle_process()
@@ -37,21 +37,16 @@ __noreturn __always_inline void idle_process()
 		scheduler();
 	}
 }
-
+void hart_start_message()
+{
+	kprintf("[\tuniks]==> hart %d start\n\n", r_mhartid());
+}
 void kernel_start()
 {
 	if (!r_mhartid()) {
 		memset(sbss, 0, ebss - sbss);
 		device_init();
-
-		debugf("stext: %p\tetext: %p", stext, etext);
-		debugf("sdata: %p\tedata: %p", sdata, edata);
-		debugf("sbss: %p\tebss: %p", sbss, ebss);
-		debugf("end: %p\n", end);
-
 		phymem_init();
-		kprintf("==> total memory size: %l MiB, total pages: %d, free pages: %d\n",
-			PHYSIZE / 1024 / 1024, PHYSIZE / 4096, freepagenum);
 		kvminit();
 		kvmenable();
 		// now, in vaddr space!
@@ -71,15 +66,24 @@ void kernel_start()
 		all_interrupt_enable();
 		__sync_synchronize();
 
-		kprintf("\n%s\n", message);
-		kprintf("hart %d start\n\n", r_mhartid());
-		interrupt_on();
+		debugf("stext: %p\tetext: %p", stext, etext);
+		debugf("sdata: %p\tedata: %p", sdata, edata);
+		debugf("sbss: %p\tebss: %p", sbss, ebss);
+		debugf("end: %p\n", end);
+
+		kprintf("[\tuniks]==> total memory size: %l MiB, total pages: %d\n",
+			PHYMEMSIZE / 1024 / 1024, PHYMEMSIZE / 4096);
+		kprintf("[\tuniks]==> %s\n", boot_message);
+		hart_start_message();
 		started = 1;
 	} else {
 		while (!started)
 			;
 		__sync_synchronize();
-		kprintf("hart %d starting\n", r_mhartid());
+		kvmenable();
+		plicinithart();
+		trap_init();
+		hart_start_message();
 	}
 	idle_process();
 

@@ -16,7 +16,8 @@ SRC_KERNEL_DIR = kernel
 INC_DIR = \
 	./include \
 	./${SRC_KERNEL_DIR} \
-	./
+	./ \
+	/usr/include	# Linux C language enviroment include path: /usr/include/
 SRC_FILES = \
 	./${SRC_KERNEL_DIR}/init/* \
 	./${SRC_KERNEL_DIR}/device/* \

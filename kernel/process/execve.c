@@ -1,6 +1,7 @@
 #include "proc.h"
 #include <loader/elfloader.h>
 #include <mm/memlay.h>
+#include <mm/phys.h>
 #include <platform/riscv.h>
 #include <uniks/defs.h>
 #include <uniks/kstring.h>
@@ -11,7 +12,6 @@ extern int32_t mappages(pagetable_t pagetable, uintptr_t va, size_t size,
 			uintptr_t pa, int32_t perm, int8_t recordref),
 	copyin_string(pagetable_t pagetable, char *dst, uintptr_t srcva,
 		      uint64_t max);
-extern void *phymem_alloc_page();
 extern uintptr_t vaddr2paddr(pagetable_t pagetable, uintptr_t va);
 
 
@@ -86,7 +86,7 @@ static int32_t copy_argv_envp(char *filename, char *argv[], char *envp[],
  */
 uintptr_t make_user_stack(struct proc_t *p)
 {
-	char *pgstart1 = phymem_alloc_page(), *pgstart2 = phymem_alloc_page();
+	char *pgstart1 = pages_alloc(1), *pgstart2 = pages_alloc(1);
 	/**
 	 * We currently do not have access to the buddy system allocator, so we
 	 * cannot continuously allocate n pages. Let's assume that this can be

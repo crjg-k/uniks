@@ -1,7 +1,9 @@
 #ifndef __KERNEL_PLATFORM_RISCV_H__
 #define __KERNEL_PLATFORM_RISCV_H__
 
+#include <mm/mmu.h>
 #include <uniks/defs.h>
+
 
 #define read_csr(reg) \
 	({ \
@@ -84,25 +86,44 @@
 #define SSTATUS_SPIE (0x00000020)
 #define SSTATUS_SPP  (0x00000100)
 
+
+struct pagetable_entry_t {
+	uint8_t valid : 1;   // is this entry refer to a in memory page?
+	uint8_t read : 1;
+	uint8_t write : 1;
+	uint8_t execute : 1;
+	uint8_t user : 1;	// user space available?
+	uint8_t global : 1;	// is global available?
+	uint8_t accessed : 1;	// has been accessed?
+	uint8_t dirty : 1;	// is dirty?
+	uint8_t RSW : 2;
+	uint32_t ppn0 : 9;
+	uint32_t ppn1 : 9;
+	uint32_t ppn2 : 26;
+	uint32_t reserved : 64 - 54;
+} __packed;
+
+
 #define PTE_V		     (1 << 0)
 #define PTE_R		     (1 << 1)
 #define PTE_W		     (1 << 2)
 #define PTE_X		     (1 << 3)
 #define PTE_U		     (1 << 4)
-#define SATP_SV39	     (8l << 60)	  // RISCV Sv39 page table scheme
-#define PTENUM		     (PGSIZE / 8)
-#define MAKE_SATP(pagetable) (SATP_SV39 | (((uint64_t)pagetable) >> 12))
+#define SATP_SV39	     (8ll << 60)   // RISCV Sv39 page table scheme
+#define PTENUM		     (PGSIZE / sizeof(pte_t))
+#define MAKE_SATP(pagetable) (SATP_SV39 | (((uint64_t)pagetable) >> PGSHIFT))
 #define w_satp(x)	     ({ asm volatile("csrw satp, %0" : : "r"(x)); })
-#define PA2PTE(pa)	     ((((uint64_t)pa) >> 12) << 10)   // pysical addr to pte
-#define PTE2PA(pte)	     (((pte) >> 10) << 12)   // pte to pysical addr
+#define PA2PTE(pa)	     ((((uint64_t)pa) >> PGSHIFT) << 10)   // pysical addr to pte
+#define PTE2PA(pte) \
+	((((uint64_t)pte) >> 10) << PGSHIFT)	  // pte to pysical addr
 #define PXSHIFT(level)	     (PGSHIFT + (9 * (level)))
 #define PX(level, va)	     ((((uint64_t)(va)) >> PXSHIFT(level)) & 0x1ff)
-#define PTE_FLAGS(pte)	     ((pte)&0x3FF)
-#define PAGE_ISVALID(pte)    ((pte)&PTE_V)
-#define PAGE_ISREADABLE(pte) ((pte)&PTE_R)
-#define PAGE_ISWRITABLE(pte) ((pte)&PTE_W)
-#define PAGE_ISEXECABLE(pte) ((pte)&PTE_X)
-#define PAGE_ISUSPACE(pte)   ((pte)&PTE_U)
+#define PTE_FLAGS(pte)	     ((*(uint64_t *)pte) & 0x3ff)
+#define PAGE_ISVALID(pte)    ((*(uint64_t *)pte) & PTE_V)
+#define PAGE_ISREADABLE(pte) ((*(uint64_t *)pte) & PTE_R)
+#define PAGE_ISWRITABLE(pte) ((*(uint64_t *)pte) & PTE_W)
+#define PAGE_ISEXECABLE(pte) ((*(uint64_t *)pte) & PTE_X)
+#define PAGE_ISUSPACE(pte)   ((*(uint64_t *)pte) & PTE_U)
 
 
 // assmue that tp register will never be tamperred by user-space process

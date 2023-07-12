@@ -11,13 +11,12 @@
 #define CPUFREQ		  (10000000)   // the frequency of qemu is 10MHz
 
 // process relative configurable parameters
-#define UNSEALCOW     (1)    // if unseal cow mechanism
 #define PROC_NAME_LEN (16)   // max length of process name
 #define NPROC	      (64)   // max number of processes
 #define MAXARG	      (32)   // max exec arguments and environment(they are same)
 
 // file system configurable parameters
-#define UNIKS_MAGIC	  (0x114514)
+#define UNIKS_MAGIC	  (0x19890604)
 #define NBUF		  (32)	  // size of disk block buffer cache
 #define NFD		  (32)	  // number of fds of each process
 #define NINODE		  (64)	  // max number of active inodes

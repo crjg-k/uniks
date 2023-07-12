@@ -15,6 +15,7 @@
 #include "virtio_disk.h"
 #include <device/device.h>
 #include <mm/memlay.h>
+#include <mm/phys.h>
 #include <platform/platform.h>
 #include <process/proc.h>
 #include <sync/spinlock.h>
@@ -22,8 +23,6 @@
 #include <uniks/kstring.h>
 #include <uniks/list.h>
 
-
-extern void *phymem_alloc_page();
 
 static struct {
 	struct spinlock_t virtio_disk_lock;
@@ -120,9 +119,9 @@ void virtio_disk_init()
 	assert(max >= VIRTIO_DESC_NUM);
 
 	// allocate and zero queue memory
-	disk.desc = phymem_alloc_page();
-	disk.avail = phymem_alloc_page();
-	disk.used = phymem_alloc_page();
+	disk.desc = pages_alloc(1);
+	disk.avail = pages_alloc(1);
+	disk.used = pages_alloc(1);
 	assert(disk.desc != NULL and disk.avail != NULL and disk.used != NULL);
 	memset(disk.desc, 0, PGSIZE);
 	memset(disk.avail, 0, PGSIZE);
@@ -250,7 +249,7 @@ static void virtio_disk_rw(struct blkbuf_t *buf, int32_t write)
 	if (write)
 		buf0->type = VIRTIO_BLK_T_OUT;	 // write the disk
 	else
-		buf0->type = VIRTIO_BLK_T_IN;	// read the disk
+		buf0->type = VIRTIO_BLK_T_IN;	 // read the disk
 	buf0->reserved = 0;
 	buf0->sector = sector;
 

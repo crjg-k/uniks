@@ -1,6 +1,7 @@
 #include "trap.h"
 #include <device/clock.h>
 #include <mm/memlay.h>
+#include <mm/vm.h>
 #include <platform/plic.h>
 #include <platform/riscv.h>
 #include <process/proc.h>
@@ -8,10 +9,10 @@
 #include <uniks/kstdio.h>
 #include <uniks/log.h>
 
-extern void kerneltrapvec(), scheduler(), usertrap_handler(), syscall(),
-	yield(), do_sd_page_fault(uintptr_t fault_vaddr);
+extern void kerneltrapvec(), scheduler(), syscall(), yield();
 extern char trampoline[], usertrapvec[], userret[];
 extern volatile uint64_t ticks;
+void usertrap_handler();
 
 void trap_init()
 {
@@ -40,7 +41,7 @@ static void interrupt_handler(uint64_t cause, int32_t prilevel)
 		kprintf("User external interrupt");
 		break;
 	case IRQ_S_EXT:
-		external_interrupt_handler();
+		external_interrupt_handler();	// external device
 		break;
 	default:
 		panic("default interrupt");
@@ -52,12 +53,12 @@ static void exception_handler(uint64_t cause, struct proc_t *p,
 	assert(myproc()->magic == UNIKS_MAGIC);
 	switch (cause) {
 	case EXC_INST_ILLEGAL:
-		kprintf("illegal instruction from prilevel: %d, addr: %p",
-			prilevel, p->tf->epc);
+		tracef("illegal instruction from prilevel: %d, addr: %p",
+		       prilevel, p->tf->epc);
 		p->tf->epc += 4;
 		break;
 	case EXC_U_ECALL:   // system call
-		// tracef("process: %d, system call: %d", p->pid, p->tf->a7);
+		tracef("process: %d, system call: %d", p->pid, p->tf->a7);
 		/**
 		 * @note: this inc must lay before syscall() since that the fork
 		 * syscall need the right instruction address
@@ -65,16 +66,25 @@ static void exception_handler(uint64_t cause, struct proc_t *p,
 		p->tf->epc += 4;
 		syscall();
 		break;
+	case EXC_INST_PAGEFAULT:
+		tracef("process: %d, inst page fault from prilevel: %d, addr: %p\n",
+		       p->pid, prilevel, p->tf->epc);
+		do_inst_page_fault(p->tf->epc);
+		break;
+	case EXC_LD_PAGEFAULT:
+		tracef("process: %d, ld page fault from prilevel: %d, addr: %p\n",
+		       p->pid, prilevel, read_csr(stval));
+		do_ld_page_fault(read_csr(stval));
+		break;
 	case EXC_SD_PAGEFAULT:
 		tracef("process: %d, sd page fault from prilevel: %d, addr: %p\n",
-		       p->pid, prilevel, p->tf->epc);
-		do_sd_page_fault(p->tf->epc);
+		       p->pid, prilevel, read_csr(stval));
+		do_sd_page_fault(read_csr(stval));
 		break;
 	default:
 		kprintf("exception_handler(): unexpected scause %p pid=%d",
 			cause, p->pid);
-		kprintf("\tepc=%p, from prilevel: %d\n",
-			p->tf->epc, prilevel);
+		kprintf("\tepc=%p, from prilevel: %d\n", p->tf->epc, prilevel);
 	}
 }
 

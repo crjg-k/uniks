@@ -6,6 +6,7 @@
 #include <uniks/kassert.h>
 #include <uniks/kstdlib.h>
 #include <uniks/kstring.h>
+#include <mm/phys.h>
 
 
 // copy binary from user/bin/echo.o
@@ -424,7 +425,6 @@ uint32_t elfile[] = {
 
 extern int32_t mappages(pagetable_t pagetable, uintptr_t va, size_t size,
 			uintptr_t pa, int32_t perm, int8_t recordref);
-extern void *phymem_alloc_page();
 
 static int32_t elf_validate(struct Elf64_Ehdr_t *elf_header)
 {
@@ -468,7 +468,7 @@ static void load_segment(struct m_inode_t *inode,
 		MAX(prgm_header->p_memsz, prgm_header->p_filesz), PGSIZE);
 
 	assert(count == 1);   // hint: temporarily only support 1 page mapping
-	char *pgstart = phymem_alloc_page();
+	char *pgstart = pages_alloc(1);
 
 	// do mapping addr to physical memory
 	mappages(myproc()->pagetable, vaddr_start, PGSIZE * count,

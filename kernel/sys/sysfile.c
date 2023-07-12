@@ -4,6 +4,7 @@
 #include <file/file.h>
 #include <fs/blkbuf.h>
 #include <fs/fs.h>
+#include <mm/phys.h>
 #include <process/proc.h>
 #include <sys/ksyscall.h>
 #include <uniks/defs.h>
@@ -16,7 +17,6 @@ extern int64_t copyin(pagetable_t pagetable, void *dst, void *srcva,
 extern int32_t copyout(pagetable_t pagetable, void *dstva, void *src,
 		       uint64_t len);
 extern void verify_area(void *addr, int64_t size);
-extern void *phymem_alloc_page();
 
 
 #define sys_file_rw_common() \
@@ -55,8 +55,7 @@ uint64_t sys_read()
 uint64_t sys_write()
 {
 	struct proc_t *p = myproc();
-	char *buf = (char *)argufetch(p, 1),
-	     *kernelch = (char *)phymem_alloc_page();
+	char *buf = (char *)argufetch(p, 1), *kernelch = (char *)pages_alloc(1);
 	size_t count = argufetch(p, 2);
 	copyin(p->pagetable, kernelch, buf, count);
 	int32_t res = devices[current_tty].write(devices[current_tty].ptr,
