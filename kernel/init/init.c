@@ -39,7 +39,7 @@ __noreturn __always_inline void idle_process()
 }
 void hart_start_message()
 {
-	kprintf("[\tuniks]==> hart %d start\n\n", r_mhartid());
+	kprintf("%shart %d start\n\n", UNIKS_MSG, r_mhartid());
 }
 void kernel_start()
 {
@@ -71,9 +71,9 @@ void kernel_start()
 		debugf("sbss: %p\tebss: %p", sbss, ebss);
 		debugf("end: %p\n", end);
 
-		kprintf("[\tuniks]==> total memory size: %l MiB, total pages: %d\n",
-			PHYMEMSIZE / 1024 / 1024, PHYMEMSIZE / 4096);
-		kprintf("[\tuniks]==> %s\n", boot_message);
+		kprintf("%stotal memory size: %l MiB, total pages: %d\n",
+			UNIKS_MSG, PHYMEMSIZE / 1024 / 1024, PHYMEMSIZE / 4096);
+		kprintf("%s%s\n", UNIKS_MSG, boot_message);
 		hart_start_message();
 		started = 1;
 	} else {

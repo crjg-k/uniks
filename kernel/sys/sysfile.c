@@ -12,13 +12,6 @@
 #include <uniks/kassert.h>
 
 
-extern int64_t copyin(pagetable_t pagetable, void *dst, void *srcva,
-		      uint64_t len);
-extern int32_t copyout(pagetable_t pagetable, void *dstva, void *src,
-		       uint64_t len);
-extern void verify_area(void *addr, int64_t size);
-
-
 #define sys_file_rw_common() \
 	struct file_t *file; \
 	struct proc_t *p = myproc(); \
@@ -34,14 +27,16 @@ extern void verify_area(void *addr, int64_t size);
 
 uint64_t sys_read()
 {
-	static int32_t i = 0;
+	int64_t ret;
 	struct proc_t *p = myproc();
 	char *buf = (char *)argufetch(p, 1);
-	size_t count = argufetch(p, 2);
-	struct blkbuf_t *bb = blk_read(VIRTIO_IRQ, i++);
-	verify_area(buf, count);
-	copyout(p->pagetable, buf, bb->b_data, BLKSIZE);
-	brelease(bb);
+	size_t cnt = argufetch(p, 2);
+
+	verify_area(p->mm, (uintptr_t)buf, cnt, PTE_W | PTE_U);
+	char *tt =
+		(char *)vaddr2paddr(p->mm->pagetable, (uintptr_t)buf);
+	ret = devices[current_tty].read(devices[current_tty].ptr, tt, cnt);
+
 	// sys_file_rw_common();
 	// if PIPE
 
@@ -49,15 +44,16 @@ uint64_t sys_read()
 
 	// else if ordinary disk file, both directory or common file are okay
 
-	return BLKSIZE;
+	return ret;
 }
 
 uint64_t sys_write()
 {
 	struct proc_t *p = myproc();
-	char *buf = (char *)argufetch(p, 1), *kernelch = (char *)pages_alloc(1);
+	char *buf = (char *)argufetch(p, 1),
+	     *kernelch = (char *)pages_alloc(1, 0);
 	size_t count = argufetch(p, 2);
-	copyin(p->pagetable, kernelch, buf, count);
+	copyin(p->mm->pagetable, kernelch, buf, count);
 	int32_t res = devices[current_tty].write(devices[current_tty].ptr,
 						 kernelch, count);
 

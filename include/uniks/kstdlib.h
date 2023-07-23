@@ -9,7 +9,7 @@
 #define MIN(a, b) (a < b ? a : b)
 
 
-int64_t div_round_up(int64_t num, int64_t size);
+int64_t div_round_up(int64_t fisrt, int64_t second);
 
 
 #endif /* !__KSTDLIB_H__ */

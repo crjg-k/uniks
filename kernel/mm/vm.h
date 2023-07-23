@@ -4,41 +4,53 @@
 
 #include "phys.h"
 #include <platform/riscv.h>
-#include <process/proc.h>
+#include <sync/spinlock.h>
 #include <uniks/defs.h>
+#include <uniks/list.h>
 
 
-// struct vm_area_struct {
-// 	uintptr_t vm_start;   // our start address within vm_mm
-// 	uintptr_t vm_end;
+struct vm_area_struct {
+	/* VMA covers [vm_start, vm_end) addresses within mm */
+	uintptr_t vm_start;
+	uintptr_t vm_end;
 
-// 	struct list_node_t vm_area_list;
-// 	// rb_node_t vm_rb;                   // red-black tree node
+	struct mm_struct *vm_mm; /* The address space we belong to */
 
-// 	uint64_t vm_flags;
-// 	uint64_t vm_pgoff;
-// 	struct file_t *vm_file;	  // if this segment map a file
-// };
-// struct mm_struct {
-// 	struct list_node_t vm_area_list_head;	// list of VMA
-// 	// rb_root_t mm_rb;	       // red-black tree root points to VMA
-// 	struct spinlock_t mmap_lk;	     // mmap's lock
-// 	struct vm_area_struct *mmap_cache;   // last find_vma result as a cache
+	struct list_node_t vm_area_list;
 
-// 	pagetable_t pagetable;		     // user page table
-// 	uintptr_t kstack;    // always point to own kernel stack bottom
+	/**
+	 * @brief bit function: [D|A|G|U|X|W|R|V]
+	 */
+	uint32_t vm_flags;
 
-// 	uint32_t mm_count;   // how many reference to "struct mm_struct"
-// 	int32_t map_count;   // number of VMA
+	// Offset (within vm_file) in PAGE_SIZE units
+	uint64_t vm_pgoff;
+	struct file_t *vm_file;	  // if this segment map a file
+};
 
-// 	uintptr_t start_code, end_code, start_data, end_data;
-// 	uintptr_t start_brk, brk,
-// 		start_stack;   // start_stack means the high addr of stack
-// 	uintptr_t arg_start, arg_end, env_start, env_end;
-// };
+struct mm_struct {
+	struct spinlock_t mmap_lk;		// mmap's lock
+
+	struct list_node_t vm_area_list_head;	// list of VMA
+
+	pagetable_t pagetable;			// user page table
+	uintptr_t kstack;   // always point to own kernel stack bottom
+
+	/**
+	 * @brief: The number of references to &struct mm_struct.
+	 *
+	 * When this drops to 0, the &struct mm_struct is freed.
+	 */
+	uint32_t mm_count;
+	int32_t map_count;	 // number of VMA
+
+	uintptr_t start_stack;	 // start_stack means the high addr of stack
+	uintptr_t mmap_base;	 // base of mmap area
+	uintptr_t start_brk, brk;
+	uintptr_t start_code, end_code, start_data, end_data;
+};
 
 extern char trampoline[];
-extern int32_t mem_map[];
 
 
 uintptr_t vaddr2paddr(pagetable_t pagetable, uintptr_t va);
@@ -47,23 +59,34 @@ uintptr_t vaddr2paddr(pagetable_t pagetable, uintptr_t va);
 
 void kvmenable();
 int32_t mappages(pagetable_t pagetable, uintptr_t va, size_t size, uintptr_t pa,
-		 int32_t perm, int8_t recordref);
+		 int32_t perm);
 void kvminit();
 
 /* === user vitual addr space related === */
 
 pagetable_t uvmcreate();
-void uvmunmap(pagetable_t pagetable, uintptr_t va, uintptr_t npages,
-	      int32_t do_free);
-void uvmfree(pagetable_t pagetable, uint64_t sz);
-int64_t uvmcopy(pagetable_t old, pagetable_t new, uint64_t sz);
+void uvmmap(pagetable_t pagetable, uintptr_t va_start, uintptr_t va_end,
+	    int32_t perm);
+void uvmunmap(pagetable_t pagetable, uintptr_t va_start, uintptr_t va_end,
+	      int32_t perm);
+int32_t init_mm(struct mm_struct *mm);
+void free_mm(struct mm_struct *mm);
+int32_t add_vm_area(struct mm_struct *mm, uintptr_t va_start, uintptr_t va_end,
+		    uint64_t flags, uint64_t pgoff, struct file_t *file);
+struct vm_area_struct *search_vmareas(struct mm_struct *mm,
+				      uintptr_t target_vaddr, size_t size,
+				      uint32_t *flag_res);
+
+void uvmfree(struct mm_struct *mm);
+int64_t uvmcopy(struct mm_struct *mm_new, struct mm_struct *mm_old);
 
 /* === lazy loading mechanism === */
 
-void do_inst_page_fault(uintptr_t fault_vaddr);
-void do_ld_page_fault(uintptr_t fault_vaddr);
-void do_sd_page_fault(uintptr_t fault_vaddr);
-void verify_area(void *addr, int64_t size);
+void do_inst_page_fault(struct mm_struct *mm, uintptr_t fault_vaddr);
+void do_ld_page_fault(struct mm_struct *mm, uintptr_t fault_vaddr);
+void do_sd_page_fault(struct mm_struct *mm, uintptr_t fault_vaddr);
+int32_t verify_area(struct mm_struct *mm, uintptr_t vaddr, size_t size,
+		    int32_t targetflags);
 
 /* === transmit data between kernel and user process space === */
 

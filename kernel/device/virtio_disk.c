@@ -119,9 +119,9 @@ void virtio_disk_init()
 	assert(max >= VIRTIO_DESC_NUM);
 
 	// allocate and zero queue memory
-	disk.desc = pages_alloc(1);
-	disk.avail = pages_alloc(1);
-	disk.used = pages_alloc(1);
+	disk.desc = pages_alloc(1,0);
+	disk.avail = pages_alloc(1,0);
+	disk.used = pages_alloc(1,0);
 	assert(disk.desc != NULL and disk.avail != NULL and disk.used != NULL);
 	memset(disk.desc, 0, PGSIZE);
 	memset(disk.avail, 0, PGSIZE);

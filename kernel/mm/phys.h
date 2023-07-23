@@ -8,7 +8,7 @@ void phymem_init();
 
 // === buddy system ===
 void buddy_system_init(uintptr_t start, uintptr_t end);
-void *pages_alloc(size_t npages);
+void *pages_alloc(size_t npages, int32_t wait_until_free);
 void pages_free(void *pa);
 
 

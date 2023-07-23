@@ -11,9 +11,9 @@
 #define CPUFREQ		  (10000000)   // the frequency of qemu is 10MHz
 
 // process relative configurable parameters
-#define PROC_NAME_LEN (16)   // max length of process name
-#define NPROC	      (64)   // max number of processes
-#define MAXARG	      (32)   // max exec arguments and environment(they are same)
+#define INITPROGRAM "initcode"
+#define NPROC	    (64)   // max number of processes
+#define MAXARG	    (64)   // max exec arguments and environment(they are same)
 
 // file system configurable parameters
 #define UNIKS_MAGIC	  (0x19890604)

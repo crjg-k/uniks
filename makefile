@@ -1,5 +1,5 @@
 
-# LOG ?= debug
+# LOG ?= trace
 # QEMULOG ?= trace
 
 # basic tools
@@ -90,7 +90,7 @@ QFLAGS = \
 	-drive file=${DISKIMG},if=none,format=raw,id=x0 \
 	-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 QEMUGDB = \
-	-gdb tcp::1234
+	-gdb tcp::8964
 
 ifeq ($(QEMULOG), trace)
 	QFLAGS += -D ${QEMULOGPATH} -d exec

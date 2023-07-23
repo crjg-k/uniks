@@ -7,7 +7,7 @@ void queue_init(struct queue_meta_t *q, int32_t capacity, void *heap_addr)
 	q->queue_head = q->queue_size = 0;
 	q->queue_tail = -1;
 	q->queue_capacity = capacity;
-	q->queue_array.queue_array_int32type = heap_addr;
+	q->queue_array_int32type = heap_addr;
 }
 
 int32_t queue_empty(struct queue_meta_t *q)
@@ -22,12 +22,12 @@ int32_t queue_full(struct queue_meta_t *q)
 
 void *queue_front_int32type(struct queue_meta_t *q)
 {
-	return &q->queue_array.queue_array_int32type[q->queue_head];
+	return &q->queue_array_int32type[q->queue_head];
 }
 
 void *queue_front_chartype(struct queue_meta_t *q)
 {
-	return &q->queue_array.queue_array_chartype[q->queue_head];
+	return &q->queue_array_chartype[q->queue_head];
 }
 
 void queue_push_int32type(struct queue_meta_t *q, int32_t push_data)
@@ -36,7 +36,7 @@ void queue_push_int32type(struct queue_meta_t *q, int32_t push_data)
 	q->queue_tail++;
 	if (q->queue_tail >= q->queue_capacity)
 		q->queue_tail -= q->queue_capacity;
-	q->queue_array.queue_array_int32type[q->queue_tail] = push_data;
+	q->queue_array_int32type[q->queue_tail] = push_data;
 	q->queue_size++;
 }
 void queue_push_chartype(struct queue_meta_t *q, char push_data)
@@ -45,7 +45,7 @@ void queue_push_chartype(struct queue_meta_t *q, char push_data)
 	q->queue_tail++;
 	if (q->queue_tail >= q->queue_capacity)
 		q->queue_tail -= q->queue_capacity;
-	q->queue_array.queue_array_chartype[q->queue_tail] = push_data;
+	q->queue_array_chartype[q->queue_tail] = push_data;
 	q->queue_size++;
 }
 

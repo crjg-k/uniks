@@ -47,7 +47,7 @@ static void interrupt_handler(uint64_t cause, int32_t prilevel)
 		panic("default interrupt");
 	}
 }
-static void exception_handler(uint64_t cause, struct proc_t *p,
+static void exception_handler(uint64_t cause, uint64_t stval, struct proc_t *p,
 			      int32_t prilevel)
 {
 	assert(myproc()->magic == UNIKS_MAGIC);
@@ -69,17 +69,17 @@ static void exception_handler(uint64_t cause, struct proc_t *p,
 	case EXC_INST_PAGEFAULT:
 		tracef("process: %d, inst page fault from prilevel: %d, addr: %p\n",
 		       p->pid, prilevel, p->tf->epc);
-		do_inst_page_fault(p->tf->epc);
+		do_inst_page_fault(p->mm, p->tf->epc);
 		break;
 	case EXC_LD_PAGEFAULT:
 		tracef("process: %d, ld page fault from prilevel: %d, addr: %p\n",
-		       p->pid, prilevel, read_csr(stval));
-		do_ld_page_fault(read_csr(stval));
+		       p->pid, prilevel, stval);
+		do_ld_page_fault(p->mm, stval);
 		break;
 	case EXC_SD_PAGEFAULT:
 		tracef("process: %d, sd page fault from prilevel: %d, addr: %p\n",
-		       p->pid, prilevel, read_csr(stval));
-		do_sd_page_fault(read_csr(stval));
+		       p->pid, prilevel, stval);
+		do_sd_page_fault(p->mm, stval);
 		break;
 	default:
 		kprintf("exception_handler(): unexpected scause %p pid=%d",
@@ -115,7 +115,7 @@ void usertrapret()
 	 * process next traps into the kernel
 	 */
 	p->tf->kernel_satp = read_csr(satp);   // kernel page table
-	p->tf->kernel_sp = p->kstack;	       // process's kernel stack
+	p->tf->kernel_sp = p->mm->kstack;      // process's kernel stack
 	p->tf->kernel_trap = (uint64_t)usertrap_handler;
 
 	/**
@@ -129,11 +129,11 @@ void usertrapret()
 	write_csr(sepc, p->tf->epc);
 
 	// tell trampoline.S the user page table to switch to.
-	uint64_t satp = MAKE_SATP(p->pagetable);
+	uint64_t satp = MAKE_SATP(p->mm->pagetable);
 
 	// note: the 2nd operand should change according to if using OpenSBI
 	uint64_t trampoline_usertrapret =
-		TRAMPOLINE + (uint64_t)(userret - KERNEL_BASE_ADDR) % PGSIZE;
+		TRAMPOLINE + OFFSETPAGE((uint64_t)(userret - KERNEL_BASE_ADDR));
 	p->jiffies = ticks;
 	// jmp to userret in trampoline.S
 	((void (*)(uint64_t))trampoline_usertrapret)(satp);
@@ -157,7 +157,7 @@ void usertrap_handler()
 	struct proc_t *p = myproc();
 	p->tf->epc = read_csr(sepc);   // save user's pc
 
-	int64_t cause = read_csr(scause);
+	int64_t cause = read_csr(scause), stval = read_csr(stval);
 
 	/**
 	 * @brief an interrupt will change sepc, scause, and sstatus, so enable
@@ -168,7 +168,7 @@ void usertrap_handler()
 	if (cause < 0)
 		interrupt_handler(cause, PRILEVEL_U);
 	else
-		exception_handler(cause, p, PRILEVEL_U);
+		exception_handler(cause, stval, p, PRILEVEL_U);
 
 	usertrapret();
 }
@@ -182,11 +182,11 @@ void kerneltrap_handler()
 	// assert that from S mode
 	assert((read_csr(sstatus) & SSTATUS_SPP) != 0);
 
-	int64_t cause = read_csr(scause);
+	int64_t cause = read_csr(scause), stval = read_csr(stval);
 	// assume that in kernel space, no exception will occur
 	assert(cause < 0);
 	if (cause < 0)
 		interrupt_handler(cause, PRILEVEL_S);
 	else
-		exception_handler(cause, myproc(), PRILEVEL_S);
+		exception_handler(cause, stval, myproc(), PRILEVEL_S);
 }

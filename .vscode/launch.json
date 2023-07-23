@@ -8,7 +8,7 @@
 			"program": "${workspaceFolder}/bin/kernel.elf",
 			"cwd": "${workspaceFolder}",
 			"stopAtEntry": true,
-			"miDebuggerServerAddress": "localhost:1234",
+			"miDebuggerServerAddress": "localhost:8964",
 			"miDebuggerPath": "gdb-multiarch",
 			"MIMode": "gdb",
 			"preLaunchTask": "make-debug", 

@@ -13,7 +13,7 @@
 	 */
 
 	// qemu puts platform-level interrupt controller (PLIC) here.
-	#define PLIC		      (0x0c000000l)
+	#define PLIC		      (0x0c000000ll)
 	#define PLIC_PRIORITY	      (PLIC + 0x0)
 	#define PLIC_PENDING	      (PLIC + 0x1000)
 	#define PLIC_M_ENABLE(hart)   (PLIC + 0x2000 + (hart)*0x100)

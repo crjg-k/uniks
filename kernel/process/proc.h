@@ -1,6 +1,8 @@
 #ifndef __KERNEL_PROCESS_PROC_H__
 #define __KERNEL_PROCESS_PROC_H__
 
+#include <fs/fs.h>
+#include <mm/vm.h>
 #include <sync/spinlock.h>
 #include <uniks/defs.h>
 #include <uniks/list.h>
@@ -81,21 +83,20 @@ enum proc_state {
 struct proc_t {
 	// this->lock must be held when using these below:
 	pid_t pid;		 // process ID
+	int32_t parentpid;	 // parent process
 	enum proc_state state;	 // process state
-	int8_t killed;		 // if non-zero, have been killed
+	int32_t killed;		 // if non-zero, have been killed
 	int32_t exitstate;	 // exit status to be returned to parent's wait
 	uint32_t priority;	 // process priority
 	uint32_t ticks;		 // remainder time slices
 	uint32_t jiffies;	 // global time slice when last execution
 	struct list_node_t block_list;	 // block list of this process
 	struct list_node_t wait_list;	 // who wait for this process to exit
-	int16_t fdtable[NFD];	 // fd table pointing to the index of sys
-				 // fcbtable
+	int16_t fdtable[NFD];	// fd table pointing to the index of fcbtable
 
-	uintptr_t kstack;	 // always point to own kernel stack bottom
-	uint64_t sz;		 // size of process memory (bytes)
-	int32_t parentpid;	 // parent process
-	pagetable_t pagetable;	 // user page table
+	/* this mm_struct describe the virtual addr space mapping state */
+	struct mm_struct *mm;	 // point to the mm_struct of this process
+
 	struct context_t ctxt;	 // switch here to run process
 	/**
 	 * @brief the trapframe for current interrupt, and furthermore, it point
@@ -105,26 +106,26 @@ struct proc_t {
 	 *                      |               |      |
 	 *    kernel_sp   ->    |               |      |
 	 *                      |               |      |
-	 *                 +----+---------------+      |
-	 *                 |    |     MAGIC     |      |
-	 *                 |    +---------------+      |
-	 *                 |    |      ...      |      |
-	 *                 |    +---------------+      |
-	 *                 |    |      TF       |---+  |           +---+---+---+
-	 * STRUCT PROC <---|    +---------------+   |  |           |🔒 |...| 🔒|
-	 *                 |    |      ...      |   |  |  pcblock: +---+---+---+
-	 *                 |    +---------------+   |  |             |       |
-	 *                 |    |    KSTACK     |===|==+             ⬇       ⬇
-	 *                 |    +---------------+   |              +---+---+---+
-	 *                 |    |      ...      |   |              |   |...|   |
-	 *                 +----+---------------+<--|----pcbtable: +---+---+---+
+	 *                   +--+---------------+      |
+	 *                   |  |     MAGIC     |      |
+	 *                   |  +---------------+      |
+	 *                   |  |      ...      |      |
+	 *                   |  +---------------+      |
+	 *                   |  |      TF       |---+  |           +---+---+---+
+	 * STRUCT PROC_T <---|  +---------------+   |  |           |🔒 |...| 🔒|
+	 *                   |  |      ...      |   |  |  pcblock: +---+---+---+
+	 *                   |  +---------------+   |  |             |       |
+	 *                   |  |    KSTACK     |===|==+             ⬇       ⬇
+	 *                   |  +---------------+   |              +---+---+---+
+	 *                   |  |      ...      |   |              |   |...|   |
+	 *                   +--+---------------+<--|----pcbtable: +---+---+---+
 	 *                      |               |   |
 	 *                      |   TRAPFRAME   |   |
 	 *                      |               |   |
 	 * kernelstackbottom->  +---------------+<--+ (low address)
 	 */
 	struct trapframe_t *tf;
-	char name[PROC_NAME_LEN];   // process name
+	char *name;	  // elf file name corresponding to this process
 
 	uint32_t magic;	  // magic number as canary to determine stackoverflow
 };
@@ -151,6 +152,8 @@ struct sleep_queue_t {
 extern struct proc_t *pcbtable[];
 extern struct spinlock_t pcblock[];
 extern struct cpu_t cpus[];
+extern struct sleep_queue_t sleep_queue;
+extern struct pids_queue_t pids_queue;
 
 void scheduler();
 void sched();
@@ -158,7 +161,7 @@ void proc_init();
 void user_init(uint32_t priority);
 void yield();
 void time_wakeup();
-int8_t killed(struct proc_t *);
+int32_t killed(struct proc_t *);
 void recycle_exitedproc();
 struct cpu_t *mycpu();
 struct proc_t *myproc();
@@ -166,10 +169,12 @@ void proc_block(struct proc_t *p, struct list_node_t *list,
 		enum proc_state state);
 struct proc_t *proc_unblock(struct list_node_t *wait_list);
 void proc_unblock_all(struct list_node_t *wait_list);
+int32_t user_basic_pagetable(struct proc_t *p);
 
 
 // process relative syscall
 int64_t do_fork();
 void do_exit(int32_t status);
+
 
 #endif /* !__KERNEL_PROCESS_PROC_H__ */

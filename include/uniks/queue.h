@@ -16,7 +16,7 @@ struct queue_meta_t {
 	union {
 		int32_t *queue_array_int32type;
 		char *queue_array_chartype;
-	} queue_array;
+	};
 };
 
 void queue_init(struct queue_meta_t *q, int32_t capacity, void *heap_addr);

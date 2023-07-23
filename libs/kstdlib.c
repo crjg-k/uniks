@@ -1,7 +1,7 @@
 #include <uniks/kstdlib.h>
 
 
-__always_inline int64_t div_round_up(int64_t num, int64_t size)
+__always_inline int64_t div_round_up(int64_t first, int64_t second)
 {
-	return (num + size - 1) / size;
+	return (first + second - 1) / second;
 }

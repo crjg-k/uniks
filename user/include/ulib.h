@@ -25,6 +25,7 @@ void _start(int argc, char *argv[], char *envp[]);
 
 // std libc function
 void printf(const char *fmt, ...);
+char getchar();
 
 
 #endif /* !__USER_INCLUDE_ULIB_H__ */

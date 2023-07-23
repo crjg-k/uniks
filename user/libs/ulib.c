@@ -106,3 +106,10 @@ void printf(const char *fmt, ...)
 	vprintf(fmt, ap);
 	va_end(ap);
 }
+
+char getchar()
+{
+	char ch;
+	read(0, &ch, 1);
+	return ch;
+}

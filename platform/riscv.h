@@ -88,14 +88,20 @@
 
 
 struct pagetable_entry_t {
-	uint8_t valid : 1;   // is this entry refer to a in memory page?
-	uint8_t read : 1;
-	uint8_t write : 1;
-	uint8_t execute : 1;
-	uint8_t user : 1;	// user space available?
-	uint8_t global : 1;	// is global available?
-	uint8_t accessed : 1;	// has been accessed?
-	uint8_t dirty : 1;	// is dirty?
+	union {
+		struct {
+			uint8_t valid : 1;
+			uint8_t read : 1;
+			uint8_t write : 1;
+			uint8_t execute : 1;
+			uint8_t user : 1;	// user space available?
+			uint8_t global : 1;	// is global available?
+			uint8_t accessed : 1;	// has been accessed?
+			uint8_t dirty : 1;	// is dirty?
+		};
+		uint8_t perm : 8;
+	};
+
 	uint8_t RSW : 2;
 	uint32_t ppn0 : 9;
 	uint32_t ppn1 : 9;
@@ -115,7 +121,7 @@ struct pagetable_entry_t {
 #define w_satp(x)	     ({ asm volatile("csrw satp, %0" : : "r"(x)); })
 #define PA2PTE(pa)	     ((((uint64_t)pa) >> PGSHIFT) << 10)   // pysical addr to pte
 #define PTE2PA(pte) \
-	((((uint64_t)pte) >> 10) << PGSHIFT)	  // pte to pysical addr
+	(((*(uint64_t *)pte) >> 10) << PGSHIFT)	  // pte to pysical addr
 #define PXSHIFT(level)	     (PGSHIFT + (9 * (level)))
 #define PX(level, va)	     ((((uint64_t)(va)) >> PXSHIFT(level)) & 0x1ff)
 #define PTE_FLAGS(pte)	     ((*(uint64_t *)pte) & 0x3ff)
@@ -187,5 +193,6 @@ __always_inline void invalidate(uintptr_t va)
 {
 	asm volatile("sfence.vma %0, zero\n\tnop" : "=r"(va));
 }
+
 
 #endif /* !__KERNEL_PLATFORM_RISCV_H__ */

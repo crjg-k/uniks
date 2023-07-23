@@ -1,5 +1,6 @@
 #include <device/clock.h>
 #include <loader/elfloader.h>
+#include <mm/vm.h>
 #include <process/proc.h>
 #include <sys/ksyscall.h>
 #include <uniks/defs.h>
@@ -10,14 +11,8 @@
 
 extern uint64_t jiffy;
 extern volatile uint64_t ticks;
-extern struct sleep_queue_t sleep_queue;
-extern int32_t copyout(pagetable_t pagetable, void *dstva, void *src,
-		       uint64_t len),
-	copyin_string(pagetable_t pagetable, char *dst, uintptr_t srcva,
-		      uint64_t max);
-extern void verify_area(void *addr, int64_t size);
-extern int64_t do_execve(char *pathname, char *argv[], char *envp[]);
-extern uintptr_t vaddr2paddr(pagetable_t pagetable, uintptr_t va);
+extern int64_t do_execve(struct proc_t *p, char *pathname, char *argv[],
+			 char *envp[]);
 
 
 int64_t sys_getpid()
@@ -33,10 +28,12 @@ int64_t sys_fork()
 int64_t sys_execve()
 {
 	struct proc_t *p = myproc();
-	char *file = (char *)vaddr2paddr(p->pagetable, argufetch(p, 0)),
-	     **argv = (char **)vaddr2paddr(p->pagetable, argufetch(p, 1)),
-	     **envp = (char **)vaddr2paddr(p->pagetable, argufetch(p, 2));
-	return do_execve(file, argv, envp);
+	char *file = (char *)vaddr2paddr(p->mm->pagetable, argufetch(p, 0)),
+	     **argv = (char **)vaddr2paddr(p->mm->pagetable, argufetch(p, 1)),
+	     **envp = (char **)vaddr2paddr(p->mm->pagetable, argufetch(p, 2));
+	file++;
+	extern char fib[];
+	return do_execve(p, fib, argv, envp);
 }
 
 int64_t sys_msleep()
@@ -88,8 +85,8 @@ int64_t sys_waitpid()
 		// if the proc[pid] has exited, tackle and return immediately
 		acquire(&pcblock[p->pid]);
 		int64_t *status_addr = (int64_t *)argufetch(p, 1);
-		verify_area(status_addr, sizeof(pcbtable[pid]->exitstate));
-		copyout(p->pagetable, (void *)status_addr,
+		// verify_area(status_addr, sizeof(pcbtable[pid]->exitstate));
+		copyout(p->mm->pagetable, (void *)status_addr,
 			(void *)&pcbtable[pid]->exitstate,
 			sizeof(pcbtable[pid]->exitstate));
 		release(&pcblock[p->pid]);

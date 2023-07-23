@@ -14,7 +14,7 @@
 #define PHYMEM_AVAILABLE      (PHYSTOP - KERNEL_END_LIMIT)
 #define ADDR2ARRAYINDEX(addr) (((char *)(addr) - (char *)mem_start) >> PGSHIFT)
 
-
+// todo: add block list waiting for free
 void phymem_init()
 {
 	assert((char *)KERNEL_END_LIMIT >= (char *)end);
@@ -49,6 +49,7 @@ enum order {
 	ORD_9,
 	ORD_10,
 };
+
 // mount all available blocks of order power to the orderarray
 static void mount_orderlist(uintptr_t current, int32_t order)
 {
@@ -60,6 +61,7 @@ static void mount_orderlist(uintptr_t current, int32_t order)
 	if (order != ORD_0 and current != mem_end - 1)
 		mount_orderlist(current, order - 1);
 }
+
 // in RISCV, I don't know whether there are any instructions similar to CLZ
 static uint64_t clz(uint64_t reg)
 {
@@ -93,6 +95,7 @@ static int16_t get_power2(uint32_t n)
 {
 	return 63 - clz(n);
 }
+
 // always allocate the left side after the split
 static struct list_node_t *split_pages(struct list_node_t *list,
 				       int16_t this_order, int16_t target_order)
@@ -107,6 +110,7 @@ static struct list_node_t *split_pages(struct list_node_t *list,
 	}
 	return list;
 }
+
 static void do_record(void *ptr, int16_t order)
 {
 	int32_t index = ADDR2ARRAYINDEX(ptr);
@@ -114,6 +118,7 @@ static void do_record(void *ptr, int16_t order)
 	physical_page_record[index].count++;
 	physical_page_record[index].order = order;
 }
+
 void buddy_system_init(uintptr_t start, uintptr_t end)
 {
 	mem_start = start, mem_end = end;
@@ -123,7 +128,8 @@ void buddy_system_init(uintptr_t start, uintptr_t end)
 	mount_orderlist(mem_start, ORD_10);
 	memset(physical_page_record, 0, sizeof(physical_page_record));
 }
-void *pages_alloc(size_t npages)
+
+void *pages_alloc(size_t npages, int32_t wait_until_free)
 {
 	assert(npages > 0 and npages <= 1024);
 	void *ptr = NULL;
@@ -153,8 +159,10 @@ void *pages_alloc(size_t npages)
 	do_record(ptr, order);
 out:
 	// assert that prt is aligned to a page
-	assert(((uintptr_t)ptr & (PGSIZE - 1)) == 0);
+
+	assert(OFFSETPAGE((uintptr_t)ptr) == 0);
 	release(&buddy_lock);
+	// tracef("buddy system: allocate %d page(s) start @%p,", npages, ptr);
 	return ptr;
 }
 static void *whois_buddy(void *ptr, int16_t order)
@@ -183,7 +191,7 @@ void pages_free(void *ptr)
 {
 	assert(ptr != NULL);
 	// assert that prt is aligned to a page
-	assert(((uintptr_t)ptr & (PGSIZE - 1)) == 0);
+	assert(OFFSETPAGE((uintptr_t)ptr) == 0);
 
 	acquire(&buddy_lock);
 	int32_t index = ADDR2ARRAYINDEX(ptr);
@@ -233,6 +241,7 @@ struct slub_pages_node_t {
 	struct list_node_t slub_node_list;
 	struct list_node_t obj_freelist;
 };
+
 void kmem_cache_init()
 {
 	for (int i = 0; i < SLUBNUM; i++) {
@@ -242,9 +251,11 @@ void kmem_cache_init()
 		INIT_LIST_HEAD(&kmem_cache_array[i].partiallist);
 	}
 }
+
 static struct slub_pages_node_t *new_slub_pages_node(int32_t idx)
 {
-	struct slub_pages_node_t *slub_pages_node = pages_alloc(1);
+	struct slub_pages_node_t *slub_pages_node = pages_alloc(1, 1);
+	assert(slub_pages_node != NULL);
 	INIT_LIST_HEAD(&slub_pages_node->slub_node_list);
 	INIT_LIST_HEAD(&slub_pages_node->obj_freelist);
 	slub_pages_node->kmem_cache_linked = &kmem_cache_array[idx];
@@ -301,9 +312,11 @@ void *kmalloc(size_t size)
 	}
 	return ptr;
 }
+
 void kfree(void *ptr)
 {
-	assert(ptr != NULL);
+	if (ptr == NULL)
+		return;
 	struct slub_pages_node_t *slub_pages_node =
 		(struct slub_pages_node_t *)SLUB_NODE_START(ptr);
 	if (list_empty(&slub_pages_node->obj_freelist)) {

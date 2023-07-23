@@ -16,6 +16,8 @@
 	#define EOF ((char)-1)
 #endif
 
+#define UNIKS_MSG "[\tuniks]==> "
+
 
 #include <uniks/types.h>
 

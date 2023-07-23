@@ -6,14 +6,14 @@
 #include <platform/riscv.h>
 #include <process/proc.h>
 #include <uniks/defs.h>
-#include <uniks/errno.h>
 #include <uniks/kassert.h>
+#include <uniks/kstdlib.h>
 #include <uniks/kstring.h>
+#include <uniks/list.h>
 #include <uniks/param.h>
 
 
 pagetable_t kernel_pagetable;
-int32_t mem_map[PHYMEMSIZE >> PGSHIFT];
 
 
 void kvmenable()
@@ -35,20 +35,21 @@ void kvmenable()
  * @param alloc wether allow to allocate memory
  * @return pte_t *: the 3rd level pte
  */
-pte_t *walk(pagetable_t pagetable, uint64_t va, int32_t alloc)
+static pte_t *walk(pagetable_t pagetable, uint64_t va, int32_t alloc)
 {
 	assert(va < MAXVA);
 
 	for (int32_t level = 2; level > 0; level--) {
-		pte_t *pte = &pagetable[PX(level, va)];
-		if (*pte & PTE_V) {
-			pagetable = (pagetable_t)PTE2PA(*pte);
+		struct pagetable_entry_t *pte =
+			(struct pagetable_entry_t *)&pagetable[PX(level, va)];
+		if (pte->valid) {
+			pagetable = (pagetable_t)PTE2PA(pte);
 		} else {   // this page is not valid
 			if (!alloc or
-			    (pagetable = (pde_t *)pages_alloc(1)) == 0)
+			    (pagetable = (pde_t *)pages_alloc(1, 0)) == NULL)
 				return NULL;
 			memset(pagetable, 0, PGSIZE);
-			*pte = PA2PTE(pagetable) | PTE_V;
+			*(pte_t *)pte = PA2PTE(pagetable) | (level ? PTE_V : 0);
 		}
 	}
 	return &pagetable[PX(0, va)];
@@ -61,16 +62,17 @@ pte_t *walk(pagetable_t pagetable, uint64_t va, int32_t alloc)
  * @param va
  * @return uintptr_t
  */
-uintptr_t walkaddr(pagetable_t pagetable, uintptr_t va)
+static uintptr_t walkaddr(pagetable_t pagetable, uintptr_t va)
 {
-	pte_t *pte = walk(pagetable, va, 0);
-	if (pte == 0)
+	struct pagetable_entry_t *pte =
+		(struct pagetable_entry_t *)walk(pagetable, va, 0);
+	if (pte == NULL)
 		return 0;
-	if ((*pte & PTE_V) == 0)
+	if (!pte->valid)
 		return 0;
-	if ((*pte & PTE_U) == 0)
+	if (!pte->user)
 		return 0;
-	return PTE2PA(*pte);
+	return PTE2PA(pte);
 }
 
 uintptr_t vaddr2paddr(pagetable_t pagetable, uintptr_t va)
@@ -82,19 +84,22 @@ uintptr_t vaddr2paddr(pagetable_t pagetable, uintptr_t va)
 }
 
 int32_t mappages(pagetable_t pagetable, uintptr_t va, size_t size, uintptr_t pa,
-		 int32_t perm, int8_t recordref)
+		 int32_t perm)
 {
 	assert(size != 0);
 
-	uint64_t a = PGROUNDDOWN(va), last = PGROUNDUP(va + size - 1);
-	pte_t *pte;
+	uint64_t a = PGROUNDDOWN(va), last = PGROUNDUP(a + size - 1);
+	struct pagetable_entry_t *pte;
 	while (a < last) {
-		// potential optimization: deeper interweaving with walk()
-		if ((pte = walk(pagetable, a, 1)) == NULL)
+		if ((pte = (struct pagetable_entry_t *)walk(pagetable, a, 1)) ==
+		    NULL)
 			return -1;
-		*pte = PA2PTE(pa) | perm | PTE_V;
-		if (recordref)
-			mem_map[PA2ARRAYINDEX(pa)]++;
+		/**
+		 * @brief assert that this entry does not
+		 * refer to a physical memory
+		 */
+		assert(pte->valid == 0);
+		*(pte_t *)pte = PA2PTE(pa) | perm | PTE_V;
 		a += PGSIZE;
 		pa += PGSIZE;
 	}
@@ -104,26 +109,25 @@ int32_t mappages(pagetable_t pagetable, uintptr_t va, size_t size, uintptr_t pa,
 static pagetable_t kvmmake()
 {
 	pagetable_t kpgtbl;
-	kpgtbl = (pagetable_t)pages_alloc(1);
+	kpgtbl = (pagetable_t)pages_alloc(1, 0);
 	memset(kpgtbl, 0, PGSIZE);
 	// uart registers
-	assert(mappages(kpgtbl, UART0, PGSIZE, UART0, PTE_R | PTE_W, 0) != -1);
+	assert(mappages(kpgtbl, UART0, PGSIZE, UART0, PTE_R | PTE_W) != -1);
 	// virtio mmio disk interface
-	assert(mappages(kpgtbl, VIRTIO0, PGSIZE, VIRTIO0, PTE_R | PTE_W, 0) !=
-	       -1);
+	assert(mappages(kpgtbl, VIRTIO0, PGSIZE, VIRTIO0, PTE_R | PTE_W) != -1);
 	// PLIC
-	assert(mappages(kpgtbl, PLIC, 0x400000, PLIC, PTE_R | PTE_W, 0) != -1);
+	assert(mappages(kpgtbl, PLIC, 0x400000, PLIC, PTE_R | PTE_W) != -1);
 
 #define KERNELBASE (uintptr_t) KERNEL_BASE_ADDR
 	// map kernel text segment
 	assert(mappages(kpgtbl, KERNELBASE, (uint64_t)(etext - KERNELBASE),
-			KERNELBASE, PTE_R | PTE_X, 0) != -1);
+			KERNELBASE, PTE_R | PTE_X) != -1);
 	// map kernel data segment(include stack) and the remainder physical RAM
 	assert(mappages(kpgtbl, (uint64_t)etext, PHYSTOP - (uint64_t)etext,
-			(uint64_t)etext, PTE_R | PTE_W, 0) != -1);
+			(uint64_t)etext, PTE_R | PTE_W) != -1);
 	// map the trampoline to the highest virtual address in the kernel
 	assert(mappages(kpgtbl, TRAMPOLINE, PGSIZE, (uint64_t)trampoline,
-			PTE_R | PTE_X, 0) != -1);
+			PTE_R | PTE_X) != -1);
 
 	return kpgtbl;
 }
@@ -134,204 +138,307 @@ void kvminit()
 	kernel_pagetable = kvmmake();
 }
 
-// load the user/initcode into address USER_TEXT_START of pagetable
-void uvmfirst(pagetable_t pagetable, uint32_t *src, uint32_t sz)
-{
-	char *pgstart = pages_alloc(1);
-	mappages(pagetable, USER_TEXT_START, PGSIZE, (uintptr_t)pgstart,
-		 PTE_R | PTE_X | PTE_U, 1);
-	memcpy(pgstart, src, sz);
-}
-
-// create an empty user page table and returns 0 if out of memory
+/**
+ * @brief create an empty (fill with 0) user-process's page table and return
+ * NULL if there are no more available pages.
+ * @return pagetable_t
+ */
 pagetable_t uvmcreate()
 {
 	pagetable_t pagetable;
-	pagetable = (pagetable_t)pages_alloc(1);
-	if (pagetable == 0)
-		return 0;
+	pagetable = pages_alloc(1, 0);
+	if (pagetable == NULL)
+		return NULL;
 	memset(pagetable, 0, PGSIZE);
 	return pagetable;
 }
 
 /**
- * @brief free pagetable and all leaf must already have been removed
+ * @brief Set several pages' flags covers [va_start, va_end) in pagetable.
  *
  * @param pagetable
+ * @param va_start must be page-aligned namely 4096 bytes aligned
+ * @param va_end
+ * @param perm
  */
-void freewalk(pagetable_t pagetable)
+void uvmmap(pagetable_t pagetable, uintptr_t va_start, uintptr_t va_end,
+	    int32_t perm)
 {
-	for (int32_t i = 0; i < PTENUM; i++) {
-		pte_t pte = pagetable[i];
+	assert((va_start % PGSIZE) == 0);
 
-		// means that this pte has child level
-		assert(!(pte & PTE_V) or (pte & (PTE_R | PTE_W | PTE_X)));
-
-		uint64_t child = PTE2PA(pte);
-		freewalk((pagetable_t)child);
-		pagetable[i] = 0;
+	struct pagetable_entry_t *pte;
+	for (uintptr_t va = va_start; va < va_end; va += PGSIZE) {
+		assert((pte = (struct pagetable_entry_t *)walk(pagetable, va,
+							       0)) != NULL);
+		pte->perm |= perm;   // set corresponding bits
 	}
-	pages_free((void *)pagetable);
 }
 
 /**
- * @brief remove n pages of pagetable starting from va and free the phymem
- * optionally
+ * @brief Clear several pages' flags covers [va_start, va_end) in pagetable.
  *
  * @param pagetable
- * @param va must be page-aligned namely 4096 bytes aligned
- * @param npages
- * @param do_free
+ * @param va_start must be page-aligned namely 4096 bytes aligned
+ * @param va_end
+ * @param perm
  */
-void uvmunmap(pagetable_t pagetable, uintptr_t va, uintptr_t npages,
-	      int32_t do_free)
+void uvmunmap(pagetable_t pagetable, uintptr_t va_start, uintptr_t va_end,
+	      int32_t perm)
 {
-	assert((va % PGSIZE) == 0);
+	assert((va_start % PGSIZE) == 0);
 
-	pte_t *pte;
-	for (uint64_t a = va; a < va + npages * PGSIZE; a += PGSIZE) {
-		assert((pte = walk(pagetable, a, 0)) != NULL);
-		assert((*pte & PTE_V) != 0);	    // assert mappings is exist
-		assert(PTE_FLAGS(*pte) != PTE_V);   // assert it is a leaf
-		if (do_free) {
-			uint64_t pa = PTE2PA(*pte);
-			pages_free((void *)pa);
+	struct pagetable_entry_t *pte;
+	for (uintptr_t va = va_start; va < va_end; va += PGSIZE) {
+		assert((pte = (struct pagetable_entry_t *)walk(pagetable, va,
+							       0)) != NULL);
+		pte->perm &= ~perm;   // clear corresponding bits
+	}
+}
+
+int32_t init_mm(struct mm_struct *mm)
+{
+	if ((mm->pagetable = uvmcreate()) == NULL)
+		return -1;
+	initlock(&mm->mmap_lk, "mm_lock");
+	INIT_LIST_HEAD(&mm->vm_area_list_head);
+	mm->mm_count = mm->map_count = 0;
+	struct vm_area_struct *vm0 = kmalloc(sizeof(struct vm_area_struct));
+	vm0->vm_start = vm0->vm_end = 0;
+	vm0->vm_flags = PTE_V | PTE_R | PTE_W | PTE_X | PTE_U;
+	list_add_front(&vm0->vm_area_list, &mm->vm_area_list_head);
+
+	vm0 = kmalloc(sizeof(struct vm_area_struct));
+	vm0->vm_start = vm0->vm_end = USER_STACK_TOP;
+	vm0->vm_flags = PTE_V | PTE_R | PTE_W | PTE_X | PTE_U;
+	list_add_tail(&vm0->vm_area_list, &mm->vm_area_list_head);
+
+	return 0;
+}
+
+/**
+ * @brief free an mm_struct with its vm_area_list
+ *
+ * @param mm
+ */
+void free_mm(struct mm_struct *mm)
+{
+	kfree(mm);
+}
+
+// hint: this will not deal with a bad overlay range!
+int32_t add_vm_area(struct mm_struct *mm, uintptr_t va_start, uintptr_t va_end,
+		    uint64_t flags, uint64_t pgoff, struct file_t *file)
+{
+	acquire(&mm->mmap_lk);
+	struct vm_area_struct *vm_area_new =
+				      kmalloc(sizeof(struct vm_area_struct)),
+			      *vm_area_target, *vm_area_target_next;
+	INIT_LIST_HEAD(&vm_area_new->vm_area_list);
+	vm_area_new->vm_start = va_start;
+	vm_area_new->vm_end = va_end;
+	vm_area_new->vm_flags = flags;
+	vm_area_new->vm_file = file;
+	vm_area_new->vm_pgoff = pgoff;
+	mm->map_count++;
+
+	// "insert sorting"
+	struct list_node_t *vm_area_node = mm->vm_area_list_head.next,
+			   *vm_area_node_next = vm_area_node->next;
+	while (vm_area_node_next->next != &mm->vm_area_list_head) {
+		vm_area_target = element_entry(
+			vm_area_node, struct vm_area_struct, vm_area_list);
+		vm_area_target_next = element_entry(
+			vm_area_node_next, struct vm_area_struct, vm_area_list);
+		if (va_start >= vm_area_target->vm_end and
+		    va_end < vm_area_target_next->vm_start) {
+			break;
 		}
-		*pte = 0;   // do unmap operation by clear valid flag
+		vm_area_node = vm_area_node_next;
+		vm_area_node_next = vm_area_node->next;
 	}
+	list_add_front(&vm_area_new->vm_area_list, vm_area_node);
+
+	release(&mm->mmap_lk);
+	return 0;
 }
 
-// free user memory pages, then free page-table pages
-void uvmfree(pagetable_t pagetable, uint64_t sz)
+struct vm_area_struct *search_vmareas(struct mm_struct *mm,
+				      uintptr_t target_vaddr, size_t size,
+				      uint32_t *flag_res)
 {
-	if (sz > 0)
-		uvmunmap(pagetable, 0, PGROUNDUP(sz) / PGSIZE, 1);
-	freewalk(pagetable);
+	uint32_t perm = UINT32_MAX;
+	uintptr_t end_vaddr = target_vaddr + size;
+	acquire(&mm->mmap_lk);
+	struct list_node_t *vm_area_node = list_next(&mm->vm_area_list_head);
+	// vm_area_first record the first suitable vm_area_struct's addr
+	struct vm_area_struct *vm_area, *vm_area_first = NULL;
+	for (; vm_area_node != &mm->vm_area_list_head;
+	     vm_area_node = list_next(vm_area_node)) {
+		vm_area = element_entry(vm_area_node, struct vm_area_struct,
+					vm_area_list);
+		if (target_vaddr >= vm_area->vm_end)
+			continue;
+		if (target_vaddr >= vm_area->vm_start and
+		    target_vaddr < vm_area->vm_end) {
+			if (vm_area_first == NULL)
+				vm_area_first = vm_area;
+			target_vaddr = vm_area->vm_end;
+			perm &= vm_area->vm_flags;
+		} else
+			break;
+	}
+	release(&mm->mmap_lk);
+
+	if (target_vaddr < end_vaddr)
+		return NULL;
+	*flag_res = perm;
+	return vm_area_first;
 }
+
+void free_pagetable() {}
+
+void free_mm_struct() {}
 
 /**
- * @brief receive a parent process's page table, and copy its page table only
- * into child's address space (since the COW is implemented)
+ * @brief free page table(both pde and pte), and all leaf must already
+ * have been removed
+ * @param pagetable
+ * @param level
+ */
+void freewalk(pagetable_t pagetable, int32_t level)
+{
+	if (level < 2) {
+		for (int32_t i = 0; i < PTENUM; i++) {
+			struct pagetable_entry_t *pte =
+				(struct pagetable_entry_t *)&pagetable[i];
+			if (pte->valid and
+			    !(pte->read and pte->write and pte->execute)) {
+				// this pte has child level
+				uint64_t child = PTE2PA(pte);
+				freewalk((pagetable_t)child, level + 1);
+			}
+		}
+	}
+	pages_free(pagetable);
+}
+
+// compeletely free user memory pages, then free page-table pages
+void uvmfree(struct mm_struct *mm) {}
+
+void copy_pagetable() {}
+
+void copy_mm_struct() {}
+
+/**
+ * @brief receive a parent process's page table, and copy its page table
+ * only into child's address space without physical memory page it
+ * refers to (since the COW mechanism is implemented)
  *
  * @param old namely parent process
  * @param new namely child process
  * @param sz
  * @return int64_t
  */
-int64_t uvmcopy(pagetable_t old, pagetable_t new, uint64_t sz)
+int64_t uvmcopy(struct mm_struct *mm_new, struct mm_struct *mm_old)
 {
-	// note: COW mechanism is not applicable to kstack page!!
-	pte_t *pte;
-	uint64_t pa, i;
+	struct pagetable_entry_t *pte;
+	uintptr_t va, pa;
 	uint32_t flags;
 
-	for (i = 0; i < sz; i += PGSIZE) {
-		assert((pte = walk(old, i, 0)) != NULL);
-		assert((*pte & PTE_V) != 0);
-		pa = PTE2PA(*pte);
-		clear_variable_bit(*pte,
-				   PTE_W);   // clear the write permission bit
-		flags = PTE_FLAGS(*pte);
-		// add mapping to childproc pagetable
-		if (mappages(new, i, PGSIZE, (uint64_t)pa, flags, 1) != 0) {
-			goto err;
+	while (!list_empty(&mm_new->vm_area_list_head)) {
+		struct list_node_t *next_node =
+			list_next(&mm_new->vm_area_list_head);
+		struct vm_area_struct *vma = element_entry(
+			next_node, struct vm_area_struct, vm_area_list);
+		for (va = vma->vm_start; va < vma->vm_end; va += PGSIZE) {
+			assert((pte = (struct pagetable_entry_t *)walk(
+					mm_old->pagetable, va, 0)) != NULL);
+			assert(pte->valid != 0);
+			pa = PTE2PA(pte);
+			pte->write = 0;
+			flags = PTE_FLAGS(pte);
+			// add mapping to childproc pagetable
+			assert(mappages(mm_new->pagetable, va, PGSIZE,
+					(uintptr_t)pa, flags) != -1);
+			// mem_map[PA2ARRAYINDEX(pa)]++;
+
+			invalidate(va);
 		}
-		mem_map[PA2ARRAYINDEX(pa)]++;
-		// note: must must must flush the TLB to validate the
-		// note: modification of the page table
-		invalidate(i);
 	}
 	return 0;
-
-err:
-	uvmunmap(new, 0, i / PGSIZE, 1);
-	return -1;
-}
-
-int32_t un_wp_page(pte_t *pte)
-{
-	uint64_t pa = PTE2PA(*pte);
-	assert(mem_map[PA2ARRAYINDEX(pa)] >= 1);
-	// if it is referred one time, only add write permission
-	if (mem_map[PA2ARRAYINDEX(pa)] == 1) {
-		set_variable_bit(*pte, PTE_W);
-		return 0;
-	}
-	// else duplicate page content
-	char *mem;
-	if ((mem = pages_alloc(1)) == 0)
-		goto err;
-	memcpy(mem, (char *)pa, PGSIZE);
-	register uint64_t perm = PTE_FLAGS(*pte);
-	*pte = PA2PTE(mem) | PTE_W | perm;
-	mem_map[PA2ARRAYINDEX(pa)]--;
-	return 0;
-err:
-	return -ENOMEM;
-}
-
-// tackle cow mechanism
-__always_inline void do_wp_page(pte_t *pte, uintptr_t va)
-{
-	// hint: don't cope with the oom situation
-	un_wp_page(pte);
-	// note: must flush the TLB after modifying page table
-	invalidate(va);
-}
-
-// lazy load ELF page from secondary storage
-void do_no_page() {}
-void do_inst_page_fault(uintptr_t fault_vaddr) {}
-void do_ld_page_fault(uintptr_t fault_vaddr) {}
-void do_sd_page_fault(uintptr_t fault_vaddr)
-{
-	struct proc_t *p = myproc();
-	pte_t *pte = walk(p->pagetable, fault_vaddr, 0);
-	assert(pte != NULL);
-	if (!PAGE_ISVALID(*pte)) {
-		do_no_page();
-	} else if (PAGE_ISWRITABLE(*pte)) {
-		return;
-	} else {
-		do_wp_page(pte, fault_vaddr);
-	}
-	assert(p->magic == UNIKS_MAGIC);
 }
 
 /**
- * @brief page writing verify, and if the page can't be written resulting from
- * the COW mechanism, then copy it
- * @param address must be aligned to page
- */
-__always_inline void write_verify(uintptr_t address)
-{
-	do_sd_page_fault(address);
-}
-
-/**
- * @brief verify function before writing to user space, and the names of this
- * series of functions come from Linux-0.11
- * @param addr
+ * @brief verify process p's vm-space before writing to user space, and
+ * the name of this function comes from Linux-0.11
+ *
+ * @param p
+ * @param vaddr
  * @param size
+ * @return int32_t: -1 if segment fault
  */
-void verify_area(void *addr, int64_t size)
+int32_t verify_area(struct mm_struct *mm, uintptr_t vaddr, size_t size,
+		    int32_t targetperm)
 {
-	uintptr_t start = (uintptr_t)addr;
-	size = OFFSETPAGE(size);
-	start = PGROUNDDOWN(start);
+	uint32_t vm_flags;
 
-	while (size > 0) {
-		size -= PGSIZE;
-		write_verify(start);
-		start += PGSIZE;
+	struct vm_area_struct *vm_area_start =
+		search_vmareas(mm, vaddr, size, &vm_flags);
+
+	/**
+	 * @brief If the [vaddr, vaddr+size) area's permission is not the
+	 * superset of targetperm, then trigger segment fault.
+	 */
+	if (vm_area_start == NULL or (targetperm & vm_flags) != targetperm) {
+		return -1;
+	} else {
+		pte_t *pte = walk(mm->pagetable, vaddr, 1);
+		if (!get_variable_bit(*pte, PTE_V)) {
+			size_t npages = div_round_up(size, PGSIZE);
+			char *page_start = pages_alloc(npages, 0);
+			mappages(mm->pagetable, vaddr, PGSIZE * npages,
+				 (uintptr_t)page_start, targetperm | PTE_V);
+			if (vm_area_start->vm_file != NULL) {
+				memcpy(page_start,
+				       (void *)vm_area_start->vm_file +
+					       vm_area_start->vm_pgoff,
+				       PGSIZE * npages);
+			}
+		} else {
+			uvmmap(mm->pagetable, PGROUNDDOWN(vaddr),
+			       PGROUNDDOWN(vaddr) + 1, targetperm);
+		}
 	}
+
+	sfence_vma();	//  need to flush all TLB
+	return 0;
+}
+
+#define SEGFAULT_MSG	     "Segmentation fault"
+#define segmentation_fault() ({ kprintf("%s\n", SEGFAULT_MSG); })
+void do_inst_page_fault(struct mm_struct *mm, uintptr_t fault_vaddr)
+{
+	if (verify_area(mm, fault_vaddr, 4, PTE_X | PTE_R | PTE_U) != 0)
+		segmentation_fault();
+}
+// todo: distinguish byte/half word/word/double word
+void do_ld_page_fault(struct mm_struct *mm, uintptr_t fault_vaddr)
+{
+	if (verify_area(mm, fault_vaddr, 8, PTE_R | PTE_W | PTE_U) != 0)
+		segmentation_fault();
+}
+void do_sd_page_fault(struct mm_struct *mm, uintptr_t fault_vaddr)
+{
+	if (verify_area(mm, fault_vaddr, 8, PTE_R | PTE_W | PTE_U) != 0)
+		segmentation_fault();
 }
 
 /* === transmit data between user space and kernel space === */
 
 /**
- * @brief Copy from kernel to user. Copy len bytes to dst from virtual address
- * srcva in a given page table. And return 0 on success, -1 on error
+ * @brief Copy from kernel to user. Copy len bytes to dst from virtual
+ * address srcva in a given page table. And return 0 on success, -1 on
+ * error
  * @param pagetable
  * @param dst
  * @param srcva
@@ -362,7 +469,8 @@ int64_t copyin(pagetable_t pagetable, void *dst, void *srcva, uint64_t len)
 
 /**
  * @brief Copy a null-terminated string from user to kernel.
- * Copy bytes to dst from virtual address srcva in a given page table, until a
+ * Copy bytes to dst from virtual address srcva in a given page table,
+ * until a
  * '\0', or max. Return 0 on success, -1 on error.
  * @param pagetable
  * @param dst
@@ -405,8 +513,9 @@ int32_t copyin_string(pagetable_t pagetable, char *dst, uintptr_t srcva,
 }
 
 /**
- * @brief Copy from kernel to user. Copy len bytes from src to virtual address
- * dstva in a given page table. And return 0 on success, -1 on error.
+ * @brief Copy from kernel to user. Copy len bytes from src to virtual
+ * address dstva in a given page table. And return 0 on success, -1 on
+ * error.
  * @param pagetable
  * @param dstva
  * @param src
