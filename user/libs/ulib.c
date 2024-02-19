@@ -9,11 +9,14 @@ void _start(int argc, char *argv[], char *envp[])
 }
 
 static char digits[] = "0123456789abcdef";
+char buffer[4096];
+int idx, cnt;
 
 
 void putc(char c)
 {
-	write(1, &c, 1);
+	buffer[idx++] = c;
+	cnt++;
 }
 
 void kputs(const char *str)
@@ -53,12 +56,12 @@ static void printptr(uint64_t x)
 	for (int32_t i = 0; i < (sizeof(uint64_t) * 2); i++, x <<= 4)
 		putc(digits[x >> (sizeof(uint64_t) * 8 - 4)]);
 }
-static void vprintf(const char *fmt, va_list ap)
+static int vprintf(const char *fmt, va_list ap)
 {
 	char *s;
-	int32_t c, i, state;
+	int32_t c, i, state = 0;
+	idx = cnt = 0;
 
-	state = 0;
 	for (i = 0; fmt[i]; i++) {
 		c = fmt[i] & 0xff;
 		if (state == 0) {
@@ -97,14 +100,18 @@ static void vprintf(const char *fmt, va_list ap)
 			state = 0;
 		}
 	}
+	return cnt;
 }
 
-void printf(const char *fmt, ...)
+int printf(const char *fmt, ...)
 {
+	int n;
 	va_list ap;
 	va_start(ap, fmt);
-	vprintf(fmt, ap);
+	n = vprintf(fmt, ap);
 	va_end(ap);
+	write(1, buffer, n);
+	return n;
 }
 
 char getchar()

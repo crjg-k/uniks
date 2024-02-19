@@ -24,7 +24,7 @@
 void _start(int argc, char *argv[], char *envp[]);
 
 // std libc function
-void printf(const char *fmt, ...);
+int printf(const char *fmt, ...);
 char getchar();
 
 
