@@ -111,6 +111,7 @@ void remove_then_insert_newhash(struct blkbuf_t *bb, dev_t dev, uint32_t blkno)
  */
 struct blkbuf_t *getblk(dev_t dev, uint32_t blkno)
 {
+	BUG();
 	/**
 	 * note: when acquire a mutex lock for a free block, must goto repeat to
 	 * note: check if any other process had added requesting block into
@@ -132,7 +133,7 @@ repeat:
 	acquire(&free_list_head.free_list_head_lock);
 	if (list_empty(&free_list_head.free_head)) {
 		// if there are no free block in free list, then block
-		proc_block(myproc(), &free_list_head.wait_list, TASK_BLOCK);
+		// proc_block(myproc(), &free_list_head.wait_list, TASK_BLOCK);
 		release(&free_list_head.free_list_head_lock);
 		sched();
 		// nothing to do but have to repeat the above procedure

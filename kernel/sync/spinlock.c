@@ -7,21 +7,13 @@
 void initlock(struct spinlock_t *lk, char *name)
 {
 	lk->locked = 0;
-#if defined(LOG_LEVEL_DEBUG)
+	lk->cpu = -1;
 	lk->name = name;
-	lk->cpu = r_mhartid();
-#endif
 }
 
 int64_t holding(struct spinlock_t *lk)
 {
-	return (lk->locked and
-#if defined(LOG_LEVEL_DEBUG)
-		lk->cpu == r_mhartid()
-#else
-		1
-#endif
-	);
+	return lk->locked and lk->cpu == cpuid();
 }
 
 /**
@@ -61,25 +53,24 @@ void do_acquire(struct spinlock_t *lk)
 	/**
 	 * @brief avoid obtaining duplicate locks on the same CPU itself
 	 */
-	assert(!holding(lk));
+	if (holding(lk)) {
+		panic("%s():%s\n", __func__, lk->name);
+	}
 
 	while (__sync_lock_test_and_set(&lk->locked, 1) != 0)
-		tracef("kkk");
+		/* tracef("kkk") */;
 
 	__sync_synchronize();
-
-#if defined(LOG_LEVEL_DEBUG)
-	lk->cpu = r_mhartid();
-#endif
+	lk->cpu = cpuid();
 }
 
 void do_release(struct spinlock_t *lk)
 {
-	assert(holding(lk));
+	if (!holding(lk)) {
+		panic("%s():%s\n", __func__, lk->name);
+	}
 
-#if defined(LOG_LEVEL_DEBUG)
 	lk->cpu = -1;
-#endif
 	__sync_synchronize();
 
 	__sync_lock_release(&lk->locked);

@@ -6,7 +6,6 @@
 #define PLATFORM_QEMU	  (1)
 #define PLATFORM_DEVBOARD (1)
 // CPU information
-#define NCPU		  (1)	       // max number of harts
 #define TIMESPERSEC	  (1000)
 #define CPUFREQ		  (10000000)   // the frequency of qemu is 10MHz
 

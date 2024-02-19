@@ -119,9 +119,9 @@ void virtio_disk_init()
 	assert(max >= VIRTIO_DESC_NUM);
 
 	// allocate and zero queue memory
-	disk.desc = pages_alloc(1,0);
-	disk.avail = pages_alloc(1,0);
-	disk.used = pages_alloc(1,0);
+	disk.desc = pages_alloc(1, 0);
+	disk.avail = pages_alloc(1, 0);
+	disk.used = pages_alloc(1, 0);
 	assert(disk.desc != NULL and disk.avail != NULL and disk.used != NULL);
 	memset(disk.desc, 0, PGSIZE);
 	memset(disk.avail, 0, PGSIZE);
@@ -219,6 +219,7 @@ static int32_t alloc3_desc(int32_t *index)
 
 static void virtio_disk_rw(struct blkbuf_t *buf, int32_t write)
 {
+	BUG();
 #define SECTORSIZE 512
 	uint64_t sector = buf->b_blkno * (BLKSIZE / SECTORSIZE);
 
@@ -236,7 +237,7 @@ static void virtio_disk_rw(struct blkbuf_t *buf, int32_t write)
 		if (alloc3_desc(index) == 0) {
 			break;
 		}
-		proc_block(myproc(), &disk.wait_list, TASK_BLOCK);
+		// proc_block(myproc(), &disk.wait_list, TASK_BLOCK);
 		release(&disk.virtio_disk_lock);
 		sched();
 		acquire(&disk.virtio_disk_lock);
@@ -249,7 +250,7 @@ static void virtio_disk_rw(struct blkbuf_t *buf, int32_t write)
 	if (write)
 		buf0->type = VIRTIO_BLK_T_OUT;	 // write the disk
 	else
-		buf0->type = VIRTIO_BLK_T_IN;	 // read the disk
+		buf0->type = VIRTIO_BLK_T_IN;	// read the disk
 	buf0->reserved = 0;
 	buf0->sector = sector;
 
@@ -294,7 +295,7 @@ static void virtio_disk_rw(struct blkbuf_t *buf, int32_t write)
 
 	// Wait for do_virtio_disk_interrupt() to say request has finished.
 	while (buf->b_disk == 1) {
-		proc_block(myproc(), &disk.wait_list, TASK_BLOCK);
+		// proc_block(myproc(), &disk.wait_list, TASK_BLOCK);
 		release(&disk.virtio_disk_lock);
 		sched();
 		acquire(&disk.virtio_disk_lock);
@@ -308,6 +309,7 @@ static void virtio_disk_rw(struct blkbuf_t *buf, int32_t write)
 
 void do_virtio_disk_interrupt(void *ptr)
 {
+	BUG();
 	acquire(&disk.virtio_disk_lock);
 
 	/**
@@ -336,8 +338,8 @@ void do_virtio_disk_interrupt(void *ptr)
 		struct blkbuf_t *buf = disk.info[id].buf;
 		buf->b_disk = 0;   // disk is done with buf
 		buf->b_valid = 1;
-		struct proc_t *p = proc_unblock(&disk.wait_list);
-		release(&pcblock[p->pid]);
+		// struct proc_t *p = proc_unblock(&disk.wait_list);
+		// release(&pcblock[p->pid]);
 		disk.used_index += 1;
 	}
 

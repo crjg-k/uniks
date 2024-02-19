@@ -9,24 +9,16 @@
 .section .text
 kernel_entry:
 	# now, in S mode!
-	mv tp, a0			# this argu is passed by OpenSBI
+	# a0(contains hart id) is passed by OpenSBI
 
-	la sp, bootstacktop0		# set sp pointer
-	tail kernel_start
+	# set up a stack for C language env.
+	# hart_stacks is declared in init.c, with a 4096-byte stack per CPU.
+	# sp = hart_stacks + (hartid * 4096*4)
+	la sp, hart_stacks
+	addi t0, a0, 1
+	slli t0, t0, 14				# multiply by 4096*4(kstack size)
+	add sp, sp, t0
 
+	# jump to kernel_start(uint32_t hartid) in init.c
+	j kernel_start
 
-.section .data
-	.align PGSHIFT			# align to next page
-	.global bootstack0
-bootstackbottom0:
-	.space KSTACKSIZE		# stack size = KSTACKSIZE
-	.global bootstacktop0
-bootstacktop0:
-
-.section .data
-	.align PGSHIFT			# align to next page
-	.global bootstack1
-bootstackbottom1:
-	.space KSTACKSIZE		# stack size = KSTACKSIZE
-	.global bootstacktop1
-bootstacktop1:

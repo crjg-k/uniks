@@ -5,63 +5,46 @@
 
 void mutex_init(struct mutex_t *m, char *name)
 {
-	initlock(&m->spinlk, "mutex");
 	m->locked = 0;
 	INIT_LIST_HEAD(&m->waiters);
-#if defined(LOG_LEVEL_DEBUG)
 	m->name = name;
-	m->pid = -1;
-#endif
+	m->pid = 0;
 }
 
 int32_t mutex_holding(struct mutex_t *m)
 {
-	int32_t res;
-
-	acquire(&m->spinlk);
-	res = (m->locked and
-#if defined(LOG_LEVEL_DEBUG)
-	       (m->pid == myproc()->pid)
-#else
-	       1
-#endif
-	);
-	release(&m->spinlk);
-	return res;
+	return (m->locked and (m->pid == myproc()->pid));
 }
 
 void mutex_acquire(struct mutex_t *m)
 {
-	while (mutex_holding(m)) {
-		acquire(&m->spinlk);
-		// this mutex had been held by others, then block
-		proc_block(myproc(), &m->waiters, TASK_BLOCK);
-		release(&m->spinlk);
-		sched();
-	}
-	assert(!mutex_holding(m));   // no process hold this mutex
+	push_off();
 
-	acquire(&m->spinlk);
-	m->locked = 1;
-#if defined(LOG_LEVEL_DEBUG)
+	struct proc_t *p = myproc();
+	while (__sync_lock_test_and_set(&m->locked, 1) != 0) {
+		acquire(&pcblock[p->pid]);
+		list_add_front(&p->block_list, &m->waiters);
+		p->state = TASK_BLOCK;
+		sched();
+		release(&pcblock[p->pid]);
+	}
+	__sync_synchronize();
 	m->pid = myproc()->pid;
-#endif
-	release(&m->spinlk);
+
+	pop_off();
 }
 
 void mutex_release(struct mutex_t *m)
 {
+	push_off();
+
 	assert(mutex_holding(m));   // ensure that this mutex had been held
 
-	acquire(&m->spinlk);
-	m->locked = 0;
-#if defined(LOG_LEVEL_DEBUG)
-	m->pid = -1;
-#endif
+	m->pid = 0;
+	__sync_synchronize();
+	__sync_lock_release(&m->locked);
 	proc_unblock_all(&m->waiters);
 	assert(list_empty(&m->waiters));
 
-	release(&m->spinlk);
-	// give other processes a chance to acquire this lock
-	yield();
+	pop_off();
 }

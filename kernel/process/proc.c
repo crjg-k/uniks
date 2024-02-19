@@ -9,6 +9,7 @@
 #include <uniks/kassert.h>
 #include <uniks/kstring.h>
 #include <uniks/list.h>
+#include <uniks/log.h>
 #include <uniks/param.h>
 
 
@@ -16,7 +17,8 @@ struct proc_t *pcbtable[NPROC] = {NULL};
 struct proc_t idlepcb = {
 	.pid = 0,
 	.parentpid = 0,
-	.state = TASK_READY,
+	.host = NULL,
+	.state = TASK_RUNNING,
 	.killed = 0,
 	.exitstate = 0,
 	.priority = 0,
@@ -32,7 +34,7 @@ struct proc_t idlepcb = {
 	.magic = UNIKS_MAGIC,
 };
 struct spinlock_t pcblock[NPROC];
-struct cpu_t cpus[NCPU];
+struct cpu_t cpus[MAXNUM_HARTID];
 
 struct pids_queue_t pids_queue;
 struct sleep_queue_t sleep_queue;   // call sys_sleep waiting process
@@ -40,7 +42,6 @@ struct sleep_queue_t sleep_queue;   // call sys_sleep waiting process
 extern char trampoline[];
 extern volatile uint64_t ticks;
 extern void usertrapret();
-extern void switch_to(struct context_t *old, struct context_t *new);
 extern int64_t do_execve(struct proc_t *p, char *pathname, char *argv[],
 			 char *envp[]);
 
@@ -55,12 +56,11 @@ __always_inline static void set_proc_name(struct proc_t *proc, const char *name)
 	strncpy(proc->name, name, FILENAMELEN);
 }
 
-struct cpu_t *mycpu()
+__always_inline struct cpu_t *mycpu()
 {
-	int32_t id = r_mhartid();
-	struct cpu_t *c = &cpus[id];
-	return c;
+	return (struct cpu_t *)read_csr(sscratch);
 }
+
 __always_inline struct proc_t *myproc()
 {
 	push_off();
@@ -69,7 +69,7 @@ __always_inline struct proc_t *myproc()
 	return p;
 }
 
-static int32_t allocpid()
+static pid_t allocpid()
 {
 	pid_t pid;
 	acquire(&pids_queue.pid_lock);
@@ -139,6 +139,9 @@ static void freeproc(pid_t pid)
 // a fork child's 1st scheduling by scheduler() will swtch to forkret
 void forkret()
 {
+	// Still holding p->lock from scheduler.
+	release(&pcblock[myproc()->pid]);
+
 	usertrapret();
 }
 
@@ -202,7 +205,7 @@ err:
 
 __always_inline void initidleproc()
 {
-	mycpu()->proc = pcbtable[0] = &idlepcb;
+	pcbtable[0] = &idlepcb;
 }
 
 // initialize the pcb table lock
@@ -212,31 +215,30 @@ void proc_init()
 	queue_init(&pids_queue.qm, NPROC, pids_queue.pids_queue_array);
 	for (int32_t i = 1; i < NPROC; i++)
 		queue_push_int32type(&pids_queue.qm, i);
+
 	for (struct spinlock_t *plk = pcblock; plk < &pcblock[NPROC]; plk++) {
 		initlock(plk, "proclock");
 	}
+
 	initidleproc();
+
 	initlock(&sleep_queue.sleep_lock, "sleeplock");
 	priority_queue_init(&sleep_queue.pqm, NPROC,
 			    &sleep_queue.sleep_queue_array);
 }
 
 // each hart will hold its local scheduler context
-void scheduler()
+__noreturn void scheduler(struct cpu_t *c)
 {
-	struct cpu_t *c = mycpu();
-	c->proc = pcbtable[0];
-	interrupt_on();
 	while (1) {
 		int32_t i = 1;
 		for (struct proc_t *p; i < NPROC; i++) {
-			p = pcbtable[i];
-			if (p == NULL)
+			if ((p = pcbtable[i]) == NULL)
 				continue;
 			// tracef("idle process running");
 			acquire(&pcblock[p->pid]);
 			if (p->state == TASK_READY) {
-				// tracef("switch to: %d\n", p->pid);
+				tracef("switch to: %d\n", p->pid);
 				/**
 				 * @brief switch to chosen process. it is the
 				 * process's job to release its lock and then
@@ -245,79 +247,139 @@ void scheduler()
 				 */
 				c->proc = p;
 				p->state = TASK_RUNNING;
-				release(&pcblock[p->pid]);
-				interrupt_off();
+				p->host = c;
 				switch_to(&c->ctxt, &p->ctxt);
 				/**
 				 * @brief process is done running for now since
 				 * timer interrupt
 				 */
 				c->proc = pcbtable[0];
-				interrupt_on();
-			} else
-				release(&pcblock[p->pid]);
+			}
+			release(&pcblock[p->pid]);
 		}
 	}
 }
 
-// switch to kernel thread scheduler
-void sched()
+__naked void switch_to(struct context_t *old, struct context_t *new)
 {
-	struct proc_t *p = myproc();
-
-	interrupt_off();
-	switch_to(&p->ctxt, &mycpu()->ctxt);
-	interrupt_on();
+	asm volatile("sd ra, 0(a0)\n\t"
+		     "sd sp, 8(a0)\n\t"
+		     "sd s0, 16(a0)\n\t"
+		     "sd s1, 24(a0)\n\t"
+		     "sd s2, 32(a0)\n\t"
+		     "sd s3, 40(a0)\n\t"
+		     "sd s4, 48(a0)\n\t"
+		     "sd s5, 56(a0)\n\t"
+		     "sd s6, 64(a0)\n\t"
+		     "sd s7, 72(a0)\n\t"
+		     "sd s8, 80(a0)\n\t"
+		     "sd s9, 88(a0)\n\t"
+		     "sd s10, 96(a0)\n\t"
+		     "sd s11, 104(a0)"
+		     :
+		     :
+		     : "memory");
+	asm volatile("ld ra, 0(a1)\n\t"
+		     "ld sp, 8(a1)\n\t"
+		     "ld s0, 16(a1)\n\t"
+		     "ld s1, 24(a1)\n\t"
+		     "ld s2, 32(a1)\n\t"
+		     "ld s3, 40(a1)\n\t"
+		     "ld s4, 48(a1)\n\t"
+		     "ld s5, 56(a1)\n\t"
+		     "ld s6, 64(a1)\n\t"
+		     "ld s7, 72(a1)\n\t"
+		     "ld s8, 80(a1)\n\t"
+		     "ld s9, 88(a1)\n\t"
+		     "ld s10, 96(a1)\n\t"
+		     "ld s11, 104(a1)");
+	asm volatile("ret");
 }
 
-// give up the CPU who called this
+/**
+ * @brief Switch to scheduler. Must hold only proc->lock and have changed
+ * proc->state. Saves and restores intena because intena is a property of this
+ * kernel thread, not this CPU (In multi-hart condition, when a process exit
+ * executing in a hart, it may re-execute in another hart, so this is the
+ * situation that we need to tackle). It should be proc->intena and proc->noff,
+ * but that would break in the few places where a lock is held but there's no
+ * process.
+ */
+void sched()
+{
+	uint64_t preintstat;
+	struct proc_t *p = myproc();
+
+	assert(holding(&pcblock[p->pid]));
+	assert(mycpu()->repeat == 1);
+	assert(p->state != TASK_RUNNING);
+	assert(!(interrupt_get() & SSTATUS_SIE));
+
+	preintstat = mycpu()->preintstat;
+	switch_to(&p->ctxt, &mycpu()->ctxt);
+	// may change host hart when comes back
+	mycpu()->preintstat = preintstat;
+}
+
+// Proactively give up the CPU who called this.
 void yield()
 {
 	struct proc_t *p = myproc();
 	acquire(&pcblock[p->pid]);
 	p->state = TASK_READY;
-	release(&pcblock[p->pid]);
 	sched();
-}
-
-/**
- * @brief Make process p blocked and mount it to wait_list list. Furthermore,
- * the lock of the wait_list is supposed to be held before call this function.
- * @param p
- * @param block_list
- * @param state
- */
-__always_inline void proc_block(struct proc_t *p, struct list_node_t *wait_list,
-				enum proc_state state)
-{
-	acquire(&pcblock[p->pid]);
-	assert(p->state == TASK_RUNNING or p->state == TASK_READY);
-	list_add_front(&p->block_list, wait_list);
-	p->state = state;
 	release(&pcblock[p->pid]);
 }
 
 /**
- * @brief Unblock the 1st process that wait on wait_list. Furthermore, this
- * function will return with holding the lock of the process that it unblocks
- * just now
+ * @brief Make myproc() blocked and mount it to wait_list. Furthermore, the lk
+ * is supposed to be held before call this function. This function originate
+ * from project xv6-riscv/kernel/proc.c:536:sleep().
+ *
  * @param wait_list
- * @return struct proc_t*
+ * @param lk
  */
-struct proc_t *proc_unblock(struct list_node_t *wait_list)
+void proc_block(struct list_node_t *wait_list, struct spinlock_t *lk)
 {
-	struct list_node_t *next_node = list_next_then_del(wait_list);
-	struct proc_t *p = element_entry(next_node, struct proc_t, block_list);
+	struct proc_t *p = myproc();
+	assert(p->state == TASK_RUNNING);
+
+	/**
+	 * @brief Must acquire p->lock in order to change p->state and then
+	 * call sched().
+	 */
 	acquire(&pcblock[p->pid]);
-	assert(p->state == TASK_BLOCK);
-	p->state = TASK_READY;
-	return p;
+	if (lk != NULL)
+		release(lk);
+
+	list_add_front(&p->block_list, wait_list);
+	p->state = TASK_BLOCK;
+
+	sched();
+
+	// reacquire original lock
+	release(&pcblock[p->pid]);
+	if (lk != NULL)
+		acquire(lk);
 }
 
-__always_inline void proc_unblock_all(struct list_node_t *wait_list)
+/**
+ * @brief Wake up all processes blocked on wait_list. Must be called with lock
+ * protecting for wait_list.
+ * @param wait_list
+ * @param lk
+ */
+void proc_unblock_all(struct list_node_t *wait_list)
 {
 	while (!list_empty(wait_list)) {
-		struct proc_t *p = proc_unblock(wait_list);
+		struct list_node_t *next_node = list_next_then_del(wait_list);
+		struct proc_t *p =
+			element_entry(next_node, struct proc_t, block_list);
+
+		acquire(&pcblock[p->pid]);
+		assert(p->state == TASK_BLOCK);
+		assert(p != myproc());
+		p->state = TASK_READY;
 		release(&pcblock[p->pid]);
 	}
 }
@@ -383,7 +445,8 @@ int64_t do_fork()
 	}
 
 	*(childproc->tf) = *(parentproc->tf);	// copy saved user's registers
-	// childproc's ret val of fork need to be set to 0 according to POSIX
+	// childproc's ret val of fork need to be set to 0 according to
+	// POSIX
 	childproc->tf->a0 = 0;
 
 	set_proc_name(childproc, parentproc->name);
@@ -402,46 +465,29 @@ int64_t do_fork()
 }
 
 /**
- * @brief Exit the current process. Does not return. An exited process remains
- * in the zombie state until its parent calls waitpid(). Futhermore, according
- * to the POSIX standard, the exit syscall will not release variety of resources
- * it had retained until another process wait for this process.
+ * @brief Exit the current process. Does not return. An exited process
+ * remains in the zombie state until its parent calls waitpid().
+ * Futhermore, according to the POSIX standard, the exit syscall will
+ * not release variety of resources it had retained until another
+ * process wait for this process.
  * @param status process exit status
  */
 void do_exit(int32_t status)
 {
 	struct proc_t *p = myproc();
 
-	acquire(&pcblock[p->pid]);
+	assert(p != pcbtable[0]);
 
+	acquire(&pcblock[p->pid]);
 	p->exitstate = status;
 	p->state = TASK_ZOMBIE;
 
-	release(&pcblock[p->pid]);
-
 	/**
-	 * @brief when wakeup the processes which are waiting for myproc() to
-	 * exit, there is a need to acquire more than 1 lock @ the same time, so
-	 * we hold an order as how we do when block a process in
-	 * sysproc.c:sys_waitpid() function. Now, there is no deadlock
-	 * phenomenon between block-function in sysproc.c:sys_waitpid() and this
-	 * wakeup-function occurred, I'm not sure that if it's okay to avoid it,
-	 * but I hope that's bug free.
+	 * @brief Unblock all the processes which are waiting for
+	 * myproc() to exit.
 	 */
-	// acquire(&pcblock[p->pid]);
-	// while (!list_empty(&p->wait_list)) {
-	// 	struct proc_t *waitp = proc_unblock(&p->wait_list);
-	// 	int64_t *status_addr = (int64_t *)argufetch(waitp, 1);
-	// 	verify_area(status_addr, sizeof(pcbtable[p->pid]->exitstate));
-	// 	copyout(waitp->mm->pagetable, (void *)status_addr,
-	// 		(void *)&pcbtable[p->pid]->exitstate,
-	// 		sizeof(pcbtable[p->pid]->exitstate));
-	// 	release(&pcblock[waitp->pid]);
-	// }
-	// release(&pcblock[p->pid]);
+	proc_unblock_all(&p->wait_list);
 
-	assert(p->magic == UNIKS_MAGIC);
-	// recycle_exitedproc(p->pid);
 	sched();
-	panic("zombie exit!");
+	BUG();
 }

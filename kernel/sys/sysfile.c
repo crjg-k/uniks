@@ -33,8 +33,7 @@ uint64_t sys_read()
 	size_t cnt = argufetch(p, 2);
 
 	verify_area(p->mm, (uintptr_t)buf, cnt, PTE_W | PTE_U);
-	char *tt =
-		(char *)vaddr2paddr(p->mm->pagetable, (uintptr_t)buf);
+	char *tt = (char *)vaddr2paddr(p->mm->pagetable, (uintptr_t)buf);
 	ret = devices[current_tty].read(devices[current_tty].ptr, tt, cnt);
 
 	// sys_file_rw_common();
@@ -51,12 +50,13 @@ uint64_t sys_write()
 {
 	struct proc_t *p = myproc();
 	char *buf = (char *)argufetch(p, 1),
-	     *kernelch = (char *)pages_alloc(1, 0);
+	     *kernelch = (char *)pages_alloc(1, 1);
+	assert(kernelch != NULL);
 	size_t count = argufetch(p, 2);
 	copyin(p->mm->pagetable, kernelch, buf, count);
 	int32_t res = devices[current_tty].write(devices[current_tty].ptr,
 						 kernelch, count);
-
+	pages_free(kernelch);
 	// sys_file_rw_common();
 	// if PIPE
 

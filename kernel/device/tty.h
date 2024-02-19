@@ -8,7 +8,6 @@
 #include <uniks/list.h>
 #include <uniks/param.h>
 #include <uniks/queue.h>
-#include <uniks/termios.h>
 
 
 #define NTTY (3)
@@ -21,8 +20,6 @@ struct tty_queue_t {
 };
 
 struct tty_struct_t {
-	// data struct of terminal I/O attribute and control characters
-	struct termios_t termios;
 	struct uart_struct_t *uart_associated;
 	int32_t (*read)(void *ttyptr, void *buf, size_t cnt);
 	int32_t (*write)(void *ttyptr, void *buf, size_t cnt);

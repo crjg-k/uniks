@@ -88,7 +88,7 @@ static uint64_t clz(uint64_t reg)
 	if (reg <= 1024)
 		return 53;
 
-	panic("clz instruction went wrong!");
+	BUG();
 	return -1;
 }
 static int16_t get_power2(uint32_t n)
@@ -159,7 +159,6 @@ void *pages_alloc(size_t npages, int32_t wait_until_free)
 	do_record(ptr, order);
 out:
 	// assert that prt is aligned to a page
-
 	assert(OFFSETPAGE((uintptr_t)ptr) == 0);
 	release(&buddy_lock);
 	// tracef("buddy system: allocate %d page(s) start @%p,", npages, ptr);
@@ -173,7 +172,7 @@ static void *whois_buddy(void *ptr, int16_t order)
 	 *  the buddy is ptr + pow(2, k)
 	 * else if ptr % pow(2, k + 1) == pow(2, k):
 	 *  the buddy is ptr - pow(2, k)
-	 * else panic()
+	 * else BUG()
 	 */
 	if (((((uintptr_t)ptr - mem_start) >> PGSHIFT) &
 	     ((1 << (order + 1)) - 1)) == 0)
@@ -182,7 +181,7 @@ static void *whois_buddy(void *ptr, int16_t order)
 		  ((1 << (order + 1)) - 1)) == (1 << order))
 		return ptr - ((1 << order) << PGSHIFT);
 	else {
-		panic("searching buddy went wrong!");
+		BUG();
 		return NULL;
 	}
 }
@@ -290,7 +289,7 @@ void *kmalloc(size_t size)
 {
 	assert(size >= slub_size[0] and size <= slub_size[SLUBNUM - 1]);
 	int32_t idx = binary_search_ge(slub_size, SLUBNUM, size);
-	assert(idx != -1);
+	acquire(&kmem_cache_array[idx].kmem_cache_lock);
 	if (list_empty(&kmem_cache_array[idx].partiallist)) {
 		struct slub_pages_node_t *slub_pages_node =
 			new_slub_pages_node(idx);
@@ -310,6 +309,7 @@ void *kmalloc(size_t size)
 		list_add_front(&slub_pages_node->slub_node_list,
 			       &slub_pages_node->kmem_cache_linked->fulllist);
 	}
+	release(&kmem_cache_array[idx].kmem_cache_lock);
 	return ptr;
 }
 
@@ -319,6 +319,7 @@ void kfree(void *ptr)
 		return;
 	struct slub_pages_node_t *slub_pages_node =
 		(struct slub_pages_node_t *)SLUB_NODE_START(ptr);
+	acquire(&slub_pages_node->kmem_cache_linked->kmem_cache_lock);
 	if (list_empty(&slub_pages_node->obj_freelist)) {
 		// remove from full list and add to partial list
 		list_del(&slub_pages_node->slub_node_list);
@@ -327,4 +328,5 @@ void kfree(void *ptr)
 			&slub_pages_node->kmem_cache_linked->partiallist);
 	}
 	list_add_front(ptr, &slub_pages_node->obj_freelist);
+	release(&slub_pages_node->kmem_cache_linked->kmem_cache_lock);
 }

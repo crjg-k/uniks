@@ -15,7 +15,7 @@ void plicinit()
 
 void plicinithart()
 {
-	int32_t hart = r_mhartid();
+	int32_t hart = cpuid();
 
 	/**
 	 * @brief set enable bits for this hart's S-mode for the uart and virtio
@@ -41,7 +41,7 @@ void plicinithart()
 __always_inline int32_t plic_claim()
 {
 	push_off();
-	int32_t hart = r_mhartid();
+	int32_t hart = cpuid();
 	int32_t irq = *(int32_t *)PLIC_S_CLAIM(hart);
 	pop_off();
 	return irq;
@@ -58,7 +58,7 @@ __always_inline int32_t plic_claim()
 __always_inline void plic_complete(int32_t irq)
 {
 	push_off();
-	int32_t hart = r_mhartid();
+	int32_t hart = cpuid();
 	*(uint32_t *)PLIC_S_CLAIM(hart) = irq;
 	pop_off();
 }
@@ -66,7 +66,8 @@ __always_inline void plic_complete(int32_t irq)
 void external_interrupt_handler()
 {
 	int32_t irq = plic_claim();
-	assert(irq != 0);
-	device_interrupt_handler(irq);
-	plic_complete(irq);
+	if (irq != 0) {
+		device_interrupt_handler(irq);
+		plic_complete(irq);
+	}
 }

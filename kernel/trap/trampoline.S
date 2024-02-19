@@ -12,7 +12,7 @@
 .align 4
 trampoline:
 usertrapvec:
-	# note: when trap from user space, the addr of this section start at 0x3ffffff000 while label usertrapvec locate at 0x3ffffff600
+	# note: when trap from user space, the virtual addr of this section start at 0x3ffffff000 while label usertrapvec locate at 0x3ffffff4f0
 	csrw sscratch, t6
 
 	# save all registers to p->tf
@@ -26,6 +26,10 @@ usertrapvec:
 	ld sp, 256(t6)		# set kernel stack pointer, from p->tf->kernel_sp
 	ld t0, 264(t6)		# load the address of usertrap_handler(), from p->tf->kernel_trap
 	ld t1, 248(t6)		# fetch the kernel page table address, from p->tf->kernel_satp
+
+	# recover the sscratch from STRUCT PROC_T
+	ld t2, 288(t6)		# (STRUCT PROC_T)->host
+	csrw sscratch, t2
 
 	# switch to kernel page table
 	sfence.vma zero, zero

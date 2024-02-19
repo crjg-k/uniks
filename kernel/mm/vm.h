@@ -29,12 +29,12 @@ struct vm_area_struct {
 };
 
 struct mm_struct {
-	struct spinlock_t mmap_lk;		// mmap's lock
+	struct spinlock_t mmap_lk;   // mmap's lock
 
 	struct list_node_t vm_area_list_head;	// list of VMA
 
-	pagetable_t pagetable;			// user page table
-	uintptr_t kstack;   // always point to own kernel stack bottom
+	pagetable_t pagetable;	 // user page table
+	uintptr_t kstack;	 // always point to own kernel stack bottom
 
 	/**
 	 * @brief: The number of references to &struct mm_struct.
@@ -42,7 +42,7 @@ struct mm_struct {
 	 * When this drops to 0, the &struct mm_struct is freed.
 	 */
 	uint32_t mm_count;
-	int32_t map_count;	 // number of VMA
+	int32_t map_count;   // number of VMA
 
 	uintptr_t start_stack;	 // start_stack means the high addr of stack
 	uintptr_t mmap_base;	 // base of mmap area
@@ -57,7 +57,7 @@ uintptr_t vaddr2paddr(pagetable_t pagetable, uintptr_t va);
 
 /* === kernel vitual addr space related === */
 
-void kvmenable();
+void kvmenablehart();
 int32_t mappages(pagetable_t pagetable, uintptr_t va, size_t size, uintptr_t pa,
 		 int32_t perm);
 void kvminit();

@@ -20,12 +20,12 @@ struct list_node_t {
 	struct list_node_t *prev, *next;
 };
 
-#define LIST_HEAD_INIT(name) \
+#define LIST_HEAD_GEN(name) \
 	{ \
 		&(name), &(name) \
 	}
 
-#define LIST_HEAD(name) struct list_node_t name = LIST_HEAD_INIT(name)
+#define LIST_HEAD(name) struct list_node_t name = LIST_HEAD_GEN(name)
 
 __always_inline void __list_add(struct list_node_t *new,
 				struct list_node_t *prev,

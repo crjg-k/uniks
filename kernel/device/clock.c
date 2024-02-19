@@ -10,15 +10,15 @@
  */
 
 #include "clock.h"
-#include <platform/riscv.h>
+#include <uniks/defs.h>
 #include <platform/sbi.h>
 #include <process/proc.h>
 #include <uniks/kassert.h>
 #include <uniks/param.h>
 
 // the ticks will inc in each 0.001s namely 1ms
-volatile uint64_t ticks = 0;
-struct spinlock_t tickslock;
+volatile atomic_uint_least64_t ticks = ATOMIC_VAR_INIT(0);
+
 
 // hardcode jiffy = 1ms and timebase
 uint64_t jiffy = 1000 / TIMESPERSEC, timebase = CPUFREQ / TIMESPERSEC;
@@ -37,7 +37,6 @@ __always_inline void clock_set_next_event()
 
 void clock_init()
 {
-	initlock(&tickslock, "tickslock");
 	clock_set_next_event();
 }
 
@@ -45,25 +44,12 @@ void clock_init()
  * @brief only the primary hart could cope with the timer interrupt, so we
  * can simply disable the interrupt to avoid dead lock
  */
-__always_inline void clock_interrupt_handler(int32_t prilevel)
+__always_inline void clock_interrupt_handler()
 {
-	acquire(&tickslock);   // this have disabled interrupt interior
-	ticks++;
-	clock_set_next_event();
-	time_wakeup();
-	release(&tickslock);
-
-	if (prilevel == PRILEVEL_U) {
-		struct proc_t *p = myproc();
-		acquire(&pcblock[p->pid]);
-		p->jiffies = ticks;
-		p->ticks--;
-		if (!p->ticks) {
-			p->ticks = p->priority;
-			release(&pcblock[p->pid]);
-			yield();
-		} else
-			release(&pcblock[p->pid]);
+	if (cpuid() == boothartid) {
+		atomic_fetch_add(&ticks, 1);
 	}
+	time_wakeup();
+
 	assert(myproc()->magic == UNIKS_MAGIC);
 }

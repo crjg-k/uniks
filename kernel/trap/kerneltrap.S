@@ -1,4 +1,4 @@
-# trap.S
+# kerneltrap.S
 
 	#
 	# interrupts and exceptions while in supervisor mode come here.

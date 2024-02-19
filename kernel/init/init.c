@@ -9,83 +9,96 @@
  *
  */
 
+#include <device/clock.h>
 #include <device/device.h>
 #include <device/virtio_disk.h>
 #include <file/file.h>
-#include <fs/blkbuf.h>
-#include <fs/fs.h>
 #include <mm/memlay.h>
-#include <mm/phys.h>
-#include <mm/vm.h>
 #include <platform/plic.h>
-#include <platform/riscv.h>
+#include <platform/sbi.h>
 #include <process/proc.h>
 #include <trap/trap.h>
+#include <uniks/banner.h>
 #include <uniks/defs.h>
 #include <uniks/kstdio.h>
 #include <uniks/kstring.h>
 #include <uniks/log.h>
 
-extern void clock_init(), all_interrupt_enable();
-char boot_message[] = "uniks boot over!";
-volatile static int32_t started = 0;
 
+volatile static int32_t started = 0, master_booting = 1;
+int32_t boothartid;
+// entry.S needs one stack per HART.
+__aligned(PGSIZE) char hart_stacks[KSTACKSIZE * MAXNUM_HARTID];
 
 __noreturn __always_inline void idle_process()
 {
+	struct cpu_t *c = mycpu();
+	c->proc = pcbtable[0];
+	interrupt_on();
 	while (1) {
-		scheduler();
+		scheduler(c);
 	}
 }
-void hart_start_message()
+__always_inline void display_banner()
 {
-	kprintf("%shart %d start\n\n", UNIKS_MSG, r_mhartid());
+	kprintf(UNIKS_BANNER);
 }
-void kernel_start()
+__always_inline void hart_booted_message()
 {
-	if (!r_mhartid()) {
+	kprintf("%shart %d start\n", UNIKS_MSG, cpuid());
+}
+void kernel_start(int32_t hartid)
+{
+	if (master_booting) {
+		// this section will not be executed concurrently
 		memset(sbss, 0, ebss - sbss);
+		boothartid = hartid;
+		master_booting = 0;
+		__sync_synchronize();
+		// Don't worry, this macro is defined in makefile!
+		for (int i = 0; i < MAXNUM_HARTID; i++) {
+			if (i != boothartid)
+				sbi_hart_start(i, (uintptr_t)kernel_entry, 0);
+		}
+	}
+	cpus[hartid].hartid = hartid;
+	cpus[hartid].repeat = 0;
+	write_csr(sscratch, &cpus[hartid]);
+
+	if (cpuid() == boothartid) {
+		kprintfinit();
 		device_init();
 		phymem_init();
 		kvminit();
-		kvmenable();
-		// now, in vaddr space!
+
 		proc_init();
 		trap_init();
 		plicinit();
-		plicinithart();
 
-		// hint: below 4 init functions maybe could let other harts do
 		blkbuf_init();
 		mount_root();
 		sysfile_init();
 		virtio_disk_init();
 
 		user_init(1);
-		clock_init();
-		all_interrupt_enable();
-		__sync_synchronize();
-
-		debugf("stext: %p\tetext: %p", stext, etext);
-		debugf("sdata: %p\tedata: %p", sdata, edata);
-		debugf("sbss: %p\tebss: %p", sbss, ebss);
-		debugf("end: %p\n", end);
-
-		kprintf("%stotal memory size: %l MiB, total pages: %d\n",
-			UNIKS_MSG, PHYMEMSIZE / 1024 / 1024, PHYMEMSIZE / 4096);
-		kprintf("%s%s\n", UNIKS_MSG, boot_message);
-		hart_start_message();
+		display_banner();
+		hart_booted_message();
 		started = 1;
+		__sync_synchronize();
 	} else {
 		while (!started)
 			;
 		__sync_synchronize();
-		kvmenable();
-		plicinithart();
-		trap_init();
-		hart_start_message();
+		hart_booted_message();
 	}
+	kvmenablehart();
+	// now, in vaddr space!
+	plicinithart();
+	trap_inithart();
+	clock_init();
+	all_interrupt_enable();
+
 	idle_process();
 
-	panic("will never step here!");
+	BUG();
 }

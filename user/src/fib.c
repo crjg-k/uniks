@@ -33,6 +33,6 @@ int main()
 {
 	while (1) {
 		int n = getnum();
-		printf("\nn%d\n", fib(n));
+		printf("%dth fib:%d\n", n, fib(n));
 	}
 }

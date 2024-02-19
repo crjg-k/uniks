@@ -10,7 +10,7 @@
 #define PHYMEMSIZE     (PHYMEMSIZE_MiB * 1024 * 1024)
 #define RAMSTART       (0x80000000)
 #define PHYSTOP	       (RAMSTART + PHYMEMSIZE)	 // 128MiB RAM main memory
-#define MAXVA	       (1ll << (39 - 1))
+#define MAXVA	       (1LL << (39 - 1))
 
 #define PA2ARRAYINDEX(pa)    ((pa - RAMSTART) >> PGSHIFT)
 #define ARRAYINDEX2PA(index) ((index << PGSHIFT) + RAMSTART)

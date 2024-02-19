@@ -1,6 +1,7 @@
 #ifndef __KERNEL_PROCESS_PROC_H__
 #define __KERNEL_PROCESS_PROC_H__
 
+
 #include <fs/fs.h>
 #include <mm/vm.h>
 #include <sync/spinlock.h>
@@ -84,6 +85,7 @@ struct proc_t {
 	// this->lock must be held when using these below:
 	pid_t pid;		 // process ID
 	int32_t parentpid;	 // parent process
+	struct cpu_t *host;	 // which hart is running this process?
 	enum proc_state state;	 // process state
 	int32_t killed;		 // if non-zero, have been killed
 	int32_t exitstate;	 // exit status to be returned to parent's wait
@@ -95,7 +97,7 @@ struct proc_t {
 	int16_t fdtable[NFD];	// fd table pointing to the index of fcbtable
 
 	/* this mm_struct describe the virtual addr space mapping state */
-	struct mm_struct *mm;	 // point to the mm_struct of this process
+	struct mm_struct *mm;	// point to the mm_struct of this process
 
 	struct context_t ctxt;	 // switch here to run process
 	/**
@@ -125,13 +127,14 @@ struct proc_t {
 	 * kernelstackbottom->  +---------------+<--+ (low address)
 	 */
 	struct trapframe_t *tf;
-	char *name;	  // elf file name corresponding to this process
+	char *name;   // elf file name corresponding to this process
 
 	uint32_t magic;	  // magic number as canary to determine stackoverflow
 };
 
 struct cpu_t {
-	struct proc_t *proc;	 // The process running on this cpu, or null
+	uint32_t hartid;
+	struct proc_t *proc;   // which process is running on this cpu, or null
 	struct context_t ctxt;	 // swtch() here to enter scheduler()
 	uint32_t repeat;	 // reacquire lock times per-cpu
 	uint64_t preintstat;   // pre-interrupt enabled status before push_off()
@@ -155,19 +158,18 @@ extern struct cpu_t cpus[];
 extern struct sleep_queue_t sleep_queue;
 extern struct pids_queue_t pids_queue;
 
-void scheduler();
+void scheduler(struct cpu_t *c);
 void sched();
+void switch_to(struct context_t *old, struct context_t *new);
 void proc_init();
 void user_init(uint32_t priority);
 void yield();
 void time_wakeup();
 int32_t killed(struct proc_t *);
-void recycle_exitedproc();
+void recycle_exitedproc(pid_t pid);
 struct cpu_t *mycpu();
 struct proc_t *myproc();
-void proc_block(struct proc_t *p, struct list_node_t *list,
-		enum proc_state state);
-struct proc_t *proc_unblock(struct list_node_t *wait_list);
+void proc_block(struct list_node_t *list, struct spinlock_t *lk);
 void proc_unblock_all(struct list_node_t *wait_list);
 int32_t user_basic_pagetable(struct proc_t *p);
 

@@ -1,6 +1,7 @@
 #ifndef __TYPES_H__
 #define __TYPES_H__
 
+
 typedef signed char int8_t;
 typedef unsigned char uint8_t;
 typedef short int16_t;
@@ -35,5 +36,6 @@ typedef uint64_t pde_t;	  // page directory entry
 
 typedef int32_t pid_t;
 typedef int32_t dev_t;
+
 
 #endif /* !__TYPES_H__ */

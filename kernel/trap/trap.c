@@ -9,52 +9,51 @@
 #include <uniks/kstdio.h>
 #include <uniks/log.h>
 
-extern void kerneltrapvec(), scheduler(), syscall(), yield();
-extern char trampoline[], usertrapvec[], userret[];
-extern volatile uint64_t ticks;
-void usertrap_handler();
 
-void trap_init()
+extern void scheduler(), syscall(), yield();
+extern char kerneltrapvec[], trampoline[], usertrapvec[], userret[];
+void usertrap_handler();
+uint64_t trampoline_uservec, trampoline_usertrapret;
+
+void trap_inithart()
 {
 	write_csr(stvec, &kerneltrapvec);
 }
+void trap_init()
+{
+	// note: the 2nd operand should change according to if using OpenSBI
+	trampoline_uservec =
+		TRAMPOLINE + (usertrapvec - KERNEL_BASE_ADDR) % PGSIZE;
+	// note: the 2nd operand should change according to if using OpenSBI
+	trampoline_usertrapret =
+		TRAMPOLINE + OFFSETPAGE((uint64_t)(userret - KERNEL_BASE_ADDR));
+}
 
-static void interrupt_handler(uint64_t cause, int32_t prilevel)
+static void interrupt_handler(uint64_t cause)
 {
 	assert(myproc()->magic == UNIKS_MAGIC);
-	cause = (cause << 1) >> 1;   // erase the MSB
+	cause &= INT32_MAX;   // erase the MSB
 	switch (cause) {
-	case IRQ_U_SOFT:
-		kprintf("User software interrupt");
-		break;
 	case IRQ_S_SOFT:
 		kprintf("Supervisor software interrupt");
 		break;
-	case IRQ_U_TIMER:
-		kprintf("User timer interrupt");
-		break;
 	case IRQ_S_TIMER:
-		// hint: there may be a wrong that the yield is not equidistant
-		clock_interrupt_handler(prilevel);
-		break;
-	case IRQ_U_EXT:
-		kprintf("User external interrupt");
+		clock_set_next_event();
+		clock_interrupt_handler();
 		break;
 	case IRQ_S_EXT:
 		external_interrupt_handler();	// external device
 		break;
 	default:
-		panic("default interrupt");
+		BUG();
 	}
 }
-static void exception_handler(uint64_t cause, uint64_t stval, struct proc_t *p,
-			      int32_t prilevel)
+static void exception_handler(uint64_t cause, uint64_t stval, struct proc_t *p)
 {
-	assert(myproc()->magic == UNIKS_MAGIC);
+	assert(p->magic == UNIKS_MAGIC);
 	switch (cause) {
 	case EXC_INST_ILLEGAL:
-		tracef("illegal instruction from prilevel: %d, addr: %p",
-		       prilevel, p->tf->epc);
+		tracef("illegal instruction, addr: %p", p->tf->epc);
 		p->tf->epc += 4;
 		break;
 	case EXC_U_ECALL:   // system call
@@ -67,42 +66,35 @@ static void exception_handler(uint64_t cause, uint64_t stval, struct proc_t *p,
 		syscall();
 		break;
 	case EXC_INST_PAGEFAULT:
-		tracef("process: %d, inst page fault from prilevel: %d, addr: %p\n",
-		       p->pid, prilevel, p->tf->epc);
+		tracef("process: %d, instruction page fault, addr: %p\n",
+		       p->pid, p->tf->epc);
 		do_inst_page_fault(p->mm, p->tf->epc);
 		break;
 	case EXC_LD_PAGEFAULT:
-		tracef("process: %d, ld page fault from prilevel: %d, addr: %p\n",
-		       p->pid, prilevel, stval);
+		tracef("process: %d, ld page fault, addr: %p\n", p->pid, stval);
 		do_ld_page_fault(p->mm, stval);
 		break;
 	case EXC_SD_PAGEFAULT:
-		tracef("process: %d, sd page fault from prilevel: %d, addr: %p\n",
-		       p->pid, prilevel, stval);
+		tracef("process: %d, sd page fault, addr: %p\n", p->pid, stval);
 		do_sd_page_fault(p->mm, stval);
 		break;
 	default:
-		kprintf("exception_handler(): unexpected scause %p pid=%d",
-			cause, p->pid);
-		kprintf("\tepc=%p, from prilevel: %d\n", p->tf->epc, prilevel);
+		kprintf("\n%s(): unexpected scause[%d] pid=%d<=>sepc=%p, stval=%p\n",
+			__func__, cause, p->pid, p->tf->epc, stval);
 	}
 }
 
 // return to user space
 void usertrapret()
 {
-	struct proc_t *p = myproc();
-
-	// note: the 2nd operand should change according to if using OpenSBI
-	uint64_t trampoline_uservec =
-		TRAMPOLINE + (usertrapvec - KERNEL_BASE_ADDR) % PGSIZE;
-
 	/**
 	 * @brief we're about to switch the destination of traps from
 	 * kerneltrap() to usertrap_handler(), so turn off interrupts until
 	 * we're back in user space, where usertrap_handler() is correct
 	 */
 	interrupt_off();
+
+	struct proc_t *p = myproc();
 
 	/**
 	 * @brief we will return to user space, so the traps are supposed to be
@@ -131,10 +123,6 @@ void usertrapret()
 	// tell trampoline.S the user page table to switch to.
 	uint64_t satp = MAKE_SATP(p->mm->pagetable);
 
-	// note: the 2nd operand should change according to if using OpenSBI
-	uint64_t trampoline_usertrapret =
-		TRAMPOLINE + OFFSETPAGE((uint64_t)(userret - KERNEL_BASE_ADDR));
-	p->jiffies = ticks;
 	// jmp to userret in trampoline.S
 	((void (*)(uint64_t))trampoline_usertrapret)(satp);
 }
@@ -145,7 +133,7 @@ void usertrapret()
  */
 void usertrap_handler()
 {
-	// assert that this trap is from user mode
+	// assert that this trap is from U mode
 	assert((read_csr(sstatus) & SSTATUS_SPP) == 0);
 
 	/**
@@ -166,9 +154,21 @@ void usertrap_handler()
 	interrupt_on();
 
 	if (cause < 0)
-		interrupt_handler(cause, PRILEVEL_U);
+		interrupt_handler(cause);
 	else
-		exception_handler(cause, stval, p, PRILEVEL_U);
+		exception_handler(cause, stval, p);
+
+	{
+		acquire(&pcblock[p->pid]);
+		p->jiffies = atomic_load(&ticks);
+		p->ticks--;
+		if (!p->ticks) {
+			p->ticks = p->priority;
+			release(&pcblock[p->pid]);
+			yield();
+		} else
+			release(&pcblock[p->pid]);
+	}
 
 	usertrapret();
 }
@@ -182,11 +182,13 @@ void kerneltrap_handler()
 	// assert that from S mode
 	assert((read_csr(sstatus) & SSTATUS_SPP) != 0);
 
-	int64_t cause = read_csr(scause), stval = read_csr(stval);
+	int64_t cause = read_csr(scause);
 	// assume that in kernel space, no exception will occur
-	assert(cause < 0);
 	if (cause < 0)
-		interrupt_handler(cause, PRILEVEL_S);
-	else
-		exception_handler(cause, stval, myproc(), PRILEVEL_S);
+		interrupt_handler(cause);
+	else {
+		panic("%s(): unexpected scause[%x] hartid=%x<=>sepc=%p, stval=%p\n",
+		      __func__, cause, cpuid(), read_csr(sepc),
+		      read_csr(stval));
+	}
 }

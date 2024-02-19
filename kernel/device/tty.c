@@ -8,28 +8,25 @@ int32_t current_tty = -1;
 // just exist 3 tty devices temporarily, since Linux-0.11 do so
 struct tty_struct_t tty_table[NTTY] = {
 	{
-		{},
-		&uart_struct,
-		tty_read,
-		tty_write,
-		do_tty_interrupt,
-		{},
+		.uart_associated = &uart_struct,
+		.read = tty_read,
+		.write = tty_write,
+		.tty_interrupt_handler = do_tty_interrupt,
+		.secondary_q = {},
 	},
 	{
-		{},
-		NULL,
-		tty_read,
-		tty_write,
-		do_tty_interrupt,
-		{},
+		.uart_associated = NULL,
+		.read = tty_read,
+		.write = tty_write,
+		.tty_interrupt_handler = do_tty_interrupt,
+		.secondary_q = {},
 	},
 	{
-		{},
-		NULL,
-		tty_read,
-		tty_write,
-		do_tty_interrupt,
-		{},
+		.uart_associated = NULL,
+		.read = tty_read,
+		.write = tty_write,
+		.tty_interrupt_handler = do_tty_interrupt,
+		.secondary_q = {},
 	},
 };
 
@@ -69,8 +66,13 @@ void copy_to_cooked(struct tty_struct_t *tty)
 					.qm))	// discard the oldest simply
 			queue_pop(&tty->secondary_q.qm);
 		queue_push_chartype(&tty->secondary_q.qm, ch);
+
 		// echo mode
-		uart_write(tty->uart_associated, &ch, 1);
+		{
+			if (ch == '\r')
+				ch = '\n';
+			uart_write(tty->uart_associated, &ch, 1);
+		}
 	}
 
 	proc_unblock_all(&tty->secondary_q.wait_list);
@@ -104,12 +106,8 @@ int32_t tty_read(void *ttyptr, void *buf, size_t cnt)
 	while (n < cnt) {
 		while (queue_empty(&tty->secondary_q.qm)) {
 			if (n == 0) {
-				proc_block(myproc(),
-					   &tty->secondary_q.wait_list,
-					   TASK_BLOCK);
-				release(&tty->secondary_q.tty_queue_lock);
-				sched();
-				acquire(&tty->secondary_q.tty_queue_lock);
+				proc_block(&tty->secondary_q.wait_list,
+					   &tty->secondary_q.tty_queue_lock);
 			} else
 				goto over;
 		}

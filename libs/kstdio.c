@@ -14,9 +14,10 @@
 
 
 static char digits[] = "0123456789abcdef";
+struct kprintf_sync_t pr;
 
 
-void kputc(char c)
+__always_inline void kputc(char c)
 {
 	sbi_console_putchar(c);
 }
@@ -104,10 +105,22 @@ static void vkprintf(const char *fmt, va_list ap)
 	}
 }
 
+void kprintfinit()
+{
+	initlock(&pr.lock, "pr");
+	pr.locking = 1;
+}
+
 void kprintf(const char *fmt, ...)
 {
+	if (pr.locking)
+		acquire(&pr.lock);
+
 	va_list ap;
 	va_start(ap, fmt);
 	vkprintf(fmt, ap);
 	va_end(ap);
+
+	if (pr.locking)
+		release(&pr.lock);
 }

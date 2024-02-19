@@ -1,6 +1,7 @@
 #ifndef __KERNEL_DEVICE_DEVICE_H__
 #define __KERNEL_DEVICE_DEVICE_H__
 
+
 #include <uniks/defs.h>
 #include <uniks/param.h>
 
@@ -17,7 +18,6 @@ enum device_subtype_t {
 	DEV_TTY,		// tty
 	DEV_SERIAL,		// UART
 	DEV_EXTERNAL_STORAGE,	// secondary storage
-	DEV_RAM_VIRT_STORAGE,	// vitual secondary storage
 };
 
 struct device_t {

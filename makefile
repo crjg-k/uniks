@@ -2,6 +2,11 @@
 # LOG ?= trace
 # QEMULOG ?= trace
 
+
+# OS'S PARAMETER
+CPUS = 2
+
+
 # basic tools
 SHELL = /bin/bash
 CROSS_PREFIX = riscv64-unknown-elf-
@@ -47,7 +52,8 @@ CFLAGS = \
 	-march=rv64g \
 	-fno-stack-protector \
 	-fno-omit-frame-pointer \
-	-fno-stack-protector
+	-fno-stack-protector \
+	-DMAXNUM_HARTID=${CPUS}
 
 CFLAGS += -T ${LINKER}
 CFLAGS += -g3
@@ -75,7 +81,6 @@ build:
 
 
 # qemu option
-CPUS = 1
 BOOTLOADER = default
 QEMU = qemu-system-riscv64
 QEMULOGPATH = ./qemu-log
@@ -104,6 +109,14 @@ qemu: build
 .PHONY: debug
 debug: build
 	${QEMU} ${QFLAGS} -S ${QEMUGDB}&
+	${GDB} bin/kernel.elf -q -x script/.gdbinit
+
+.PHONY: debug-back
+debug-back: build
+	${QEMU} ${QFLAGS} -S ${QEMUGDB}
+
+.PHONY: debug-front
+debug-front:
 	${GDB} bin/kernel.elf -q -x script/.gdbinit
 
 .PHONY: debug-vscode

@@ -1,6 +1,7 @@
 #ifndef __KERNEL_PLATFORM_RISCV_H__
 #define __KERNEL_PLATFORM_RISCV_H__
 
+
 #include <mm/mmu.h>
 #include <uniks/defs.h>
 
@@ -54,11 +55,8 @@
 #define PRILEVEL_M (3)
 
 // trap->interrupt
-#define IRQ_U_SOFT	       (0)
 #define IRQ_S_SOFT	       (1)
-#define IRQ_U_TIMER	       (4)
 #define IRQ_S_TIMER	       (5)
-#define IRQ_U_EXT	       (8)
 #define IRQ_S_EXT	       (9)
 // trap->exception
 #define EXC_INST_ADDR_MISALIGN (0)
@@ -132,54 +130,57 @@ struct pagetable_entry_t {
 #define PAGE_ISUSPACE(pte)   ((*(uint64_t *)pte) & PTE_U)
 
 
-// assmue that tp register will never be tamperred by user-space process
-#define r_mhartid() \
+#define cpuid() \
 	({ \
-		uint64_t __tmp; \
-		asm volatile("mv %0, tp" : "=r"(__tmp)); \
+		uint32_t __tmp; \
+		asm volatile("csrr t6, sscratch\n\t" \
+			     "lwu %0, 0(t6)" \
+			     : "=r"(__tmp) \
+			     : \
+			     : "t6"); \
 		__tmp; \
 	})
 
 // enable device interrupts
-__always_inline static void interrupt_on()
+__always_inline void interrupt_on()
 {
 	set_csr(sstatus, SSTATUS_SIE);
 }
 
 // disable device interrupts
-__always_inline static void interrupt_off()
+__always_inline void interrupt_off()
 {
 	clear_csr(sstatus, SSTATUS_SIE);
 }
 
 // are device interrupts enabled?
-__always_inline static uint64_t interrupt_get()
+__always_inline uint64_t interrupt_get()
 {
 	return read_csr(sstatus);
 }
 
 // set device interrupts enabled status to a specific value
-__always_inline static void interrupt_set(uint64_t val)
+__always_inline void interrupt_set(uint64_t val)
 {
 	write_csr(sstatus, val);
 }
 
-__always_inline static void external_interrupt_enable()
+__always_inline void external_interrupt_enable()
 {
 	set_csr(sie, SIE_SEIE);	  // enable external interrupt in sie
 }
 
-__always_inline static void timer_interrupt_enable()
+__always_inline void timer_interrupt_enable()
 {
 	set_csr(sie, SIE_STIE);	  // enable timer interrupt in sie
 }
 
-__always_inline static void software_interrupt_enable()
+__always_inline void software_interrupt_enable()
 {
 	set_csr(sie, SIE_SSIE);	  // enable software interrupt in sie
 }
 
-__always_inline static void all_interrupt_enable()
+__always_inline void all_interrupt_enable()
 {
 	set_csr(sie,
 		SIE_SEIE | SIE_STIE |
@@ -193,6 +194,9 @@ __always_inline void invalidate(uintptr_t va)
 {
 	asm volatile("sfence.vma %0, zero\n\tnop" : "=r"(va));
 }
+
+
+extern int32_t boothartid;
 
 
 #endif /* !__KERNEL_PLATFORM_RISCV_H__ */

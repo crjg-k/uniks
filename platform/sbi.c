@@ -10,15 +10,8 @@
  */
 
 #include "sbi.h"
-#include <stdarg.h>
+#include <uniks/defs.h>
 
-// SBI number
-#define SBI_SET_TIMER	    0
-#define SBI_CONSOLE_PUTCHAR 1
-#define SBI_CONSOLE_GETCHAR 2
-#define SBI_CLEAR_IPI	    3
-#define SBI_SEND_IPI	    4
-#define SBI_SHUTDOWN	    8
 
 int64_t sbi_call(uint64_t sbi_type, ...)
 {
@@ -27,11 +20,12 @@ int64_t sbi_call(uint64_t sbi_type, ...)
 	register uint64_t a0 asm("a0") = va_arg(ap, uint64_t);
 	register uint64_t a1 asm("a1") = va_arg(ap, uint64_t);
 	register uint64_t a2 asm("a2") = va_arg(ap, uint64_t);
+	register uint64_t a6 asm("a6") = va_arg(ap, uint64_t);
 	register uint64_t a7 asm("a7") = sbi_type;
 	va_end(ap);
 	asm volatile("ecall"
 		     : "=r"(a0)
-		     : "r"(a0), "r"(a1), "r"(a2), "r"(a7)
+		     : "r"(a0), "r"(a1), "r"(a2), "r"(a6), "r"(a7)
 		     : "memory");
 	return a0;
 }
@@ -54,4 +48,14 @@ int64_t sbi_console_getchar()
 void sbi_shutdown()
 {
 	sbi_call(SBI_SHUTDOWN);
+}
+
+struct sbiret sbi_hart_start(uint64_t hartid, uint64_t start_addr,
+			     uint64_t opaque)
+{
+	sbi_call(SBI_HSM, hartid, start_addr, opaque, HART_START);
+	register uint64_t a0 asm("a0");
+	register uint64_t a1 asm("a1");
+	struct sbiret sr = {a0, a1};
+	return sr;
 }

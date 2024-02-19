@@ -16,7 +16,7 @@
 pagetable_t kernel_pagetable;
 
 
-void kvmenable()
+void kvmenablehart()
 {
 	// wait for any previous writes to the page table memory to finish.
 	sfence_vma();
@@ -132,7 +132,7 @@ static pagetable_t kvmmake()
 	return kpgtbl;
 }
 
-// only initialize the kernel pagetable when booting
+// all harts share the same kernel virtual addr space
 void kvminit()
 {
 	kernel_pagetable = kvmmake();
@@ -414,23 +414,23 @@ int32_t verify_area(struct mm_struct *mm, uintptr_t vaddr, size_t size,
 	return 0;
 }
 
-#define SEGFAULT_MSG	     "Segmentation fault"
-#define segmentation_fault() ({ kprintf("%s\n", SEGFAULT_MSG); })
+#define SEGFAULT_MSG "Segmentation fault"
+#define SEG_FAULT()  ({ kprintf("%s\n", SEGFAULT_MSG); })
 void do_inst_page_fault(struct mm_struct *mm, uintptr_t fault_vaddr)
 {
 	if (verify_area(mm, fault_vaddr, 4, PTE_X | PTE_R | PTE_U) != 0)
-		segmentation_fault();
+		SEG_FAULT();
 }
 // todo: distinguish byte/half word/word/double word
 void do_ld_page_fault(struct mm_struct *mm, uintptr_t fault_vaddr)
 {
 	if (verify_area(mm, fault_vaddr, 8, PTE_R | PTE_W | PTE_U) != 0)
-		segmentation_fault();
+		SEG_FAULT();
 }
 void do_sd_page_fault(struct mm_struct *mm, uintptr_t fault_vaddr)
 {
 	if (verify_area(mm, fault_vaddr, 8, PTE_R | PTE_W | PTE_U) != 0)
-		segmentation_fault();
+		SEG_FAULT();
 }
 
 /* === transmit data between user space and kernel space === */
