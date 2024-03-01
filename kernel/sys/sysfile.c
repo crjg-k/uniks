@@ -1,9 +1,9 @@
+#include <device/blkbuf.h>
 #include <device/device.h>
 #include <device/tty.h>
 #include <device/virtio_disk.h>
 #include <file/file.h>
-#include <fs/blkbuf.h>
-#include <fs/fs.h>
+#include <fs/ext2fs.h>
 #include <mm/phys.h>
 #include <process/proc.h>
 #include <sys/ksyscall.h>
@@ -13,56 +13,59 @@
 
 
 #define sys_file_rw_common() \
-	struct file_t *file; \
+	struct file_t *f; \
 	struct proc_t *p = myproc(); \
 	struct m_inode_t *inode; \
-	int32_t fd = argufetch(p, 0), count = argufetch(p, 2); \
-	if (fd >= NFD or count < 0 or p->files[fd] == 0) \
+	int32_t fd = argufetch(p, 0), cnt = argufetch(p, 2); \
+	char *buf = (char *)argufetch(p, 1); \
+	if (fd >= NFD or cnt < 0 or p->fdtable[fd] == 0) \
 		return -EINVAL; \
-	if (count == 0) \
+	if (cnt == 0) \
 		return 0; \
-	file = &fcbtable[p->files[fd]]; \
-	inode = file->f_inode;
+	f = &fcbtable.files[p->fdtable[fd]];
 
 
 uint64_t sys_read()
 {
-	int64_t ret;
-	struct proc_t *p = myproc();
-	char *buf = (char *)argufetch(p, 1);
-	size_t cnt = argufetch(p, 2);
-
-	verify_area(p->mm, (uintptr_t)buf, cnt, PTE_W | PTE_U);
-	char *tt = (char *)vaddr2paddr(p->mm->pagetable, (uintptr_t)buf);
-	ret = devices[current_tty].read(devices[current_tty].ptr, tt, cnt);
-
 	// sys_file_rw_common();
-	// if PIPE
+	// return file_read(f, buf, cnt);
+	uint64_t res;
+	struct proc_t *p = myproc();
+	size_t cnt = argufetch(p, 2);
+	char *buf = (char *)argufetch(p, 1);
+	res = cnt;
+	struct blkbuf_t *bb = blk_read(VIRTIO_IRQ, 0);
+	// res = devices[current_tty].read(devices[current_tty].ptr, tmp_page,
+	// 				cnt);
+	verify_area(p->mm, (uintptr_t)buf, cnt, PTE_W | PTE_U);
+	copyout(p->mm->pagetable, buf, bb->b_data, res);
+	blk_release(bb);
 
-	// else if DEVICE
-
-	// else if ordinary disk file, both directory or common file are okay
-
-	return ret;
+	return PGSIZE;
 }
 
 uint64_t sys_write()
 {
-	struct proc_t *p = myproc();
-	char *buf = (char *)argufetch(p, 1),
-	     *kernelch = (char *)pages_alloc(1, 1);
-	assert(kernelch != NULL);
-	size_t count = argufetch(p, 2);
-	copyin(p->mm->pagetable, kernelch, buf, count);
-	int32_t res = devices[current_tty].write(devices[current_tty].ptr,
-						 kernelch, count);
-	pages_free(kernelch);
 	// sys_file_rw_common();
-	// if PIPE
-
-	// else if DEVICE
-
-	// else if ordinary disk file, only permit non-directory write operation
+	// return file_write(f, buf, cnt);
+	uint64_t res;
+	struct proc_t *p = myproc();
+	char *buf = (char *)argufetch(p, 1), *tmp_page = (char *)pages_alloc(1);
+	assert(tmp_page != NULL);
+	size_t cnt = argufetch(p, 2);
+	int32_t fd = argufetch(p, 0);
+	if (fd == 3) {
+		struct blkbuf_t *bb = blk_read(VIRTIO_IRQ, 0);
+		copyin(p->mm->pagetable, bb->b_data, buf, cnt);
+		blk_write_over(bb);
+		blk_sync_all();
+		res = PGSIZE;
+	} else {
+		copyin(p->mm->pagetable, tmp_page, buf, cnt);
+		res = devices[current_tty].write(devices[current_tty].ptr,
+						 tmp_page, cnt);
+	}
+	pages_free(tmp_page);
 
 	return res;
 }
@@ -70,7 +73,7 @@ uint64_t sys_write()
 uint64_t sys_open()
 {
 	int32_t i, fd;
-	// struct m_inode_t *inode;
+	// struct m_inode_info_t *inode;
 	struct file_t *f;
 	struct proc_t *p = myproc();
 
@@ -85,7 +88,7 @@ uint64_t sys_open()
 		return -EINVAL;
 	// search a idle system fcbtable entry
 	for (i = 0; i < NFILE; i++)
-		if (!(f = &fcbtable[i])->f_count)
+		if (!((f = &fcbtable.files[i])->f_count))
 			break;
 	if (i >= NFILE)
 		return -EINVAL;
@@ -124,10 +127,9 @@ uint64_t do_close(uint32_t fd)
 	p->fdtable[fd] = 0;
 	release(&pcblock[p->pid]);
 
-	f = &fcbtable[fcb_idx];
+	f = &fcbtable.files[fcb_idx];
 
 	assert(f->f_count != 0);
-
 	if (--f->f_count)
 		goto over;
 
@@ -172,7 +174,7 @@ static int32_t do_dupfd(uint32_t fd, uint32_t arg)
 		return -EMFILE;
 	}
 	p->fdtable[arg] = p->fdtable[fd];
-	fcbtable[p->fdtable[arg]].f_count++;
+	fcbtable.files[p->fdtable[arg]].f_count++;
 	release(&pcblock[p->pid]);
 	return arg;
 }

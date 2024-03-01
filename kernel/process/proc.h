@@ -2,7 +2,7 @@
 #define __KERNEL_PROCESS_PROC_H__
 
 
-#include <fs/fs.h>
+#include <fs/ext2fs.h>
 #include <mm/vm.h>
 #include <sync/spinlock.h>
 #include <uniks/defs.h>
@@ -94,10 +94,12 @@ struct proc_t {
 	uint32_t jiffies;	 // global time slice when last execution
 	struct list_node_t block_list;	 // block list of this process
 	struct list_node_t wait_list;	 // who wait for this process to exit
-	int16_t fdtable[NFD];	// fd table pointing to the index of fcbtable
+
+	struct m_inode_t *cwd;	 // Current directory
+	int16_t fdtable[NFD];	 // fd table pointing to the index of fcbtable
 
 	/* this mm_struct describe the virtual addr space mapping state */
-	struct mm_struct *mm;	// point to the mm_struct of this process
+	struct mm_struct *mm;	// porocto the mm_struct of this process
 
 	struct context_t ctxt;	 // switch here to run process
 	/**

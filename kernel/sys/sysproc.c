@@ -1,4 +1,5 @@
 #include <device/clock.h>
+#include <file/file.h>
 #include <loader/elfloader.h>
 #include <mm/vm.h>
 #include <process/proc.h>
@@ -60,7 +61,8 @@ int64_t sys_msleep()
 	release(&sleep_queue.sleep_lock);
 
 	assert(p->magic == UNIKS_MAGIC);
-	sched();
+	// hint: Change to using proc_block();
+	// sched();
 	return 0;
 }
 

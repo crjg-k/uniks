@@ -9,10 +9,12 @@
  *
  */
 
+#include <device/blkbuf.h>
 #include <device/clock.h>
 #include <device/device.h>
 #include <device/virtio_disk.h>
 #include <file/file.h>
+#include <fs/ext2fs.h>
 #include <mm/memlay.h>
 #include <platform/plic.h>
 #include <platform/sbi.h>
@@ -22,7 +24,6 @@
 #include <uniks/defs.h>
 #include <uniks/kstdio.h>
 #include <uniks/kstring.h>
-#include <uniks/log.h>
 
 
 volatile static int32_t started = 0, master_booting = 1;
@@ -56,7 +57,7 @@ void kernel_start(int32_t hartid)
 		master_booting = 0;
 		__sync_synchronize();
 		// Don't worry, this macro is defined in makefile!
-		for (int i = 0; i < MAXNUM_HARTID; i++) {
+		for (int32_t i = 0; i < MAXNUM_HARTID; i++) {
 			if (i != boothartid)
 				sbi_hart_start(i, (uintptr_t)kernel_entry, 0);
 		}
@@ -75,9 +76,9 @@ void kernel_start(int32_t hartid)
 		trap_init();
 		plicinit();
 
-		blkbuf_init();
-		mount_root();
-		sysfile_init();
+		blk_init();
+		inode_table_init();
+		sys_ftable_init();
 		virtio_disk_init();
 
 		user_init(1);

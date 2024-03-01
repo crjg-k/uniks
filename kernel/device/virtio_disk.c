@@ -1,7 +1,7 @@
 /**
  * @file virtio_disk.c
  * @author crjg-k (crjg-k@qq.com)
- * @brief // driver for qemu's virtio disk device.
+ * @brief driver for qemu's virtio disk device.
  * uses qemu's mmio interface to virtio.
  * qemu ... -drive file=fs.img,if=none,format=raw,id=x0 \
  * -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
@@ -15,16 +15,17 @@
 #include "virtio_disk.h"
 #include <device/device.h>
 #include <mm/memlay.h>
+#include <mm/mmu.h>
 #include <mm/phys.h>
-#include <platform/platform.h>
 #include <process/proc.h>
 #include <sync/spinlock.h>
 #include <uniks/kassert.h>
 #include <uniks/kstring.h>
 #include <uniks/list.h>
+#include <uniks/param.h>
 
 
-static struct {
+static struct disk_t {
 	struct spinlock_t virtio_disk_lock;
 	struct list_node_t wait_list;
 
@@ -84,29 +85,29 @@ void virtio_disk_init()
 	*VIRTIO_DISK_R(VIRTIO_MMIO_STATUS) = status;
 
 	// set ACKNOWLEDGE status bit
-	set_variable_bit(status, VIRTIO_CONFIG_S_ACKNOWLEDGE);
+	set_var_bit(status, VIRTIO_CONFIG_S_ACKNOWLEDGE);
 	// set DRIVER status bit
-	set_variable_bit(status, VIRTIO_CONFIG_S_DRIVER);
+	set_var_bit(status, VIRTIO_CONFIG_S_DRIVER);
 	*VIRTIO_DISK_R(VIRTIO_MMIO_STATUS) = status;
 
 	// negotiate features
 	uint64_t features = *VIRTIO_DISK_R(VIRTIO_MMIO_DEVICE_FEATURES);
-	clear_variable_bit(features, 1 << VIRTIO_BLK_F_RO);
-	clear_variable_bit(features, 1 << VIRTIO_BLK_F_SCSI);
-	clear_variable_bit(features, 1 << VIRTIO_BLK_F_CONFIG_WCE);
-	clear_variable_bit(features, 1 << VIRTIO_BLK_F_MQ);
-	clear_variable_bit(features, 1 << VIRTIO_F_ANY_LAYOUT);
-	clear_variable_bit(features, 1 << VIRTIO_RING_F_EVENT_IDX);
-	clear_variable_bit(features, 1 << VIRTIO_RING_F_INDIRECT_DESC);
+	clear_var_bit(features, 1 << VIRTIO_BLK_F_RO);
+	clear_var_bit(features, 1 << VIRTIO_BLK_F_SCSI);
+	clear_var_bit(features, 1 << VIRTIO_BLK_F_CONFIG_WCE);
+	clear_var_bit(features, 1 << VIRTIO_BLK_F_MQ);
+	clear_var_bit(features, 1 << VIRTIO_F_ANY_LAYOUT);
+	clear_var_bit(features, 1 << VIRTIO_RING_F_EVENT_IDX);
+	clear_var_bit(features, 1 << VIRTIO_RING_F_INDIRECT_DESC);
 	*VIRTIO_DISK_R(VIRTIO_MMIO_DRIVER_FEATURES) = features;
 
 	// tell device that feature negotiation is complete
-	set_variable_bit(status, VIRTIO_CONFIG_S_FEATURES_OK);
+	set_var_bit(status, VIRTIO_CONFIG_S_FEATURES_OK);
 	*VIRTIO_DISK_R(VIRTIO_MMIO_STATUS) = status;
 
 	// re-read status to ensure FEATURES_OK is set
 	status = *VIRTIO_DISK_R(VIRTIO_MMIO_STATUS);
-	assert(get_variable_bit(status, VIRTIO_CONFIG_S_FEATURES_OK));
+	assert(get_var_bit(status, VIRTIO_CONFIG_S_FEATURES_OK));
 
 	// initialize queue 0
 	*VIRTIO_DISK_R(VIRTIO_MMIO_QUEUE_SEL) = 0;
@@ -119,9 +120,9 @@ void virtio_disk_init()
 	assert(max >= VIRTIO_DESC_NUM);
 
 	// allocate and zero queue memory
-	disk.desc = pages_alloc(1, 0);
-	disk.avail = pages_alloc(1, 0);
-	disk.used = pages_alloc(1, 0);
+	disk.desc = pages_alloc(1);
+	disk.avail = pages_alloc(1);
+	disk.used = pages_alloc(1);
 	assert(disk.desc != NULL and disk.avail != NULL and disk.used != NULL);
 	memset(disk.desc, 0, PGSIZE);
 	memset(disk.avail, 0, PGSIZE);
@@ -149,15 +150,16 @@ void virtio_disk_init()
 		disk.free[i] = 1;
 
 	// tell device we're completely ready
-	set_variable_bit(status, VIRTIO_CONFIG_S_DRIVER_OK);
+	set_var_bit(status, VIRTIO_CONFIG_S_DRIVER_OK);
 	*VIRTIO_DISK_R(VIRTIO_MMIO_STATUS) = status;
 
 	// software-layer initialize
 	INIT_LIST_HEAD(&disk.wait_list);
-	char virtio_disk_name[] = "virtio_disk";
 	struct device_t *devptr = &devices[VIRTIO_IRQ];
-	device_install(DEV_BLOCK, DEV_EXTERNAL_STORAGE, &disk, virtio_disk_name,
-		       0, do_virtio_disk_interrupt, NULL, NULL, NULL, devptr);
+	device_install(DEV_BLOCK, DEV_EXTERNAL_STORAGE, &disk, "virtio_disk", 0,
+		       do_virtio_disk_interrupt, NULL, virtio_disk_read,
+		       virtio_disk_write, devptr);
+
 	// plic.c and trap.c arrange for interrupts from VIRTIO_IRQ.
 }
 
@@ -174,14 +176,14 @@ static int32_t alloc_desc()
 }
 
 // mark a descriptor as free
-static void free1_descriptor(int32_t i)
+static void free_1_descriptor(int32_t i)
 {
 	assert(i < VIRTIO_DESC_NUM);
 	assert(!disk.free[i]);
 	disk.desc[i].addr = disk.desc[i].len = disk.desc[i].flags =
 		disk.desc[i].next = 0;
 	disk.free[i] = 1;
-	// wakeup(&disk.free[0]);
+	proc_unblock_all(&disk.wait_list);
 }
 
 // free a list of descriptors
@@ -190,8 +192,8 @@ static void free_descriptor_list(int32_t i)
 	while (1) {
 		int32_t flag = disk.desc[i].flags;
 		int32_t nxt = disk.desc[i].next;
-		free1_descriptor(i);
-		if (get_variable_bit(flag, VRING_DESC_F_NEXT))
+		free_1_descriptor(i);
+		if (get_var_bit(flag, VRING_DESC_F_NEXT))
 			i = nxt;
 		else
 			break;
@@ -210,18 +212,16 @@ static int32_t alloc3_desc(int32_t *index)
 		index[i] = alloc_desc();
 		if (index[i] < 0) {
 			for (int32_t j = 0; j < i; j++)
-				free1_descriptor(index[j]);
+				free_1_descriptor(index[j]);
 			return -1;
 		}
 	}
 	return 0;
 }
 
-static void virtio_disk_rw(struct blkbuf_t *buf, int32_t write)
+static void virtio_disk_rw(struct blkbuf_t *bb, int32_t write)
 {
-	BUG();
-#define SECTORSIZE 512
-	uint64_t sector = buf->b_blkno * (BLKSIZE / SECTORSIZE);
+	uint64_t sector = bb->b_blkno * (BLKSIZE / SECTORSIZE);
 
 	acquire(&disk.virtio_disk_lock);
 
@@ -237,10 +237,7 @@ static void virtio_disk_rw(struct blkbuf_t *buf, int32_t write)
 		if (alloc3_desc(index) == 0) {
 			break;
 		}
-		// proc_block(myproc(), &disk.wait_list, TASK_BLOCK);
-		release(&disk.virtio_disk_lock);
-		sched();
-		acquire(&disk.virtio_disk_lock);
+		proc_block(&disk.wait_list, &disk.virtio_disk_lock);
 	}
 
 	// format the three descriptors. And qemu's virtio-blk.c reads them.
@@ -259,15 +256,15 @@ static void virtio_disk_rw(struct blkbuf_t *buf, int32_t write)
 	disk.desc[index[0]].flags = VRING_DESC_F_NEXT;
 	disk.desc[index[0]].next = index[1];
 
-	disk.desc[index[1]].addr = (uint64_t)buf->b_data;
+	disk.desc[index[1]].addr = (uint64_t)bb->b_data;
 	disk.desc[index[1]].len = BLKSIZE;
 	if (write)
 		disk.desc[index[1]].flags =
-			VRING_DESC_F_READ;   // device reads buf->b_data
+			VRING_DESC_F_READ;   // device reads bb->b_data
 	else
 		disk.desc[index[1]].flags =
-			VRING_DESC_F_WRITE;   // device writes buf->b_data
-	set_variable_bit(disk.desc[index[1]].flags, VRING_DESC_F_NEXT);
+			VRING_DESC_F_WRITE;   // device writes bb->b_data
+	set_var_bit(disk.desc[index[1]].flags, VRING_DESC_F_NEXT);
 	disk.desc[index[1]].next = index[2];
 
 	disk.info[index[0]].status = 0xff;   // device writes 0 on success
@@ -278,8 +275,8 @@ static void virtio_disk_rw(struct blkbuf_t *buf, int32_t write)
 	disk.desc[index[2]].next = 0;
 
 	// record struct buf for do_virtio_disk_interrupt().
-	buf->b_disk = 1;
-	disk.info[index[0]].buf = buf;
+	bb->b_disk = 1;
+	disk.info[index[0]].buf = bb;
 
 	// tell the device the first index in our list of descriptors.
 	disk.avail->ring[disk.avail->index % VIRTIO_DESC_NUM] = index[0];
@@ -294,11 +291,8 @@ static void virtio_disk_rw(struct blkbuf_t *buf, int32_t write)
 	*VIRTIO_DISK_R(VIRTIO_MMIO_QUEUE_NOTIFY) = 0;	// value is queue number
 
 	// Wait for do_virtio_disk_interrupt() to say request has finished.
-	while (buf->b_disk == 1) {
-		// proc_block(myproc(), &disk.wait_list, TASK_BLOCK);
-		release(&disk.virtio_disk_lock);
-		sched();
-		acquire(&disk.virtio_disk_lock);
+	while (bb->b_disk == 1) {
+		proc_block(&bb->disk_wait_list, &disk.virtio_disk_lock);
 	}
 
 	disk.info[index[0]].buf = NULL;
@@ -309,7 +303,6 @@ static void virtio_disk_rw(struct blkbuf_t *buf, int32_t write)
 
 void do_virtio_disk_interrupt(void *ptr)
 {
-	BUG();
 	acquire(&disk.virtio_disk_lock);
 
 	/**
@@ -335,25 +328,26 @@ void do_virtio_disk_interrupt(void *ptr)
 
 		assert(disk.info[id].status == 0);
 
-		struct blkbuf_t *buf = disk.info[id].buf;
-		buf->b_disk = 0;   // disk is done with buf
-		buf->b_valid = 1;
-		// struct proc_t *p = proc_unblock(&disk.wait_list);
-		// release(&pcblock[p->pid]);
+		struct blkbuf_t *bb = disk.info[id].buf;
+		bb->b_disk = 0;	  // disk is done with buf
+		bb->b_valid = 1;
+		proc_unblock_all(&bb->disk_wait_list);
 		disk.used_index += 1;
 	}
 
 	release(&disk.virtio_disk_lock);
 }
 
-void virtio_disk_read(struct blkbuf_t *bb)
+void virtio_disk_read(void *ttyptr, struct blkbuf_t *bb, size_t cnt)
 {
+	assert(cnt == PGSIZE);
 	virtio_disk_rw(bb, 0);
 }
 
-void virtio_disk_write(struct blkbuf_t *bb)
+void virtio_disk_write(void *ttyptr, struct blkbuf_t *bb, size_t cnt)
 {
 	assert(bb->b_dirty == 1);
+	assert(cnt == PGSIZE);
 	virtio_disk_rw(bb, 1);
 	bb->b_dirty = 0;
 }

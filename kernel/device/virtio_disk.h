@@ -11,7 +11,7 @@
  *
  */
 
-#include <fs/blkbuf.h>
+#include "blkbuf.h"
 #include <platform/platform.h>
 #include <uniks/defs.h>
 
@@ -21,6 +21,9 @@
 #define MMIO_NET_DEVICE_ID  (1)
 #define MMIO_DISK_DEVICE_ID (2)
 #define MMIO_VENDOR_ID	    (0x554d4551)
+
+#define SECTORSIZE 512
+
 
 /**
  * virtio mmio control registers, mapped starting at 0x10001000 from qemu
@@ -70,7 +73,7 @@
 #define VIRTIO_DISK_R(r) ((volatile uint32_t *)(VIRTIO0 + (r)))
 
 // the number of virtio descriptors must be a power of 2
-#define VIRTIO_DESC_NUM (32)
+#define VIRTIO_DESC_NUM (64)
 
 // a single descriptor, from the spec.
 struct virtq_desc_t {
@@ -79,9 +82,9 @@ struct virtq_desc_t {
 	uint16_t flags;
 	uint16_t next;
 };
-#define VRING_DESC_F_NEXT  (1)   // chained with another descriptor
-#define VRING_DESC_F_READ  (0)   // device reads
-#define VRING_DESC_F_WRITE (2)   // device writes (vs read)
+#define VRING_DESC_F_NEXT  (1)	 // chained with another descriptor
+#define VRING_DESC_F_READ  (0)	 // device reads
+#define VRING_DESC_F_WRITE (2)	 // device writes (vs read)
 
 // the (entire) avail ring, from the spec.
 struct virtq_avail_t {
@@ -126,8 +129,8 @@ struct virtio_blk_req_t {
 
 
 void virtio_disk_init();
-void virtio_disk_read(struct blkbuf_t *buf);
-void virtio_disk_write(struct blkbuf_t *buf);
+void virtio_disk_read(void *ttyptr, struct blkbuf_t *bb, size_t cnt);
+void virtio_disk_write(void *ttyptr, struct blkbuf_t *bb, size_t cnt);
 void do_virtio_disk_interrupt(void *ptr);
 
 

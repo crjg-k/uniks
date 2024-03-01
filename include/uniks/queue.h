@@ -5,9 +5,7 @@
 #include <uniks/defs.h>
 #include <uniks/kassert.h>
 
-/**
- * @brief a circular queue of int32_t type
- */
+
 struct queue_meta_t {
 	int32_t queue_size;
 	int32_t queue_capacity;

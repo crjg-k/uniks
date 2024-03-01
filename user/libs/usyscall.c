@@ -36,12 +36,12 @@ int getpid()
 
 int read(int fd, char *buf, long count)
 {
-	return syscall(SYS_read, 0, buf, count);
+	return syscall(SYS_read, fd, buf, count);
 }
 
 int write(int fd, char *buf, long count)
 {
-	return syscall(SYS_write, 0, buf, count);
+	return syscall(SYS_write, fd, buf, count);
 }
 
 int msleep(int msec)

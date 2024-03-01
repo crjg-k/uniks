@@ -3,14 +3,12 @@
 #include <mm/memlay.h>
 #include <mm/phys.h>
 #include <mm/vm.h>
+#include <platform/platform.h>
 #include <platform/riscv.h>
-#include <sync/spinlock.h>
 #include <sys/ksyscall.h>
 #include <uniks/kassert.h>
 #include <uniks/kstring.h>
-#include <uniks/list.h>
 #include <uniks/log.h>
-#include <uniks/param.h>
 
 
 struct proc_t *pcbtable[NPROC] = {NULL};
@@ -45,16 +43,6 @@ extern void usertrapret();
 extern int64_t do_execve(struct proc_t *p, char *pathname, char *argv[],
 			 char *envp[]);
 
-/**
- * @brief Set the proc->name as argument name with the constraint of max length,
- * and it supposed that the caller will pass a legal string with '\0' terminator
- * @param proc
- * @param name
- */
-__always_inline static void set_proc_name(struct proc_t *proc, const char *name)
-{
-	strncpy(proc->name, name, FILENAMELEN);
-}
 
 __always_inline struct cpu_t *mycpu()
 {
@@ -139,8 +127,21 @@ static void freeproc(pid_t pid)
 // a fork child's 1st scheduling by scheduler() will swtch to forkret
 void forkret()
 {
+	static int32_t first = 1;
+
 	// Still holding p->lock from scheduler.
 	release(&pcblock[myproc()->pid]);
+
+	if (first) {
+		/**
+		 * @brief Fs initialization must be run in the context of a
+		 * regular process (e.g., because it calls proc_block), and thus
+		 * cannot be run @kernel_start.
+		 */
+		first = 0;
+		fsinit(VIRTIO_IRQ);
+		myproc()->cwd = namei("/");
+	}
 
 	usertrapret();
 }
@@ -164,7 +165,7 @@ struct proc_t *allocproc()
 	 * @brief allocate a kstack page as well as a trapframe page locate at
 	 * the begining of kstack
 	 */
-	if ((tf = pages_alloc(1, 0)) == NULL)
+	if ((tf = pages_alloc(1)) == NULL)
 		goto err;
 	pcbtable[newpid] =
 		(struct proc_t *)((uintptr_t)tf + sizeof(struct trapframe_t));
@@ -448,8 +449,6 @@ int64_t do_fork()
 	// childproc's ret val of fork need to be set to 0 according to
 	// POSIX
 	childproc->tf->a0 = 0;
-
-	set_proc_name(childproc, parentproc->name);
 
 	childproc->parentpid = parentproc->pid;
 	childproc->state = TASK_READY;

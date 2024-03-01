@@ -43,10 +43,11 @@ enum {
 #define __aligned(N)	__attribute__((aligned(N)))
 
 
-#define set_variable_bit(var, bit)   ({ (var) |= (bit); })
-#define clear_variable_bit(var, bit) ({ (var) &= ~(bit); })
-#define get_variable_bit(var, bit)   ({ (var) & (bit); })
-#define get_high_32bit(var)	     ({ (var) >> 32; })
+#define set_var_bit(var, bit)	({ (var) |= (bit); })
+#define clear_var_bit(var, bit) ({ (var) &= ~(bit); })
+// The value of this expression: 0 => zero, 1 => non-zero
+#define get_var_bit(var, bit)	({ (var) & (bit); })
+#define get_high_32bit(var)	({ (var) >> 32; })
 
 
 extern char stext[], etext[];

@@ -134,8 +134,6 @@ struct Elf64_Phdr_t {
 	Elf64_Xword_t p_align;	/* Segment alignment */
 } __packed;
 
-#define a sizeof(struct Elf64_Phdr_t)
-
 // segment type
 enum segmentype_t {
 	PT_NULL = 0,		// Unused entry
@@ -207,5 +205,6 @@ struct Elf64_Shdr_t {
 	Elf64_Xword_t sh_addralign; /* Section alignment */
 	Elf64_Xword_t sh_entsize;   /* Entry size if section holds table */
 } __packed;
+
 
 #endif

@@ -1,4 +1,5 @@
 #include "proc.h"
+#include <file/file.h>
 #include <loader/elfloader.h>
 #include <mm/memlay.h>
 #include <mm/phys.h>
@@ -85,7 +86,7 @@ int32_t copy_argv_envp(struct proc_t *p, char *filename, char *argv[],
 
 uintptr_t make_user_stack(struct proc_t *p)
 {
-	char *pgstart = pages_alloc(2, 0);
+	char *pgstart = pages_alloc(2);
 	// int32_t perm = PTE_W | PTE_R | PTE_U;
 	// mappages(p->mm->pagetable, user_stack_argv_envp_bottom - PGSIZE * 2,
 	// 	 PGSIZE * 2, (uintptr_t)pgstart, perm);
@@ -108,7 +109,7 @@ int64_t do_execve(struct proc_t *p, char *pathname, char *argv[], char *envp[])
 	make_user_stack(p);
 	if (ret < 0)
 		goto out;
-	if (load_elf(p, (struct m_inode_t *)pathname) != 0) {
+	if (load_elf(p, (struct m_inode_info_t *)pathname) != 0) {
 		// load ELF failed then free new vm_area_list
 		free_mm(new_mm);
 		p->mm = old_mm;

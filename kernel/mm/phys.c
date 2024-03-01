@@ -9,11 +9,6 @@
 #include <uniks/list.h>
 
 
-// temporarily assume that the size of kernel will not exceed KERNEL_END_LIMIT
-#define KERNEL_END_LIMIT      0x80300000
-#define PHYMEM_AVAILABLE      (PHYSTOP - KERNEL_END_LIMIT)
-#define ADDR2ARRAYINDEX(addr) (((char *)(addr) - (char *)mem_start) >> PGSHIFT)
-
 // todo: add block list waiting for free
 void phymem_init()
 {
@@ -129,7 +124,7 @@ void buddy_system_init(uintptr_t start, uintptr_t end)
 	memset(physical_page_record, 0, sizeof(physical_page_record));
 }
 
-void *pages_alloc(size_t npages, int32_t wait_until_free)
+void *pages_alloc(size_t npages)
 {
 	assert(npages > 0 and npages <= 1024);
 	void *ptr = NULL;
@@ -243,7 +238,7 @@ struct slub_pages_node_t {
 
 void kmem_cache_init()
 {
-	for (int i = 0; i < SLUBNUM; i++) {
+	for (int32_t i = 0; i < SLUBNUM; i++) {
 		kmem_cache_array[i].obj_size = slub_size[i];
 		initlock(&kmem_cache_array[i].kmem_cache_lock, "slublock");
 		INIT_LIST_HEAD(&kmem_cache_array[i].fulllist);
@@ -253,7 +248,7 @@ void kmem_cache_init()
 
 static struct slub_pages_node_t *new_slub_pages_node(int32_t idx)
 {
-	struct slub_pages_node_t *slub_pages_node = pages_alloc(1, 1);
+	struct slub_pages_node_t *slub_pages_node = pages_alloc(1);
 	assert(slub_pages_node != NULL);
 	INIT_LIST_HEAD(&slub_pages_node->slub_node_list);
 	INIT_LIST_HEAD(&slub_pages_node->obj_freelist);

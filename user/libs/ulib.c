@@ -13,7 +13,7 @@ char buffer[4096];
 int idx, cnt;
 
 
-void putc(char c)
+void kputc(char c)
 {
 	buffer[idx++] = c;
 	cnt++;
@@ -23,7 +23,7 @@ void kputs(const char *str)
 {
 	char c;
 	while ((c = *str++) != '\0')
-		putc(c);
+		kputc(c);
 }
 
 static void printint(int32_t xx, int32_t base, int32_t sgn)
@@ -48,13 +48,13 @@ static void printint(int32_t xx, int32_t base, int32_t sgn)
 		buf[i++] = '-';
 
 	while (--i >= 0)
-		putc(buf[i]);
+		kputc(buf[i]);
 }
 static void printptr(uint64_t x)
 {
 	kputs("0x");
 	for (int32_t i = 0; i < (sizeof(uint64_t) * 2); i++, x <<= 4)
-		putc(digits[x >> (sizeof(uint64_t) * 8 - 4)]);
+		kputc(digits[x >> (sizeof(uint64_t) * 8 - 4)]);
 }
 static int vprintf(const char *fmt, va_list ap)
 {
@@ -68,7 +68,7 @@ static int vprintf(const char *fmt, va_list ap)
 			if (c == '%') {
 				state = '%';
 			} else {
-				putc(c);
+				kputc(c);
 			}
 		} else if (state == '%') {
 			if (c == 'd') {
@@ -84,18 +84,18 @@ static int vprintf(const char *fmt, va_list ap)
 				if (s == 0)
 					s = "(null)";
 				while (*s != 0) {
-					putc(*s);
+					kputc(*s);
 					s++;
 				}
 			} else if (c == 'c') {
-				putc(va_arg(ap, uint32_t));
+				kputc(va_arg(ap, uint32_t));
 			} else if (c == '%') {
-				putc(c);
+				kputc(c);
 			} else {
 				// Unknown % sequence.  Print it to draw
 				// attention.
-				putc('%');
-				putc(c);
+				kputc('%');
+				kputc(c);
 			}
 			state = 0;
 		}

@@ -46,7 +46,7 @@ static pte_t *walk(pagetable_t pagetable, uint64_t va, int32_t alloc)
 			pagetable = (pagetable_t)PTE2PA(pte);
 		} else {   // this page is not valid
 			if (!alloc or
-			    (pagetable = (pde_t *)pages_alloc(1, 0)) == NULL)
+			    (pagetable = (pde_t *)pages_alloc(1)) == NULL)
 				return NULL;
 			memset(pagetable, 0, PGSIZE);
 			*(pte_t *)pte = PA2PTE(pagetable) | (level ? PTE_V : 0);
@@ -109,7 +109,7 @@ int32_t mappages(pagetable_t pagetable, uintptr_t va, size_t size, uintptr_t pa,
 static pagetable_t kvmmake()
 {
 	pagetable_t kpgtbl;
-	kpgtbl = (pagetable_t)pages_alloc(1, 0);
+	kpgtbl = (pagetable_t)pages_alloc(1);
 	memset(kpgtbl, 0, PGSIZE);
 	// uart registers
 	assert(mappages(kpgtbl, UART0, PGSIZE, UART0, PTE_R | PTE_W) != -1);
@@ -146,7 +146,7 @@ void kvminit()
 pagetable_t uvmcreate()
 {
 	pagetable_t pagetable;
-	pagetable = pages_alloc(1, 0);
+	pagetable = pages_alloc(1);
 	if (pagetable == NULL)
 		return NULL;
 	memset(pagetable, 0, PGSIZE);
@@ -371,7 +371,6 @@ int64_t uvmcopy(struct mm_struct *mm_new, struct mm_struct *mm_old)
 /**
  * @brief verify process p's vm-space before writing to user space, and
  * the name of this function comes from Linux-0.11
- *
  * @param p
  * @param vaddr
  * @param size
@@ -393,9 +392,10 @@ int32_t verify_area(struct mm_struct *mm, uintptr_t vaddr, size_t size,
 		return -1;
 	} else {
 		pte_t *pte = walk(mm->pagetable, vaddr, 1);
-		if (!get_variable_bit(*pte, PTE_V)) {
-			size_t npages = div_round_up(size, PGSIZE);
-			char *page_start = pages_alloc(npages, 0);
+		if (!get_var_bit(*pte, PTE_V)) {
+			size_t npages = div_round_up(
+				(vaddr + size) - PGROUNDDOWN(vaddr), PGSIZE);
+			char *page_start = pages_alloc(npages);
 			mappages(mm->pagetable, vaddr, PGSIZE * npages,
 				 (uintptr_t)page_start, targetperm | PTE_V);
 			if (vm_area_start->vm_file != NULL) {
@@ -421,12 +421,14 @@ void do_inst_page_fault(struct mm_struct *mm, uintptr_t fault_vaddr)
 	if (verify_area(mm, fault_vaddr, 4, PTE_X | PTE_R | PTE_U) != 0)
 		SEG_FAULT();
 }
+
 // todo: distinguish byte/half word/word/double word
 void do_ld_page_fault(struct mm_struct *mm, uintptr_t fault_vaddr)
 {
 	if (verify_area(mm, fault_vaddr, 8, PTE_R | PTE_W | PTE_U) != 0)
 		SEG_FAULT();
 }
+
 void do_sd_page_fault(struct mm_struct *mm, uintptr_t fault_vaddr)
 {
 	if (verify_area(mm, fault_vaddr, 8, PTE_R | PTE_W | PTE_U) != 0)
@@ -437,15 +439,14 @@ void do_sd_page_fault(struct mm_struct *mm, uintptr_t fault_vaddr)
 
 /**
  * @brief Copy from kernel to user. Copy len bytes to dst from virtual
- * address srcva in a given page table. And return 0 on success, -1 on
- * error
+ * address srcva in a given page table. And return
  * @param pagetable
  * @param dst
  * @param srcva
  * @param len
- * @return int64_t
+ * @return int32_t: 0 on success, -1 on error.
  */
-int64_t copyin(pagetable_t pagetable, void *dst, void *srcva, uint64_t len)
+int32_t copyin(pagetable_t pagetable, void *dst, void *srcva, uint64_t len)
 {
 	uint64_t n, va0, pa0;
 	uintptr_t src_vaddr = (uintptr_t)srcva;
@@ -470,13 +471,12 @@ int64_t copyin(pagetable_t pagetable, void *dst, void *srcva, uint64_t len)
 /**
  * @brief Copy a null-terminated string from user to kernel.
  * Copy bytes to dst from virtual address srcva in a given page table,
- * until a
- * '\0', or max. Return 0 on success, -1 on error.
+ * until a '\0', or max.
  * @param pagetable
  * @param dst
  * @param srcva
  * @param max
- * @return int32_t
+ * @return int32_t: 0 on success, -1 on error.
  */
 int32_t copyin_string(pagetable_t pagetable, char *dst, uintptr_t srcva,
 		      uint64_t max)
@@ -514,13 +514,12 @@ int32_t copyin_string(pagetable_t pagetable, char *dst, uintptr_t srcva,
 
 /**
  * @brief Copy from kernel to user. Copy len bytes from src to virtual
- * address dstva in a given page table. And return 0 on success, -1 on
- * error.
+ * address dstva in a given page table.
  * @param pagetable
  * @param dstva
  * @param src
  * @param len
- * @return int32_t
+ * @return int32_t: 0 on success, -1 on error.
  */
 int32_t copyout(pagetable_t pagetable, void *dstva, void *src, uint64_t len)
 {
@@ -542,4 +541,44 @@ int32_t copyout(pagetable_t pagetable, void *dstva, void *src, uint64_t len)
 		dst_vaddr = va0 + PGSIZE;
 	}
 	return 0;
+}
+
+/**
+ * @brief Copy from either a user address, or kernel address, depending
+ * on usr_src.
+ * @param user_src
+ * @param dst
+ * @param src
+ * @param len
+ * @return int32_t: 0 on success, -1 on error.
+ */
+int32_t either_copyin(int32_t user_src, void *dst, void *src, uint64_t len)
+{
+	struct proc_t *p = myproc();
+	if (user_src)
+		return copyin(p->mm->pagetable, dst, src, len);
+	else {
+		memcpy(dst, src, len);
+		return 0;
+	}
+}
+
+/**
+ * @brief Copy to either a user address, or kernel address, depending on
+ * usr_dst.
+ * @param user_dst
+ * @param dst
+ * @param src
+ * @param len
+ * @return int32_t: 0 on success, -1 on error.
+ */
+int32_t either_copyout(int32_t user_dst, void *dst, void *src, uint64_t len)
+{
+	struct proc_t *p = myproc();
+	if (user_dst)
+		return copyout(p->mm->pagetable, dst, src, len);
+	else {
+		memcpy(dst, src, len);
+		return 0;
+	}
 }

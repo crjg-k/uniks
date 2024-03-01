@@ -90,10 +90,12 @@ int32_t verify_area(struct mm_struct *mm, uintptr_t vaddr, size_t size,
 
 /* === transmit data between kernel and user process space === */
 
-int64_t copyin(pagetable_t pagetable, void *dst, void *srcva, uint64_t len);
+int32_t copyin(pagetable_t pagetable, void *dst, void *srcva, uint64_t len);
 int32_t copyin_string(pagetable_t pagetable, char *dst, uintptr_t srcva,
 		      uint64_t max);
 int32_t copyout(pagetable_t pagetable, void *dstva, void *src, uint64_t len);
+int32_t either_copyin(int32_t user_src, void *dst, void *src, uint64_t len);
+int32_t either_copyout(int32_t user_dst, void *dst, void *src, uint64_t len);
 
 
 #endif /* ! __KERNEL_MM_VM_H__*/

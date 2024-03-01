@@ -35,7 +35,7 @@ typedef uint64_t pte_t;	  // page table entry
 typedef uint64_t pde_t;	  // page directory entry
 
 typedef int32_t pid_t;
-typedef int32_t dev_t;
+typedef uint32_t dev_t;
 
 
 #endif /* !__TYPES_H__ */
