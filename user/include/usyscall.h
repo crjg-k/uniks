@@ -46,12 +46,14 @@
 
 // system call
 int fork();
+int open(const char *pathname, int flags);
 int read(int fd, char *buf, long count);
 int write(int fd, char *buf, long count);
 int getpid();
 int msleep(int msec);
 int waitpid(int pid, int *status);
 void exit(int status);
+int dup(int oldfd);
 
 #endif
 

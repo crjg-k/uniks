@@ -75,8 +75,8 @@ extern struct uart_struct_t uart_struct;
 
 void uart_init();
 char uart_getchar();
-int32_t uart_read(void *uartptr, void *buf, size_t cnt);
-int32_t uart_write(void *uartptr, void *buf, size_t cnt);
+int64_t uart_read(void *uartptr, int32_t user_dst, void *buf, size_t cnt);
+int64_t uart_write(void *uartptr, int32_t user_src, void *buf, size_t cnt);
 void do_uart_interrupt(void *uartptr);
 
 

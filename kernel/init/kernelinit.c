@@ -1,5 +1,5 @@
 /**
- * @file init.c
+ * @file kernelinit.c
  * @author crjg-k (crjg-k@qq.com)
  * @brief
  * @version 0.1

@@ -1,9 +1,7 @@
-#ifdef UNIKS
-	#include <ulib.h>
-	#include <usyscall.h>
-#else
-	#include <stdio.h>
-#endif
+#include <ufcntl.h>
+#include <ustdio.h>
+#include <usyscall.h>
+
 
 int fib(int n)
 {

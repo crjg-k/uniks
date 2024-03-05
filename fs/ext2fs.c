@@ -37,13 +37,12 @@ static void readgdt(dev_t dev, char *gd)
 
 void ext2fs_init(dev_t dev)
 {
-	readsb(dev, &m_sb.d_sb_content);
-	assert(m_sb.d_sb_content.s_magic == EXT2_SUPER_MAGIC);
-	assert(BLKSIZE == (1024 << m_sb.d_sb_content.s_log_block_size));
-	assert(sizeof(struct ext2_inode_t) == m_sb.d_sb_content.s_inode_size);
-	assert(EXT2_GRP_NUM ==
-	       (1 + (m_sb.d_sb_content.s_blocks_count - 1) /
-			    m_sb.d_sb_content.s_blocks_per_group));
+	readsb(dev, &m_sb.d_sb_ctnt);
+	assert(m_sb.d_sb_ctnt.s_magic == EXT2_SUPER_MAGIC);
+	assert(BLKSIZE == (1024 << m_sb.d_sb_ctnt.s_log_block_size));
+	assert(sizeof(struct ext2_inode_t) == m_sb.d_sb_ctnt.s_inode_size);
+	assert(EXT2_GRP_NUM == (1 + (m_sb.d_sb_ctnt.s_blocks_count - 1) /
+					    m_sb.d_sb_ctnt.s_blocks_per_group));
 	m_sb.sb_dev = dev;
 
 	readgdt(dev, group_descs_table);
@@ -99,7 +98,7 @@ static int64_t balloc(dev_t dev, uint32_t grp_no)
 			set_allocated_bit(bb->b_data, freeno);
 			blk_write_over(bb);
 			return freeno +
-			       m_sb.d_sb_content.s_blocks_per_group * grp_no;
+			       m_sb.d_sb_ctnt.s_blocks_per_group * grp_no;
 		}
 		blk_release(bb);
 	}
@@ -116,7 +115,7 @@ static int64_t balloc(dev_t dev, uint32_t grp_no)
 		}
 		blk_release(bb);
 
-		bnum += m_sb.d_sb_content.s_blocks_per_group;
+		bnum += m_sb.d_sb_ctnt.s_blocks_per_group;
 	}
 	return -1;
 }
@@ -124,8 +123,8 @@ static int64_t balloc(dev_t dev, uint32_t grp_no)
 // Free a disk block.
 static void bfree(dev_t dev, uint32_t blk_no)
 {
-	uint32_t g_idx = blk_no / m_sb.d_sb_content.s_blocks_per_group;
-	uint32_t blk_offset = blk_no % m_sb.d_sb_content.s_blocks_per_group;
+	uint32_t g_idx = blk_no / m_sb.d_sb_ctnt.s_blocks_per_group;
+	uint32_t blk_offset = blk_no % m_sb.d_sb_ctnt.s_blocks_per_group;
 	struct blkbuf_t *bb = blk_read(dev, group_descs[g_idx].bg_block_bitmap);
 	clear_var_bit(bb->b_data[blk_offset / (sizeof(char) * 8)],
 		      1 << (blk_offset % (sizeof(char) * 8)));
@@ -201,7 +200,7 @@ struct m_inode_t *ialloc(dev_t dev)
 		}
 		blk_release(bb);
 
-		inum += m_sb.d_sb_content.s_inodes_per_group;
+		inum += m_sb.d_sb_ctnt.s_inodes_per_group;
 	}
 	return NULL;
 }
@@ -209,8 +208,8 @@ struct m_inode_t *ialloc(dev_t dev)
 // Free a inode in inode table
 static void ifree(dev_t dev, uint32_t i_no)
 {
-	uint32_t g_idx = i_no / m_sb.d_sb_content.s_inodes_per_group;
-	uint32_t i_offset = EXT2_IOFFSET_OFGRP(i_no, m_sb.d_sb_content);
+	uint32_t g_idx = i_no / m_sb.d_sb_ctnt.s_inodes_per_group;
+	uint32_t i_offset = EXT2_IOFFSET_OFGRP(i_no, m_sb.d_sb_ctnt);
 	struct blkbuf_t *bb = blk_read(dev, group_descs[g_idx].bg_inode_bitmap);
 	clear_var_bit(bb->b_data[i_offset / (sizeof(char) * 8)],
 		      1 << (i_offset % (sizeof(char) * 8)));
@@ -226,6 +225,7 @@ static void ifree(dev_t dev, uint32_t i_no)
 struct m_inode_t *idup(struct m_inode_t *ip)
 {
 	acquire(&inode_table.lock);
+	assert(ip->i_count >= 1);
 	ip->i_count++;
 	release(&inode_table.lock);
 	return ip;
@@ -240,11 +240,11 @@ void ilock(struct m_inode_t *ip)
 	mutex_acquire(&ip->i_mtx);
 	if (ip->i_valid == 0) {
 		struct blkbuf_t *bb = blk_read(
-			ip->i_dev, EXT2_IBLOCK_NO(ip->i_no, m_sb.d_sb_content));
+			ip->i_dev, EXT2_IBLOCK_NO(ip->i_no, m_sb.d_sb_ctnt));
 		void *tar_ip =
 			((struct ext2_inode_t *)bb->b_data +
-			 EXT2_IOFFSET_OFGRP(ip->i_no, m_sb.d_sb_content) % IPB);
-		memcpy(ip, tar_ip, sizeof(ip->d_inode_content));
+			 EXT2_IOFFSET_OFGRP(ip->i_no, m_sb.d_sb_ctnt) % IPB);
+		memcpy(ip, tar_ip, sizeof(ip->d_inode_ctnt));
 		blk_release(bb);
 		ip->i_valid = 1;
 	}
@@ -272,7 +272,7 @@ void iput(struct m_inode_t *ip)
 	acquire(&inode_table.lock);
 
 	if (ip->i_count == 1 and ip->i_valid and
-	    ip->d_inode_content.i_links_count == 0) {
+	    ip->d_inode_ctnt.i_links_count == 0) {
 		/**
 		 * @brief ip->i_count == 1 means no other process can have ip
 		 * locked, so this mutex_acquire() won't block (or deadlock).
@@ -315,11 +315,11 @@ void iupdate(struct m_inode_t *ip)
 {
 	assert(ip->i_valid == 1);
 
-	struct blkbuf_t *bb = blk_read(
-		ip->i_dev, EXT2_IBLOCK_NO(ip->i_no, m_sb.d_sb_content));
+	struct blkbuf_t *bb =
+		blk_read(ip->i_dev, EXT2_IBLOCK_NO(ip->i_no, m_sb.d_sb_ctnt));
 	void *tar_ip = ((struct ext2_inode_t *)bb->b_data +
-			EXT2_IOFFSET_OFGRP(ip->i_no, m_sb.d_sb_content) % IPB);
-	memcpy(tar_ip, ip, sizeof(ip->d_inode_content));
+			EXT2_IOFFSET_OFGRP(ip->i_no, m_sb.d_sb_ctnt) % IPB);
+	memcpy(tar_ip, ip, sizeof(ip->d_inode_ctnt));
 	blk_release(bb);
 	ip->i_valid = 0;
 }
@@ -342,11 +342,11 @@ uint32_t bmap(struct m_inode_t *ip, uint32_t blk_no)
 	assert(blk_no < EXT2_TIND_LIMIT);
 
 	if (blk_no < EXT2_NDIR_BLOCKS) {
-		if ((baddr = ip->d_inode_content.i_block[blk_no]) == 0) {
+		if ((baddr = ip->d_inode_ctnt.i_block[blk_no]) == 0) {
 			baddr = balloc(ip->i_dev, ip->i_block_group);
 			if (baddr == 0)
 				return 0;
-			ip->d_inode_content.i_block[blk_no] = baddr;
+			ip->d_inode_ctnt.i_block[blk_no] = baddr;
 		}
 		return baddr;
 	}
@@ -366,11 +366,11 @@ uint32_t bmap(struct m_inode_t *ip, uint32_t blk_no)
 		divisor = EXT2_IND_PER_BLK * EXT2_IND_PER_BLK;
 		primary_layer = EXT2_TIND_BLOCK;
 	}
-	if ((baddr = ip->d_inode_content.i_block[primary_layer]) == 0) {
+	if ((baddr = ip->d_inode_ctnt.i_block[primary_layer]) == 0) {
 		baddr = balloc(ip->i_dev, ip->i_block_group);
 		if (baddr == 0)
 			return 0;
-		ip->d_inode_content.i_block[primary_layer] = baddr;
+		ip->d_inode_ctnt.i_block[primary_layer] = baddr;
 	}
 	while (divisor != 0) {
 		bb = blk_read(ip->i_dev, baddr);
@@ -405,11 +405,11 @@ static void recursively_release(int32_t layer, struct m_inode_t *ip,
 			recursively_release(layer - 1, ip, index[i]);
 		else {
 			bfree(ip->i_dev, index[i]);
-			ip->d_inode_content.i_blocks -= BLKSIZE / SECTORSIZE;
+			ip->d_inode_ctnt.i_blocks -= BLKSIZE / SECTORSIZE;
 		}
 	}
 	bfree(ip->i_dev, blk_no);
-	ip->d_inode_content.i_blocks -= BLKSIZE / SECTORSIZE;
+	ip->d_inode_ctnt.i_blocks -= BLKSIZE / SECTORSIZE;
 	blk_release(bb);
 }
 
@@ -417,22 +417,22 @@ static void recursively_release(int32_t layer, struct m_inode_t *ip,
 void itruncate(struct m_inode_t *ip)
 {
 	for (int32_t i = 0; i < EXT2_NDIR_BLOCKS; i++) {
-		if (ip->d_inode_content.i_block[i]) {
-			bfree(ip->i_dev, ip->d_inode_content.i_block[i]);
-			ip->d_inode_content.i_block[i] = 0;
+		if (ip->d_inode_ctnt.i_block[i]) {
+			bfree(ip->i_dev, ip->d_inode_ctnt.i_block[i]);
+			ip->d_inode_ctnt.i_block[i] = 0;
 		}
 	}
 
 	// multi-level indirect index
 	for (int32_t i = 0; i < 3; i++) {
 		uint32_t blk_no =
-			ip->d_inode_content.i_block[EXT2_NDIR_BLOCKS + i];
+			ip->d_inode_ctnt.i_block[EXT2_NDIR_BLOCKS + i];
 		if (blk_no != 0)
 			recursively_release(i, ip, blk_no);
 	}
 
-	assert(ip->d_inode_content.i_blocks == 0);
-	ip->d_inode_content.i_size = 0;
+	assert(ip->d_inode_ctnt.i_blocks == 0);
+	ip->d_inode_ctnt.i_size = 0;
 	iupdate(ip);
 }
 
@@ -452,10 +452,10 @@ int64_t readi(struct m_inode_t *ip, int32_t user_dst, char *dst, uint64_t off,
 	uint64_t tot, m;
 	struct blkbuf_t *bb;
 
-	if (off > ip->d_inode_content.i_size or off + n < off)
+	if (off > ip->d_inode_ctnt.i_size or off + n < off)
 		return 0;
-	if (off + n > ip->d_inode_content.i_size)
-		n = ip->d_inode_content.i_size - off;
+	if (off + n > ip->d_inode_ctnt.i_size)
+		n = ip->d_inode_ctnt.i_size - off;
 
 	for (tot = 0; tot < n; tot += m, off += m, dst += m) {
 		uint64_t addr = bmap(ip, off / BLKSIZE);
@@ -488,13 +488,13 @@ int64_t readi(struct m_inode_t *ip, int32_t user_dst, char *dst, uint64_t off,
 struct m_inode_t *dirlookup(struct m_inode_t *ip, char *name, uint64_t *poff)
 {
 	uint64_t off;
-	char tmp[EXT2_DIRENTRY_MAXSIZE];
-	struct ext2_dir_entry_t *de = (struct ext2_dir_entry_t *)tmp;
+	char tmp_de[EXT2_DIRENTRY_MAXSIZE];
+	struct ext2_dir_entry_t *de = (struct ext2_dir_entry_t *)tmp_de;
 
-	assert(S_ISDIR(ip->d_inode_content.i_mode));
+	assert(S_ISDIR(ip->d_inode_ctnt.i_mode));
 
-	for (off = 0; off < ip->d_inode_content.i_size; off += de->rec_len) {
-		readi(ip, 0, tmp, off, EXT2_DIRENTRY_MAXSIZE);
+	for (off = 0; off < ip->d_inode_ctnt.i_size; off += de->rec_len) {
+		readi(ip, 0, tmp_de, off, EXT2_DIRENTRY_MAXSIZE);
 		if (de->inode == 0)
 			continue;
 		if (strncmp(name, de->name, de->name_len) == 0) {
@@ -566,8 +566,10 @@ static struct m_inode_t *namex(char *path, int nameiparent, char *name)
 		ip = idup(myproc()->cwd);
 
 	while ((path = skipelem(path, name)) != 0) {
+		if (strncmp(name, ".", 1) == 0)
+			continue;
 		ilock(ip);
-		assert(S_ISDIR(ip->d_inode_content.i_mode));
+		assert(S_ISDIR(ip->d_inode_ctnt.i_mode));
 		if (nameiparent and *path == '\0') {
 			// Stop one level early.
 			iunlock(ip);

@@ -1,4 +1,5 @@
 #include "ksyscall.h"
+#include <mm/vm.h>
 #include <process/proc.h>
 #include <uniks/kassert.h>
 #include <uniks/kstdio.h>
@@ -18,6 +19,19 @@ uint64_t argufetch(struct proc_t *p, int32_t n)
 	assert(n <= 5);
 	return ((uint64_t *)((char *)p->tf +
 			     offsetof(struct trapframe_t, a0)))[n];
+}
+
+/**
+ * @brief Fetch the nth word-sized system call argument as a null-terminated
+ * string. Copies into buf, at most max. Returns
+ * @param addr
+ * @param buf
+ * @param max
+ * @return int32_t: string length if OK (including '\0'), -1 if error.
+ */
+int32_t argstrfetch(uintptr_t addr, char *buf, int32_t max)
+{
+	return copyin_string(myproc()->mm->pagetable, buf, addr, max);
 }
 
 

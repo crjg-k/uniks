@@ -260,7 +260,7 @@ struct ext2_dir_entry_2_t {
 
 // in-memory copy of super_block
 struct m_super_block_t {
-	struct ext2_super_block_t d_sb_content;
+	struct ext2_super_block_t d_sb_ctnt;
 
 	// Below are only in memory
 	dev_t sb_dev;	// the device number that the sb lay
@@ -268,9 +268,9 @@ struct m_super_block_t {
 
 // in-memory copy of an inode
 struct m_inode_t {
-	struct ext2_inode_t d_inode_content;
+	struct ext2_inode_t d_inode_ctnt;
 
-	// protects everything above here
+	// protects competitive variables above here
 	struct mutex_t i_mtx;
 
 	// Below are only in memory

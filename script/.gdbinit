@@ -1,6 +1,6 @@
 set confirm off
 set architecture riscv:rv64
-target remote 127.0.0.1:8964
+target remote 127.0.0.1:2952
 symbol-file bin/kernel.elf
 set disassemble-next-line on
 set riscv use-compressed-breakpoints yes

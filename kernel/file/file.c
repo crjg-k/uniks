@@ -1,4 +1,6 @@
 #include "file.h"
+#include "kfcntl.h"
+#include <device/device.h>
 #include <process/proc.h>
 #include <sync/spinlock.h>
 #include <uniks/errno.h>
@@ -12,91 +14,134 @@ void sys_ftable_init()
 {
 	initlock(&fcbtable.lock, "fcbtable");
 	INIT_LIST_HEAD(&fcbtable.wait_list);
-	for (int32_t i = 0; i < NFILE; i++)
+	for (int32_t i = 1; i < NFILE; i++) {
+		mutex_init(&fcbtable.files[i].f_mtx, "fcblock");
 		fcbtable.files[i].f_count = 0;
+	}
 
 	queue_init(&fcbtable.qm, NFILE, fcbtable.idle_fcb_queue_array);
-	for (int32_t i = 0; i < NFILE; i++)
+	for (int32_t i = 1; i < NFILE; i++)
 		queue_push_int32type(&fcbtable.qm, i);
 }
 
-// allocate an idle file structure entry in fcb table
-struct file_t *file_alloc()
+// Allocate an idle file structure entry in fcb table
+int32_t file_alloc()
 {
 	acquire(&fcbtable.lock);
 	while (queue_empty(&fcbtable.qm)) {
 		proc_block(&fcbtable.wait_list, &fcbtable.lock);
 	}
+	assert(!queue_empty(&fcbtable.qm));
+
 	int32_t idlefcb = *(int32_t *)queue_front_int32type(&fcbtable.qm);
-	queue_pop(&fcbtable.qm);
+	queue_front_pop(&fcbtable.qm);
 	assert(fcbtable.files[idlefcb].f_count == 0);
-	fcbtable.files[idlefcb].f_count++;
 	release(&fcbtable.lock);
-	return &fcbtable.files[idlefcb];
+	return idlefcb;
 }
 
-// Increment ref count for file f.
-void file_dup(struct file_t *f)
+// Increment ref count for file fcb_no.
+void file_dup(int32_t fcb_no)
 {
-	acquire(&fcbtable.lock);
+	struct file_t *f = &fcbtable.files[fcb_no];
+	mutex_acquire(&f->f_mtx);
 	assert(f->f_count >= 1);
 	f->f_count++;
-	release(&fcbtable.lock);
+	mutex_release(&f->f_mtx);
 }
 
-// free a file structure entry pointed by pointer f
-static void file_free(struct file_t *f)
-{
-	queue_push_int32type(&fcbtable.qm, f - fcbtable.files);
-	proc_unblock_all(&fcbtable.wait_list);
-}
-
-// Close file f.  (Decrement ref count, close when reaches 0.)
-void file_close(struct file_t *f)
+// Free a file structure entry
+void file_free(int32_t fcb_no)
 {
 	acquire(&fcbtable.lock);
-	if (--f->f_count > 0)
-		goto over;
-
-	assert(f->f_count == 0);
-	file_free(f);
-over:
+	queue_push_int32type(&fcbtable.qm, fcb_no);
+	proc_unblock_all(&fcbtable.wait_list);
 	release(&fcbtable.lock);
 }
 
-// Read from file f.
-// addr is a user virtual address.
-int32_t file_read(struct file_t *f, uint64_t addr, int32_t cnt)
+// Close file fcb_no. (Decrement ref count, close when reaches 0.)
+void file_close(int32_t fcb_no)
 {
-	int32_t res = -1;
-	if (f->f_flags)
-		goto ret;
+	struct file_t *f = &fcbtable.files[fcb_no];
+	mutex_acquire(&f->f_mtx);
+	if (--f->f_count == 0) {
+		if (S_ISCHR(f->f_inode->d_inode_ctnt.i_mode) or
+		    S_ISREG(f->f_inode->d_inode_ctnt.i_mode) or
+		    S_ISDIR(f->f_inode->d_inode_ctnt.i_mode)) {
+			iput(f->f_inode);
+		}
+		mutex_release(&f->f_mtx);
+		file_free(fcb_no);
+	} else
+		mutex_release(&f->f_mtx);
+}
 
-	verify_area(myproc()->mm, addr, cnt, PTE_R | PTE_W | PTE_U);
-	// struct m_inode_info_t *inode = f->f_inode;
+// Read from file f. Addr is a user virtual address.
+int64_t file_read(struct file_t *f, void *addr, int32_t cnt)
+{
+	int64_t res = -EINVAL;
+	if (!READABLE(f->f_flags))
+		goto ret2;
+
+	assert(verify_area(myproc()->mm, (uintptr_t)addr, cnt,
+			   PTE_R | PTE_W | PTE_U) != -1);
+	struct m_inode_t *inode = f->f_inode;
+	mutex_acquire(&f->f_mtx);
+
 	// if PIPE
+	if (S_ISFIFO(inode->d_inode_ctnt.i_mode)) {
+		goto ret1;
+	}
 
-	// else if DEVICE
+	ilock(inode);
+	// else if character DEVICE
+	if (S_ISCHR(inode->d_inode_ctnt.i_mode)) {
+		res = device_read(inode->d_inode_ctnt.i_block[0], 1, addr, cnt);
+	}
+	// else if ordinary file or directory
+	else if (S_ISREG(inode->d_inode_ctnt.i_mode) or
+		 S_ISDIR(inode->d_inode_ctnt.i_mode)) {
+		res = readi(inode, 1, addr, f->f_pos, cnt);
+		f->f_pos += res;
+	}
 
-	// else if ordinary disk file, both directory or common file are okay
-ret:
+	iunlock(inode);
+ret1:
+	mutex_release(&f->f_mtx);
+ret2:
 	return res;
 }
 
-// Write to file f.
-// addr is a user virtual address.
-int32_t file_write(struct file_t *f, uint64_t addr, int32_t cnt)
+// Write to file f. Addr is a user virtual address.
+int64_t file_write(struct file_t *f, void *addr, int32_t cnt)
 {
-	int32_t res = -1;
-	if (f->f_flags)
-		goto ret;
-	// struct m_inode_info_t *inode = f->f_inode;
-ret:
-	return res;
-}
+	int64_t res = -EINVAL;
+	if (!WRITEABLE(f->f_flags))
+		goto ret2;
 
-// Init fs
-void fsinit(dev_t dev)
-{
-	ext2fs_init(dev);
+	struct m_inode_t *inode = f->f_inode;
+	mutex_acquire(&f->f_mtx);
+
+	// if PIPE
+	if (S_ISFIFO(inode->d_inode_ctnt.i_mode)) {
+		goto ret1;
+	}
+
+	ilock(inode);
+	// else if character DEVICE
+	if (S_ISCHR(inode->d_inode_ctnt.i_mode)) {
+		res = device_write(inode->d_inode_ctnt.i_block[0], 1, addr,
+				   cnt);
+	}
+	// else if ordinary file or directory
+	else if (S_ISREG(inode->d_inode_ctnt.i_mode) or
+		 S_ISDIR(inode->d_inode_ctnt.i_mode)) {
+		BUG();
+	}
+
+	iunlock(inode);
+ret1:
+	mutex_release(&f->f_mtx);
+ret2:
+	return res;
 }

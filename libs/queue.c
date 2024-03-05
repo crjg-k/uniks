@@ -49,11 +49,20 @@ void queue_push_chartype(struct queue_meta_t *q, char push_data)
 	q->queue_size++;
 }
 
-void queue_pop(struct queue_meta_t *q)
+void queue_front_pop(struct queue_meta_t *q)
 {
 	assert(!queue_empty(q));
 	q->queue_head++;
 	if (q->queue_head >= q->queue_capacity)
 		q->queue_head -= q->queue_capacity;
+	q->queue_size--;
+}
+
+void queue_back_pop(struct queue_meta_t *q)
+{
+	assert(!queue_empty(q));
+	q->queue_tail--;
+	if (q->queue_tail <= 0)
+		q->queue_tail += q->queue_capacity;
 	q->queue_size--;
 }

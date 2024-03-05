@@ -104,8 +104,11 @@ QFLAGS = \
 	-global virtio-mmio.force-legacy=false \
 	-drive file=${DISKIMG},if=none,format=raw,id=x0 \
 	-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
-QEMUGDB = \
+QEMUGDB1 = \
+	-gdb tcp::2952
+QEMUGDB2 = \
 	-gdb tcp::8964
+
 
 ifeq ($(QEMULOG), trace)
 	QFLAGS += -D ${QEMULOGPATH} -d exec
@@ -118,12 +121,12 @@ qemu: build
 
 .PHONY: debug
 debug: build
-	${QEMU} ${QFLAGS} -S ${QEMUGDB}&
+	${QEMU} ${QFLAGS} -S ${QEMUGDB1}&
 	${GDB} bin/kernel.elf -q -x script/.gdbinit
 
 .PHONY: debug-back
 debug-back: build
-	${QEMU} ${QFLAGS} -S ${QEMUGDB}
+	${QEMU} ${QFLAGS} -S ${QEMUGDB1}
 
 .PHONY: debug-front
 debug-front:
@@ -131,7 +134,7 @@ debug-front:
 
 .PHONY: debug-vscode
 debug-vscode: build
-	${QEMU} ${QFLAGS} -S ${QEMUGDB}
+	${QEMU} ${QFLAGS} -S ${QEMUGDB2}
 
 .PHONY: dump
 dump: build
@@ -148,13 +151,21 @@ ${DISKIMG}:
 # below command acquire Linux's root user
 .PHONY: fs
 fs:
-	mkdir uniksfs
+	make disk.img
+	$(shell if [ ! -e uniksfs ]; then mkdir uniksfs; fi)
 	sudo mount disk.img uniksfs
-	cp ./user/src/rwblk.c ./uniksfs
+	mkdir ./uniksfs/dev ./uniksfs/bin  ./uniksfs/root
+	mknod ./uniksfs/dev/tty2 c 00 36
+	mknod ./uniksfs/dev/tty1 c 00 37
+	mknod ./uniksfs/dev/tty0 c 00 38
+	mknod ./uniksfs/dev/vda b 00 01
+	mknod ./uniksfs/dev/null c 00 00
+	cp ./user/bin/* ./uniksfs/bin/
 	umount uniksfs
-	rm -r uniksfs
 
 PROPERTIES = .vscode/c_cpp_properties.json
+LAUNCH = .vscode/launch.json
+TASKS = .vscode/tasks.json
 .PHONY: vscode
 vscode:
 	@echo Generating ${PROPERTIES}...
@@ -178,6 +189,46 @@ vscode:
 	@echo "	]," >> ${PROPERTIES}
 	@echo "	\"version\": 4" >> ${PROPERTIES}
 	@echo "}" >> ${PROPERTIES}
+	@echo Done.
+	@echo Generating ${LAUNCH}...
+	@echo '{' > ${LAUNCH}
+	@echo '	"version": "0.1.0",' >> ${LAUNCH}
+	@echo '	"configurations": [' >> ${LAUNCH}
+	@echo '		{' >> ${LAUNCH}
+	@echo '			"name": "uniks-debug",' >> ${LAUNCH}
+	@echo '			"type": "cppdbg",' >> ${LAUNCH}
+	@echo '			"request": "launch",' >> ${LAUNCH}
+	@echo '			"program": "$${workspaceFolder}/bin/kernel.elf",' >> ${LAUNCH}
+	@echo '			"cwd": "$${workspaceFolder}",' >> ${LAUNCH}
+	@echo '			"stopAtEntry": true,' >> ${LAUNCH}
+	@echo '			"miDebuggerServerAddress": "localhost:8964",' >> ${LAUNCH}
+	@echo '			"miDebuggerPath": "gdb-multiarch",' >> ${LAUNCH}
+	@echo '			"MIMode": "gdb",' >> ${LAUNCH}
+	@echo '			"preLaunchTask": "make-debug",' >> ${LAUNCH}
+	@echo '			"setupCommands": [' >> ${LAUNCH}
+	@echo '				{' >> ${LAUNCH}
+	@echo '					"description": "Enable pretty-printing for gdb",' >> ${LAUNCH}
+	@echo '					"text": "-enable-pretty-printing",' >> ${LAUNCH}
+	@echo '					"ignoreFailures": true' >> ${LAUNCH}
+	@echo '				}' >> ${LAUNCH}
+	@echo '			]' >> ${LAUNCH}
+	@echo '		}' >> ${LAUNCH}
+	@echo '	]' >> ${LAUNCH}
+	@echo '}' >> ${LAUNCH}
+	@echo Done.
+	@echo Generating ${TASKS}...
+	@echo '{' > ${TASKS}
+	@echo '	"tasks": [' >> ${TASKS}
+	@echo '		{' >> ${TASKS}
+	@echo '			"label": "make-debug",' >> ${TASKS}
+	@echo '			"command": "make",' >> ${TASKS}
+	@echo '			"args": ["debug-vscode"],' >> ${TASKS}
+	@echo '			"isBackground": true,' >> ${TASKS}
+	@echo '			"problemMatcher": "$$gcc"' >> ${TASKS}
+	@echo '		}' >> ${TASKS}
+	@echo '	],' >> ${TASKS}
+	@echo '	"version": "2.0.0"' >> ${TASKS}
+	@echo '}' >> ${TASKS}
 	@echo Done.
 
 .PHONY: clean

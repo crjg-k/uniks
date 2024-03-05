@@ -129,8 +129,8 @@ struct virtio_blk_req_t {
 
 
 void virtio_disk_init();
-void virtio_disk_read(void *ttyptr, struct blkbuf_t *bb, size_t cnt);
-void virtio_disk_write(void *ttyptr, struct blkbuf_t *bb, size_t cnt);
+int64_t virtio_disk_read(void *virtio_ptr, int32_t user_dst, struct blkbuf_t *bb, size_t cnt);
+int64_t virtio_disk_write(void *virtio_ptr, int32_t user_src, struct blkbuf_t *bb, size_t cnt);
 void do_virtio_disk_interrupt(void *ptr);
 
 

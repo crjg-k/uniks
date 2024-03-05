@@ -11,30 +11,30 @@
 
 
 .section .rodata
-# char file[] = "/bin/echo";
+# char file[] = "/bin/init";
 file:
-	.string "/bin/echo"
+	.string "/bin/init"
 # char *argv[]={"hello", "uniks", "world", NULL};
 .LC0:
-        .string "hello"
+	.string "hello"
 .LC1:
-        .string "uniks"
+	.string "uniks"
 .LC2:
-        .string "world"
+	.string "world"
 argv:
-        .dword  .LC0
-        .dword  .LC1
-        .dword  .LC2
-        .dword  0
-# char *envp[]={"HOME=/", "PATH=/bin", NULL};
+	.dword .LC0
+	.dword .LC1
+	.dword .LC2
+	.dword 0
+# char *envp[]={"HOME=/root", "PATH=/bin", NULL};
 .LC3:
-        .string "HOME=/"
+	.string "HOME=/root"
 .LC4:
-        .string "PATH=/bin"
+	.string "PATH=/bin"
 envp:
-        .dword  .LC3
-        .dword  .LC4
-        .dword  0
+	.dword .LC3
+	.dword .LC4
+	.dword 0
 
 .section .text
 _start:
@@ -47,5 +47,5 @@ _start:
 
 # exit(-1);
 	li a7, SYS_exit
-	li a0,-1
+	li a0, -1
 	ecall

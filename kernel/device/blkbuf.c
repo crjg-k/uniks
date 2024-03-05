@@ -144,11 +144,11 @@ struct blkbuf_t *blk_read(dev_t dev, uint32_t blockno)
 	if (bb->b_dirty) {
 		// write-back strategy
 		assert(bb->b_data != NULL);
-		devices[dev].write(devices[dev].ptr, bb, PGSIZE);
+		device_write(dev, 0, bb, PGSIZE);
 		bb->b_dirty = 0;
 	}
 	if (bb->b_valid == 0)
-		devices[dev].read(devices[dev].ptr, bb, PGSIZE);
+		device_read(dev, 0, bb, PGSIZE);
 	/**
 	 * @brief If disk operation success, bb->b_valid will be set as 1 in
 	 * do_virtio_disk_interrupt().
@@ -176,8 +176,7 @@ void blk_sync_all()
 		mutex_acquire(&bb->b_mtx);
 		if (bb->b_dirty) {
 			assert(bb->b_data != NULL);
-			devices[bb->b_dev].write(devices[bb->b_dev].ptr, bb,
-						  PGSIZE);
+			device_write(bb->b_dev, 0, bb, PGSIZE);
 			bb->b_dirty = 0;
 		}
 		mutex_release(&bb->b_mtx);

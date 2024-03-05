@@ -155,12 +155,9 @@ void virtio_disk_init()
 
 	// software-layer initialize
 	INIT_LIST_HEAD(&disk.wait_list);
-	struct device_t *devptr = &devices[VIRTIO_IRQ];
 	device_install(DEV_BLOCK, DEV_EXTERNAL_STORAGE, &disk, "virtio_disk", 0,
 		       do_virtio_disk_interrupt, NULL, virtio_disk_read,
-		       virtio_disk_write, devptr);
-
-	// plic.c and trap.c arrange for interrupts from VIRTIO_IRQ.
+		       virtio_disk_write, &devices[VIRTIO_IRQ]);
 }
 
 // find a free descriptor, mark it non-free, then return its index
@@ -338,16 +335,22 @@ void do_virtio_disk_interrupt(void *ptr)
 	release(&disk.virtio_disk_lock);
 }
 
-void virtio_disk_read(void *ttyptr, struct blkbuf_t *bb, size_t cnt)
+int64_t virtio_disk_read(void *virtio_ptr, int32_t user_dst,
+			 struct blkbuf_t *bb, size_t cnt)
 {
 	assert(cnt == PGSIZE);
+	assert(virtio_ptr == &disk);
 	virtio_disk_rw(bb, 0);
+	return PGSIZE;
 }
 
-void virtio_disk_write(void *ttyptr, struct blkbuf_t *bb, size_t cnt)
+int64_t virtio_disk_write(void *virtio_ptr, int32_t user_src,
+			  struct blkbuf_t *bb, size_t cnt)
 {
 	assert(bb->b_dirty == 1);
 	assert(cnt == PGSIZE);
+	assert(virtio_ptr == &disk);
 	virtio_disk_rw(bb, 1);
 	bb->b_dirty = 0;
+	return PGSIZE;
 }

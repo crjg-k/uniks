@@ -1,6 +1,7 @@
 #ifndef __KERNEL_SYS_KSYSCALL_H__
 #define __KERNEL_SYS_KSYSCALL_H__
 
+
 #include <process/proc.h>
 #include <uniks/defs.h>
 
@@ -47,5 +48,7 @@
 
 void syscall();
 uint64_t argufetch(struct proc_t *p, int32_t n);
+int32_t argstrfetch(uintptr_t addr, char *buf, int32_t max);
+
 
 #endif /* !__KERNEL_SYS_KSYSCALL_H__ */

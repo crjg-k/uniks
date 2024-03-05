@@ -159,6 +159,7 @@ out:
 	// tracef("buddy system: allocate %d page(s) start @%p,", npages, ptr);
 	return ptr;
 }
+
 static void *whois_buddy(void *ptr, int16_t order)
 {
 	/**
@@ -180,6 +181,7 @@ static void *whois_buddy(void *ptr, int16_t order)
 		return NULL;
 	}
 }
+
 // free npages and merge it if possible
 void pages_free(void *ptr)
 {
@@ -263,6 +265,7 @@ static struct slub_pages_node_t *new_slub_pages_node(int32_t idx)
 	}
 	return slub_pages_node;
 }
+
 // 'ge' means greater than and equal
 static int32_t binary_search_ge(const int16_t array[], int32_t array_size,
 				size_t target)
@@ -279,10 +282,11 @@ static int32_t binary_search_ge(const int16_t array[], int32_t array_size,
 	}
 	return l;
 }
+
 // this couldn't allocate more than a page size memory area
 void *kmalloc(size_t size)
 {
-	assert(size >= slub_size[0] and size <= slub_size[SLUBNUM - 1]);
+	assert(size >= 0 and size <= slub_size[SLUBNUM - 1]);
 	int32_t idx = binary_search_ge(slub_size, SLUBNUM, size);
 	acquire(&kmem_cache_array[idx].kmem_cache_lock);
 	if (list_empty(&kmem_cache_array[idx].partiallist)) {

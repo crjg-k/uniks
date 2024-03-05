@@ -109,7 +109,7 @@ int64_t do_execve(struct proc_t *p, char *pathname, char *argv[], char *envp[])
 	make_user_stack(p);
 	if (ret < 0)
 		goto out;
-	if (load_elf(p, (struct m_inode_info_t *)pathname) != 0) {
+	if (load_elf(p, (struct m_inode_t *)pathname) != 0) {
 		// load ELF failed then free new vm_area_list
 		free_mm(new_mm);
 		p->mm = old_mm;

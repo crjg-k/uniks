@@ -3,6 +3,7 @@
 
 
 #include <fs/ext2fs.h>
+#include <sync/mutex.h>
 #include <sync/spinlock.h>
 #include <uniks/defs.h>
 #include <uniks/list.h>
@@ -11,11 +12,13 @@
 
 
 struct file_t {
-	uint16_t f_count;
-	int16_t f_mode;			  // access mode(R/W bit)
-	int32_t f_flags;		  // control flag
-	struct m_inode_info_t *f_inode;	  // FD_INODE and FD_DEVICE
-	uint64_t f_pos;			  // offset for an FD_INODE file
+	uint32_t f_count;
+	uint64_t f_pos;	  // offset for an FD_INODE file
+	// protect competitive variables above from R/W for this file
+	struct mutex_t f_mtx;
+
+	int32_t f_flags;   // access mode(R/W bit)
+	struct m_inode_t *f_inode;
 };
 
 struct fcbtable_t {
@@ -30,13 +33,12 @@ extern struct fcbtable_t fcbtable;
 
 
 void sys_ftable_init();
-struct file_t *file_alloc();
-void file_close(struct file_t *f);
-int32_t file_read(struct file_t *f, uint64_t addr, int32_t cnt);
-int32_t file_write(struct file_t *f, uint64_t addr, int32_t cnt);
-
-
-void fsinit(dev_t dev);
+int32_t file_alloc();
+void file_dup(int32_t fcb_no);
+void file_free(int32_t fcb_no);
+void file_close(int32_t fcb_no);
+int64_t file_read(struct file_t *f, void *addr, int32_t cnt);
+int64_t file_write(struct file_t *f, void *addr, int32_t cnt);
 
 
 #endif /* !__KERNEL_FILE_FILE_H__ */

@@ -41,14 +41,14 @@ int32_t strcmp(const char *s1, const char *s2)
 	while (*s1 != '\0' and *s1 == *s2) {
 		s1++, s2++;
 	}
-	return (int)((unsigned char)*s1 - (unsigned char)*s2);
+	return (int)((uint8_t)*s1 - (uint8_t)*s2);
 }
 int32_t strncmp(const char *s1, const char *s2, size_t n)
 {
 	while (n > 0 and *s1 != '\0' and *s1 == *s2) {
 		n--, s1++, s2++;
 	}
-	return (n == 0) ? 0 : (int)((unsigned char)*s1 - (unsigned char)*s2);
+	return (n == 0) ? 0 : (int)((uint8_t)*s1 - (uint8_t)*s2);
 }
 
 void *memset(void *s, char c, size_t n)
@@ -75,10 +75,8 @@ int32_t memcmp(const void *v1, const void *v2, size_t n)
 	const char *s1 = (const char *)v1;
 	const char *s2 = (const char *)v2;
 	while (n-- > 0) {
-		if (*s1 != *s2) {
-			return (int32_t)((unsigned char)*s1 -
-					 (unsigned char)*s2);
-		}
+		if (*s1 != *s2)
+			return (int32_t)((uint8_t)*s1 - (uint8_t)*s2);
 		s1++, s2++;
 	}
 	return 0;

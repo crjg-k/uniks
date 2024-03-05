@@ -43,7 +43,7 @@ enum {
 	VIRT_PLATFORM_BUS_IRQ = 64, /* 64 to 95 */
 };
 
-	#define MAX_INTTERUPT_SRC_ID (0x35)
+	#define MAX_INTTERUPT_SRC_ID (36)
 
 #endif
 

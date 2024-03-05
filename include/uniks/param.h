@@ -25,15 +25,16 @@
 #define NFD		 (32)	  // number of fds of each process
 #define NINODE		 (1024)	  // max number of active inodes
 #define NFILE		 (256)	  // max number of opening files in system
+#define MAX_PATH_LEN	 (1024)
 // device module configurable parameters
 #define NDEVICE		 (64)	// max major device number, according to platform's PLIC
 #define DEV_NAME_LEN	 (8)	 // max length of dev name
 #define HASH_TABLE_PRIME (307)	 // this number comes from Linux-0.11
 
 // UART configurable parameters
-#define UART_TX_BUF_SIZE (32)
+#define UART_TX_BUF_SIZE (1024)
 // tty device configurable parameters
-#define TTY_BUF_SIZE	 (32)	// ttys' read and write buffer size are equaled
+#define TTY_BUF_SIZE	 (1024)	  // ttys' read and write buffer size are equaled
 
 
 #endif /* !__PARAM_H__ */

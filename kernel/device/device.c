@@ -8,19 +8,31 @@
 
 
 /**
- * @brief device array, and devices[0] will never be used. Moreover, the actual
- * device is corresponding to the PLIC intterupt number in platform.h. Such as
- * when the platform is QEMU, and UART0_IRQ = 10, prescribed by QEMU,
+ * @brief device array, and devices[0] represents null device. Moreover, the
+ * actual device is corresponding to the PLIC intterupt number in platform.h.
+ * Such as when the platform is QEMU, and UART0_IRQ = 10, prescribed by QEMU,
  * devices[10] is UART0 device! etc.
  */
 struct device_t devices[NDEVICE];
 
+static int64_t null_read(void *ttyptr, int32_t user_dst, void *buf, size_t cnt)
+{
+	return 0;
+}
+static int64_t null_write(void *ttyptr, int32_t user_dst, void *buf, size_t cnt)
+{
+	return 0;
+}
+
 void device_init()
 {
+	device_install(DEV_NULL, DEV_TTY, NULL, "null", 0, NULL, NULL,
+		       null_read, null_write, &devices[0]);
+
 	for (int32_t i = 1; i < NDEVICE; i++) {
 		struct device_t *device = &devices[i];
 		device->type = device->subtype = DEV_NULL;
-		device->dev_id = i;
+		device->dev = i;
 		device->parent = 0;
 		device->interrupt_handler = NULL;
 		device->ioctl = NULL;
@@ -40,7 +52,7 @@ void device_init()
 struct device_t *get_null_device()
 {
 	struct device_t *dev;
-	int32_t i = MAX_INTTERUPT_SRC_ID + 1;
+	int32_t i = MAX_INTTERUPT_SRC_ID;
 	while (i < NDEVICE) {
 		dev = &devices[i++];
 		if (dev->type == DEV_NULL)
@@ -77,7 +89,7 @@ dev_t device_install(int32_t type, int32_t subtype, void *ptr, char *name,
 	device->read = read;
 	device->write = write;
 	strncpy(device->name, name, DEV_NAME_LEN);
-	return device->dev_id;
+	return device->dev;
 }
 
 /**
@@ -93,4 +105,14 @@ void device_interrupt_handler(dev_t dev)
 	dev_t dev_parent = devices[dev].parent;
 	if (dev_parent)
 		device_interrupt_handler(dev_parent);
+}
+
+int64_t device_read(dev_t dev, int32_t user_dst, void *buf, size_t cnt)
+{
+	return devices[dev].read(devices[dev].ptr, user_dst, buf, cnt);
+}
+
+int64_t device_write(dev_t dev, int32_t user_src, void *buf, size_t cnt)
+{
+	return devices[dev].write(devices[dev].ptr, user_src, buf, cnt);
 }

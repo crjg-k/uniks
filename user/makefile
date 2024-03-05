@@ -29,7 +29,6 @@ CFLAGS = \
 	-ffreestanding
 
 CFLAGS += $(foreach dir, ${INC_DIR}, -I${dir})
-CFLAGS += -DUNIKS
 
 ifeq ($(DEBUG), gdb)
 	CFLAGS += -g3
@@ -49,21 +48,20 @@ init:
 	$(shell if [ ! -e ${BIN_DIR} ]; then mkdir ${BIN_DIR}; fi)
 	$(shell if [ ! -e ${ABSM_DIR} ]; then mkdir ${ABSM_DIR}; fi)
 
-%: src/%.c ${LIBS_DIR}/ulib.c ${LIBS_DIR}/usyscall.c
+%: src/%.c ${LIBS_DIR}/*
 	${CC} $^ ${CFLAGS}
-	${LD} ${LDFLAGS} ulib.o $@.o usyscall.o -o ${BIN_DIR}/$@.o
-	${OBJDUMP} -S ${BIN_DIR}/$@.o > ${ABSM_DIR}/$@.asm
-	${OBJDUMP} -s ${BIN_DIR}/$@.o > ${ABSM_DIR}/$@.bsm
+	${LD} ${LDFLAGS} ulib.o $@.o usyscall.o ustdio.o -o ${BIN_DIR}/$@
+	${OBJDUMP} -S ${BIN_DIR}/$@ > ${ABSM_DIR}/$@.asm
+	${OBJDUMP} -s ${BIN_DIR}/$@ > ${ABSM_DIR}/$@.bsm
 	rm *.o
 
 .PHONY: ${INITCODE}
 ${INITCODE}: init src/${INITCODE}.S
 	${CC} src/${INITCODE}.S ${CFLAGS}
-	${LD} ${LDFLAGS} ${INITCODE}.o -o ${BIN_DIR}/${INITCODE}.o
-	${OBJDUMP} -S ${BIN_DIR}/${INITCODE}.o > ${ABSM_DIR}/${INITCODE}.asm
-	${OBJDUMP} -s ${BIN_DIR}/${INITCODE}.o > ${ABSM_DIR}/${INITCODE}.bsm
-	${OBJCOPY} ${BIN_DIR}/${INITCODE}.o --strip-all -O binary ${BIN_DIR}/${INITCODE}
-	od -t x ${BIN_DIR}/${INITCODE}
+	${LD} ${LDFLAGS} ${INITCODE}.o -o ${BIN_DIR}/${INITCODE}
+	${OBJDUMP} -S ${BIN_DIR}/${INITCODE} > ${ABSM_DIR}/${INITCODE}.asm
+	${OBJDUMP} -s ${BIN_DIR}/${INITCODE} > ${ABSM_DIR}/${INITCODE}.bsm
+	od -t x -v ${BIN_DIR}/${INITCODE}
 	rm ${BIN_DIR}/${INITCODE}
 	rm *.o
 

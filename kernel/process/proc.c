@@ -65,7 +65,7 @@ static pid_t allocpid()
 		pid = -1;
 	else {
 		pid = *(pid_t *)queue_front_int32type(&pids_queue.qm);
-		queue_pop(&pids_queue.qm);
+		queue_front_pop(&pids_queue.qm);
 	}
 	release(&pids_queue.pid_lock);
 	return pid;
@@ -139,7 +139,7 @@ void forkret()
 		 * cannot be run @kernel_start.
 		 */
 		first = 0;
-		fsinit(VIRTIO_IRQ);
+		ext2fs_init(VIRTIO_IRQ);
 		myproc()->cwd = namei("/");
 	}
 
@@ -198,6 +198,7 @@ struct proc_t *allocproc()
 	INIT_LIST_HEAD(&pcbtable[newpid]->wait_list);
 
 	return pcbtable[newpid];
+
 err:
 	release(&pcblock[newpid]);
 	freepid(newpid);
@@ -423,6 +424,9 @@ void user_init(uint32_t priority)
 	p->parentpid = 0;
 	p->state = TASK_READY;
 	p->ticks = p->priority = priority;
+
+	for (int32_t i = 0; i < NFD; i++)
+		p->fdtable[i] = 0;
 	release(&pcblock[p->pid]);
 
 	extern char initcode[];

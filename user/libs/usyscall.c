@@ -34,6 +34,11 @@ int getpid()
 	return syscall(SYS_getpid);
 }
 
+int open(const char *pathname, int flags)
+{
+	return syscall(SYS_open, pathname, flags);
+}
+
 int read(int fd, char *buf, long count)
 {
 	return syscall(SYS_read, fd, buf, count);
@@ -57,4 +62,9 @@ int waitpid(int pid, int *status)
 void exit(int status)
 {
 	syscall(SYS_exit, status);
+}
+
+int dup(int oldfd)
+{
+	return syscall(SYS_dup, oldfd);
 }

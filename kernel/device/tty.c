@@ -1,5 +1,6 @@
 #include "tty.h"
 #include "device.h"
+#include <mm/phys.h>
 #include <process/proc.h>
 
 
@@ -61,21 +62,32 @@ void copy_to_cooked(struct tty_struct_t *tty)
 	char ch;
 
 	acquire(&tty->secondary_q.tty_queue_lock);
-	while ((uart_read(tty->uart_associated, &ch, 1)) != 0) {
-		if (queue_full(&tty->secondary_q
-					.qm))	// discard the oldest simply
-			queue_pop(&tty->secondary_q.qm);
-		queue_push_chartype(&tty->secondary_q.qm, ch);
+	while ((uart_read(tty->uart_associated, 0, &ch, 1)) != 0) {
+		ch = (ch == '\r') ? '\n' : ch;
+		if (ch == BACKSPACE) {
+			if (!queue_empty(&tty->secondary_q.qm)) {
+				queue_back_pop(&tty->secondary_q.qm);
+			}
+		} else {
+			if (queue_full(&tty->secondary_q.qm)) {
+				// discard the oldest character
+				queue_front_pop(&tty->secondary_q.qm);
+			}
+			assert(!queue_full(&tty->secondary_q.qm));
+			queue_push_chartype(&tty->secondary_q.qm, ch);
+		}
 
 		// echo mode
 		{
-			if (ch == '\r')
-				ch = '\n';
-			uart_write(tty->uart_associated, &ch, 1);
+			if (ch == BACKSPACE)
+				uart_write(tty->uart_associated, 0, "\b \b", 3);
+			else
+				uart_write(tty->uart_associated, 0, &ch, 1);
 		}
 	}
+	if (ch == '\n' or ch == EOF)
+		proc_unblock_all(&tty->secondary_q.wait_list);
 
-	proc_unblock_all(&tty->secondary_q.wait_list);
 	release(&tty->secondary_q.tty_queue_lock);
 }
 
@@ -90,44 +102,48 @@ void do_tty_interrupt(void *ttyptr)
 
 /**
  * @brief read until encounter a newline('\n' or '\r') or up to cnt
- *
  * @param ttyptr
+ * @param user_dst
  * @param buf
  * @param cnt
- * @return int32_t: read bytes count, guarantee that at least 1
+ * @return int64_t: read bytes count, guarantee that at least 1
  */
-int32_t tty_read(void *ttyptr, void *buf, size_t cnt)
+int64_t tty_read(void *ttyptr, int32_t user_dst, void *buf, size_t cnt)
 {
-	int32_t n = 0;
-	char *buffer = (char *)buf, ch;
+	assert(cnt <= LINE_MAXN);
+	int64_t n = 0;
+	char *buffer = kmalloc(cnt), ch;
 	struct tty_struct_t *tty = ttyptr;
 
 	acquire(&tty->secondary_q.tty_queue_lock);
 	while (n < cnt) {
 		while (queue_empty(&tty->secondary_q.qm)) {
-			if (n == 0) {
-				proc_block(&tty->secondary_q.wait_list,
-					   &tty->secondary_q.tty_queue_lock);
-			} else
-				goto over;
+			proc_block(&tty->secondary_q.wait_list,
+				   &tty->secondary_q.tty_queue_lock);
 		}
+		assert(!queue_empty(&tty->secondary_q.qm));
 		ch = *(char *)queue_front_chartype(&tty->secondary_q.qm);
-		queue_pop(&tty->secondary_q.qm);
-		if (ch == EOF)
-			goto over;
-		*(buffer++) = ch;
-		n++;
-		if (ch == '\n' or ch == '\r')
-			goto over;
+		queue_front_pop(&tty->secondary_q.qm);
+		buffer[n++] = ch;
+		if (ch == '\n' or ch == EOF)
+			break;
 	}
-over:
+
+	assert(n >= 1);
+	assert(either_copyout(user_dst, buf, buffer, n) != -1);
+	kfree(buffer);
 	release(&tty->secondary_q.tty_queue_lock);
 
 	return n;
 }
 
-int32_t tty_write(void *ttyptr, void *buf, size_t cnt)
+int64_t tty_write(void *ttyptr, int32_t user_src, void *buf, size_t cnt)
 {
+	assert(cnt <= LINE_MAXN);
+	char *buffer = kmalloc(cnt);
+	assert(either_copyin(user_src, buffer, buf, cnt) != -1);
 	struct tty_struct_t *tty = ttyptr;
-	return uart_write(tty->uart_associated, buf, cnt);
+	int64_t n = uart_write(tty->uart_associated, 0, buffer, cnt);
+	kfree(buffer);
+	return n;
 }

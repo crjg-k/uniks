@@ -48,11 +48,10 @@ __always_inline void uart_soft_init()
 {
 	assert(current_tty != -1);
 	uart_queue_init();
-	struct device_t *devptr = &devices[UART0_IRQ];
 	char uart0_name[] = "uart0";
 	device_install(DEV_CHAR, DEV_SERIAL, &uart_struct, uart0_name,
 		       current_tty, do_uart_interrupt, NULL, uart_read,
-		       uart_write, devptr);
+		       uart_write, &devices[UART0_IRQ]);
 }
 
 void uart_init()
@@ -77,7 +76,7 @@ void do_uart_interrupt(void *uartptr)
 			break;
 		if (queue_full(&uart->uart_rx_queue
 					.qm))	// discard the oldest simply
-			queue_pop(&uart->uart_rx_queue.qm);
+			queue_front_pop(&uart->uart_rx_queue.qm);
 		queue_push_chartype(&uart->uart_rx_queue.qm, c);
 	}
 	release(&uart->uart_rx_queue.uart_rxbuf_lock);
@@ -97,13 +96,14 @@ __always_inline char uart_getchar()
 /**
  * @brief read and return immediately if the uart->uart_rx_queue is empty
  * @param uartptr
+ * @param user_dst
  * @param buf
  * @param cnt
- * @return int32_t: read bytes count, don't guarantee up to cnt
+ * @return int64_t: read bytes count, don't guarantee up to cnt
  */
-int32_t uart_read(void *uartptr, void *buf, size_t cnt)
+int64_t uart_read(void *uartptr, int32_t user_dst, void *buf, size_t cnt)
 {
-	int32_t n = 0;
+	int64_t n = 0;
 	char *buffer = buf;
 	struct uart_struct_t *uart = uartptr;
 
@@ -113,7 +113,7 @@ int32_t uart_read(void *uartptr, void *buf, size_t cnt)
 			goto over;
 		*(buffer++) =
 			*(char *)queue_front_chartype(&uart->uart_rx_queue.qm);
-		queue_pop(&uart->uart_rx_queue.qm);
+		queue_front_pop(&uart->uart_rx_queue.qm);
 		n++;
 	}
 over:
@@ -125,13 +125,14 @@ over:
 /**
  * @brief write through to uart physical device without any buffer array
  * @param uartptr
+ * @param user_src
  * @param buf
  * @param cnt
- * @return int32_t: write bytes count
+ * @return int64_t: write bytes count
  */
-int32_t uart_write(void *uartptr, void *buf, size_t cnt)
+int64_t uart_write(void *uartptr, int32_t user_src, void *buf, size_t cnt)
 {
-	int32_t n = 0;
+	int64_t n = 0;
 	char *buffer = buf;
 	struct uart_struct_t *uart = uartptr;
 
