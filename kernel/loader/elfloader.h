@@ -7,10 +7,9 @@
 #include <process/proc.h>
 #include <uniks/defs.h>
 
-#define INVALID_ELFFORMAT 1
 
-
-int32_t load_elf(struct proc_t *p, struct m_inode_t *inode);
+int32_t load_elf(struct proc_t *p, struct mm_struct *mm,
+		 struct m_inode_t *inode);
 
 
 #endif

@@ -40,6 +40,7 @@ extern struct blk_cache_t blk_cache;
 
 
 void blk_init();
+struct blkbuf_t *getblk(dev_t dev, uint32_t blkno);
 void blk_release(struct blkbuf_t *bb);
 struct blkbuf_t *blk_read(dev_t dev, uint32_t blockno);
 void blk_write_over(struct blkbuf_t *bb);

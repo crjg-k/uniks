@@ -447,9 +447,9 @@ void itruncate(struct m_inode_t *ip)
  * @return int64_t
  */
 int64_t readi(struct m_inode_t *ip, int32_t user_dst, char *dst, uint64_t off,
-	      uint64_t n)
+	      size_t n)
 {
-	uint64_t tot, m;
+	size_t tot, m;
 	struct blkbuf_t *bb;
 
 	if (off > ip->d_inode_ctnt.i_size or off + n < off)
@@ -463,14 +463,11 @@ int64_t readi(struct m_inode_t *ip, int32_t user_dst, char *dst, uint64_t off,
 			break;
 		bb = blk_read(ip->i_dev, addr);
 		m = MIN(n - tot, BLKSIZE - off % BLKSIZE);
-		if (either_copyout(user_dst, dst, bb->b_data + (off % BLKSIZE),
-				   m) == -1) {
-			blk_release(bb);
-			tot = -1;
-			break;
-		}
+		assert(either_copyout(user_dst, dst,
+				      bb->b_data + (off % BLKSIZE), m) != -1);
 		blk_release(bb);
 	}
+
 	return tot;
 }
 

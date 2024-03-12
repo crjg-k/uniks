@@ -26,6 +26,7 @@ SECTIONS
 	. = ALIGN(0x1000);
 
 	.data : {
+		. = ALIGN(16);
 		*(.sdata .sdata.*)	/* do not need to distinguish this from .data */
 		. = ALIGN(16);
 		*(.data .data.*)

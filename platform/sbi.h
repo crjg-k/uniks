@@ -18,7 +18,7 @@
 #define HART_START 0
 
 
-struct sbiret {
+struct sbiretv_t {
 	int64_t error;
 	int64_t value;
 };
@@ -28,8 +28,8 @@ int64_t sbi_set_timer(uint64_t stime_value);
 int64_t sbi_console_putchar(char ch);
 int64_t sbi_console_getchar();
 void sbi_shutdown();
-struct sbiret sbi_hart_start(uint64_t hartid, uint64_t start_addr,
-			     uint64_t opaque);
+struct sbiretv_t sbi_hart_start(uint64_t hartid, uint64_t start_addr,
+				uint64_t opaque);
 
 
 #endif /* !__KERNEL_PLATFORM_SBI_H__ */

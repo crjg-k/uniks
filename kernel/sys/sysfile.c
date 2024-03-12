@@ -18,7 +18,7 @@
 	struct proc_t *p = myproc(); \
 	int32_t fd = argufetch(p, 0), cnt = argufetch(p, 2); \
 	char *buf = (char *)argufetch(p, 1); \
-	if (fd >= NFD or fd < 0 or p->fdtable[fd] == 0) \
+	if (fd >= NFD or fd < 0 or p->fdtable[fd] == -1) \
 		return -EBADF; \
 	if (cnt < 0) \
 		return -EINVAL; \
@@ -46,14 +46,14 @@ int64_t sys_open()
 	struct proc_t *p = myproc();
 	char path[MAX_PATH_LEN];
 
-	uintptr_t addr = argufetch(p, 0);
-	if (argstrfetch(addr, path, MAX_PATH_LEN) < 0)
-		return -EINVAL;
+	uintptr_t uaddr = argufetch(p, 0);
+	if (argstrfetch(uaddr, path, MAX_PATH_LEN) < 0)
+		return -EFAULT;
 	int32_t flag = argufetch(p, 1);
 
 	// search an idle fdtable entry of current process
 	for (fd = 0; fd < NFD; fd++)
-		if (!p->fdtable[fd])
+		if (p->fdtable[fd] == -1)
 			break;
 	if (fd >= NFD)
 		return -EINVAL;
@@ -84,7 +84,7 @@ int64_t do_close(int32_t fd)
 {
 	struct proc_t *p = myproc();
 
-	if (fd >= NFD or fd < 0 or p->fdtable[fd] == 0)
+	if (fd >= NFD or fd < 0 or p->fdtable[fd] == -1)
 		return -EBADF;
 
 	file_close(p->fdtable[fd]);
@@ -103,7 +103,7 @@ int64_t sys_close()
 static int32_t do_dupfd(uint32_t fd, uint32_t arg)
 {
 	struct proc_t *p = myproc();
-	if (fd >= NFD or fd < 0 or p->fdtable[fd] == 0)
+	if (fd >= NFD or fd < 0 or p->fdtable[fd] == -1)
 		return -EBADF;
 
 	if (arg >= NFD)
@@ -114,7 +114,7 @@ static int32_t do_dupfd(uint32_t fd, uint32_t arg)
 	 * process fdtable
 	 */
 	while (arg < NFD)
-		if (p->fdtable[arg])
+		if (p->fdtable[arg] != -1)
 			arg++;
 		else
 			break;
@@ -128,7 +128,7 @@ static int32_t do_dupfd(uint32_t fd, uint32_t arg)
 
 /**
  * @brief copy oldfd to a new fd but which is specificed by newfd. Moreover, if
- * newfd has opend, close fisrt
+ * newfd has opened, close fisrt
  * @return uint64_t
  */
 int64_t sys_dup2()

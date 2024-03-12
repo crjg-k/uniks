@@ -21,6 +21,10 @@
 	#define EOF ((char)-1)
 #endif
 
+#ifndef EOT
+	#define EOT ((char)4)
+#endif
+
 #define UNIKS_MSG "\e[1m[\tuniks]\e[0m==> "
 
 

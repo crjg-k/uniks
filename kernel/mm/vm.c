@@ -1,6 +1,7 @@
 #include "vm.h"
 #include "memlay.h"
 #include "mmu.h"
+#include <fs/ext2fs.h>
 #include <mm/phys.h>
 #include <platform/platform.h>
 #include <platform/riscv.h>
@@ -202,6 +203,7 @@ int32_t init_mm(struct mm_struct *mm)
 	initlock(&mm->mmap_lk, "mm_lock");
 	INIT_LIST_HEAD(&mm->vm_area_list_head);
 	mm->mm_count = mm->map_count = 0;
+	mm->stack_maxsize = MAXSTACK;
 	struct vm_area_struct *vm0 = kmalloc(sizeof(struct vm_area_struct));
 	vm0->vm_start = vm0->vm_end = 0;
 	vm0->vm_flags = PTE_V | PTE_R | PTE_W | PTE_X | PTE_U;
@@ -227,7 +229,8 @@ void free_mm(struct mm_struct *mm)
 
 // hint: this will not deal with a bad overlay range!
 int32_t add_vm_area(struct mm_struct *mm, uintptr_t va_start, uintptr_t va_end,
-		    uint64_t flags, uint64_t pgoff, struct file_t *file)
+		    uint64_t flags, uint64_t pgoff, struct m_inode_t *inode,
+		    uint64_t _filesz)
 {
 	acquire(&mm->mmap_lk);
 	struct vm_area_struct *vm_area_new =
@@ -237,8 +240,9 @@ int32_t add_vm_area(struct mm_struct *mm, uintptr_t va_start, uintptr_t va_end,
 	vm_area_new->vm_start = va_start;
 	vm_area_new->vm_end = va_end;
 	vm_area_new->vm_flags = flags;
-	vm_area_new->vm_file = file;
+	vm_area_new->vm_inode = inode;
 	vm_area_new->vm_pgoff = pgoff;
+	vm_area_new->_filesz = _filesz;
 	mm->map_count++;
 
 	// "insert sorting"
@@ -284,6 +288,7 @@ struct vm_area_struct *search_vmareas(struct mm_struct *mm,
 				vm_area_first = vm_area;
 			target_vaddr = vm_area->vm_end;
 			perm &= vm_area->vm_flags;
+			break;
 		} else
 			break;
 	}
@@ -368,6 +373,26 @@ int64_t uvmcopy(struct mm_struct *mm_new, struct mm_struct *mm_old)
 	return 0;
 }
 
+static void true_load_segment(struct vm_area_struct *_vm_area, uintptr_t vaddr,
+			      char *page_start)
+{
+	uint32_t segoff = PGROUNDDOWN(vaddr) - _vm_area->vm_start;
+	uint32_t pgoff = MAX(segoff, _vm_area->_filesz) - segoff;
+	if (pgoff > PGSIZE)
+		pgoff = PGSIZE;
+
+	if (segoff < _vm_area->_filesz) {
+		ilock(_vm_area->vm_inode);
+		readi(_vm_area->vm_inode, 0, page_start,
+		      _vm_area->vm_pgoff + segoff, pgoff);
+		iunlock(_vm_area->vm_inode);
+	}
+	if (_vm_area->_filesz != (_vm_area->vm_end - _vm_area->vm_start)) {
+		// means that .bss section
+		memset(page_start + pgoff, 0, PGSIZE - pgoff);
+	}
+}
+
 /**
  * @brief verify process p's vm-space before writing to user space, and
  * the name of this function comes from Linux-0.11
@@ -381,14 +406,15 @@ int32_t verify_area(struct mm_struct *mm, uintptr_t vaddr, size_t size,
 {
 	uint32_t vm_flags;
 
-	struct vm_area_struct *vm_area_start =
+	struct vm_area_struct *_vm_area =
 		search_vmareas(mm, vaddr, size, &vm_flags);
 
 	/**
 	 * @brief If the [vaddr, vaddr+size) area's permission is not the
 	 * superset of targetperm, then trigger segment fault.
 	 */
-	if (vm_area_start == NULL or (targetperm & vm_flags) != targetperm) {
+	if (_vm_area == NULL or
+	    get_var_bit(targetperm, vm_flags) != targetperm) {
 		return -1;
 	} else {
 		pte_t *pte = walk(mm->pagetable, vaddr, 1);
@@ -398,11 +424,9 @@ int32_t verify_area(struct mm_struct *mm, uintptr_t vaddr, size_t size,
 			char *page_start = pages_alloc(npages);
 			mappages(mm->pagetable, vaddr, PGSIZE * npages,
 				 (uintptr_t)page_start, targetperm | PTE_V);
-			if (vm_area_start->vm_file != NULL) {
-				memcpy(page_start,
-				       (void *)vm_area_start->vm_file +
-					       vm_area_start->vm_pgoff,
-				       PGSIZE * npages);
+			if (_vm_area->vm_inode != NULL) {
+				assert(npages == 1);
+				true_load_segment(_vm_area, vaddr, page_start);
 			}
 		} else {
 			uvmmap(mm->pagetable, PGROUNDDOWN(vaddr),
@@ -414,32 +438,32 @@ int32_t verify_area(struct mm_struct *mm, uintptr_t vaddr, size_t size,
 	return 0;
 }
 
-#define SEGFAULT_MSG "Segmentation fault"
-#define SEG_FAULT()  ({ kprintf("%s\n", SEGFAULT_MSG); })
+#define SEGFAULT_MSG	 "Segmentation fault"
+#define SEG_FAULT(vaddr) ({ kprintf("%s:%p\n", SEGFAULT_MSG, vaddr); })
 void do_inst_page_fault(struct mm_struct *mm, uintptr_t fault_vaddr)
 {
 	if (verify_area(mm, fault_vaddr, 4, PTE_X | PTE_R | PTE_U) != 0)
-		SEG_FAULT();
+		SEG_FAULT(fault_vaddr);
 }
 
 // todo: distinguish byte/half word/word/double word
 void do_ld_page_fault(struct mm_struct *mm, uintptr_t fault_vaddr)
 {
 	if (verify_area(mm, fault_vaddr, 8, PTE_R | PTE_W | PTE_U) != 0)
-		SEG_FAULT();
+		SEG_FAULT(fault_vaddr);
 }
 
 void do_sd_page_fault(struct mm_struct *mm, uintptr_t fault_vaddr)
 {
 	if (verify_area(mm, fault_vaddr, 8, PTE_R | PTE_W | PTE_U) != 0)
-		SEG_FAULT();
+		SEG_FAULT(fault_vaddr);
 }
 
 /* === transmit data between user space and kernel space === */
 
 /**
  * @brief Copy from kernel to user. Copy len bytes to dst from virtual
- * address srcva in a given page table. And return
+ * address srcva in a given page table.
  * @param pagetable
  * @param dst
  * @param srcva
@@ -476,13 +500,13 @@ int32_t copyin(pagetable_t pagetable, void *dst, void *srcva, uint64_t len)
  * @param dst
  * @param srcva
  * @param max
- * @return int32_t: 0 on success, -1 on error.
+ * @return int32_t: `strlen(dst)` on success, -1 on error.
  */
 int32_t copyin_string(pagetable_t pagetable, char *dst, uintptr_t srcva,
 		      uint64_t max)
 {
-	uint64_t n, va0, pa0;
-	int32_t got_null = 0;
+	uint64_t n, va0, pa0, got_null = 0;
+	char *dstart = dst;
 
 	while (got_null == 0 and max > 0) {
 		va0 = PGROUNDDOWN(srcva);
@@ -509,7 +533,7 @@ int32_t copyin_string(pagetable_t pagetable, char *dst, uintptr_t srcva,
 		}
 		srcva = va0 + PGSIZE;
 	}
-	return got_null ? 0 : -1;
+	return got_null ? (dst - dstart) : -1;
 }
 
 /**

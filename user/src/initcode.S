@@ -11,26 +11,31 @@
 
 
 .section .rodata
-# char file[] = "/bin/init";
+# char file[] = "/bin/initrc";
 file:
-	.string "/bin/init"
-# char *argv[]={"hello", "uniks", "world", NULL};
+	.string "/bin/initrc"
+
+# char *argv[]={"initrc", "hello", "uniks", "world", NULL};
 .LC0:
 	.string "hello"
 .LC1:
 	.string "uniks"
 .LC2:
 	.string "world"
+.p2align 3			// 8-byte alignment of pointer variables under 64 bit
 argv:
+	.dword file
 	.dword .LC0
 	.dword .LC1
 	.dword .LC2
 	.dword 0
+
 # char *envp[]={"HOME=/root", "PATH=/bin", NULL};
 .LC3:
 	.string "HOME=/root"
 .LC4:
 	.string "PATH=/bin"
+.p2align 3			// 8-byte alignment of pointer variables under 64 bit
 envp:
 	.dword .LC3
 	.dword .LC4

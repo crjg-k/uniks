@@ -8,10 +8,18 @@
 #define STDERR_FILENO 2 /* Standard error output. */
 
 
-// std libc function
-void init_io();
+// === stdio init ===
+void ustdioinit();
+
+// === output ===
+int sprintf(char *buf, const char *fmt, ...);
 int printf(const char *fmt, ...);
+
+// === input ===
 char getchar();
+int getline(char *s, int n);
+int scanf(const char *fmt, ...);
+static void ibuffer_init();
 
 
 #endif /* !__USER_INCLUDE_USTDIO_H__ */

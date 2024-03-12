@@ -1,4 +1,5 @@
 #include "proc.h"
+#include <device/clock.h>
 #include <loader/elfloader.h>
 #include <mm/memlay.h>
 #include <mm/phys.h>
@@ -6,6 +7,7 @@
 #include <platform/platform.h>
 #include <platform/riscv.h>
 #include <sys/ksyscall.h>
+#include <trap/trap.h>
 #include <uniks/kassert.h>
 #include <uniks/kstring.h>
 #include <uniks/log.h>
@@ -24,6 +26,7 @@ struct proc_t idlepcb = {
 	.jiffies = 0,
 	.block_list = {},
 	.wait_list = {},
+	.cwd = NULL,
 	.fdtable = {0},
 	.mm = NULL,
 	.ctxt = {},
@@ -38,8 +41,6 @@ struct pids_queue_t pids_queue;
 struct sleep_queue_t sleep_queue;   // call sys_sleep waiting process
 
 extern char trampoline[];
-extern volatile uint64_t ticks;
-extern void usertrapret();
 extern int64_t do_execve(struct proc_t *p, char *pathname, char *argv[],
 			 char *envp[]);
 
@@ -171,6 +172,7 @@ struct proc_t *allocproc()
 		(struct proc_t *)((uintptr_t)tf + sizeof(struct trapframe_t));
 	pcbtable[newpid]->pid = newpid;
 	pcbtable[newpid]->mm = kmalloc(sizeof(struct mm_struct));
+	pcbtable[newpid]->tf = tf;
 	if (init_mm(pcbtable[newpid]->mm) == -1) {
 		pages_free(tf);
 		goto err;
@@ -184,7 +186,6 @@ struct proc_t *allocproc()
 	pcbtable[newpid]->state = TASK_INITING;
 	pcbtable[newpid]->killed = 0;
 	pcbtable[newpid]->mm->kstack = (uintptr_t)tf + PGSIZE;
-	pcbtable[newpid]->tf = tf;
 	/**
 	 * @brief set new ctxt to start executing at forkret, where returns to
 	 * user space. this forges a trap scene for new forked process to
@@ -351,11 +352,12 @@ void proc_block(struct list_node_t *wait_list, struct spinlock_t *lk)
 	 * call sched().
 	 */
 	acquire(&pcblock[p->pid]);
-	if (lk != NULL)
-		release(lk);
 
 	list_add_front(&p->block_list, wait_list);
 	p->state = TASK_BLOCK;
+
+	if (lk != NULL)
+		release(lk);
 
 	sched();
 
@@ -417,6 +419,21 @@ void recycle_exitedproc(pid_t pid)
 	freeproc(pid);
 }
 
+/**
+ * @brief The 1st user program that calls execve("/bin/initrc"). Assembled from
+ * ../user/src/initcode.S.
+ * Command: `hexdump -ve '4/4 "0x%08x, " "\n"' ./user/bin/initcode`
+ */
+__aligned(PGSIZE) uint32_t initcode[] = {
+	0x00b00893, 0x00000517, 0x02c50513, 0x00000597, 0x04458593, 0x00000617,
+	0x07c60613, 0x00000073, 0x00100893, 0xfff00513, 0x00000073, 0x00000000,
+	0x6e69622f, 0x696e692f, 0x00637274, 0x6c6c6568, 0x6e75006f, 0x00736b69,
+	0x6c726f77, 0x00000064, 0x00001030, 0x00000000, 0x0000103c, 0x00000000,
+	0x00001042, 0x00000000, 0x00001048, 0x00000000, 0x00000000, 0x00000000,
+	0x454d4f48, 0x6f722f3d, 0x5000746f, 0x3d485441, 0x6e69622f, 0x00000000,
+	0x00001078, 0x00000000, 0x00001083, 0x00000000, 0x00000000, 0x00000000,
+};
+
 void user_init(uint32_t priority)
 {
 	struct proc_t *p = allocproc();
@@ -426,11 +443,17 @@ void user_init(uint32_t priority)
 	p->ticks = p->priority = priority;
 
 	for (int32_t i = 0; i < NFD; i++)
-		p->fdtable[i] = 0;
+		p->fdtable[i] = -1;
 	release(&pcblock[p->pid]);
 
-	extern char initcode[];
-	assert(do_execve(p, initcode, NULL, NULL) == 0);
+// this value is corresponding to user/makefile:64
+#define INITSTART 0x1000
+	assert(mappages(p->mm->pagetable, INITSTART, PGSIZE,
+			(uintptr_t)initcode,
+			PTE_X | PTE_R | PTE_U | PTE_V) != -1);
+	add_vm_area(p->mm, INITSTART, INITSTART + PGSIZE, PTE_X | PTE_R | PTE_U,
+		    0, NULL, 0);
+	p->tf->epc = INITSTART;
 }
 
 /* === process relative syscall === */

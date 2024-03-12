@@ -24,14 +24,17 @@ uint64_t argufetch(struct proc_t *p, int32_t n)
 /**
  * @brief Fetch the nth word-sized system call argument as a null-terminated
  * string. Copies into buf, at most max. Returns
- * @param addr
+ * @param vaddr
  * @param buf
  * @param max
- * @return int32_t: string length if OK (including '\0'), -1 if error.
+ * @return int32_t: `strlen(buf)` if OK (excluding '\0'), -1 if error.
  */
-int32_t argstrfetch(uintptr_t addr, char *buf, int32_t max)
+int32_t argstrfetch(uintptr_t vaddr, char *buf, int32_t max)
 {
-	return copyin_string(myproc()->mm->pagetable, buf, addr, max);
+	struct proc_t *p = myproc();
+	if (verify_area(p->mm, vaddr, max, PTE_R | PTE_U) < 0)
+		return -1;
+	return copyin_string(p->mm->pagetable, buf, vaddr, max);
 }
 
 

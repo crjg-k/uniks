@@ -59,6 +59,11 @@ int waitpid(int pid, int *status)
 	return syscall(SYS_waitpid, pid, status);
 }
 
+int execve(const char *path, char *argv[], char *envp[])
+{
+	return syscall(SYS_execve, path, argv, envp);
+}
+
 void exit(int status)
 {
 	syscall(SYS_exit, status);

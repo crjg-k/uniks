@@ -24,7 +24,6 @@
 
 // user process vaddr space
 #define USER_STACK_TOP			    (TRAPFRAME)
-#define USER_STACK_ARGVENVP_UPPERLIMIT_PGAE (32)
 
 
 #endif /* !__KERNEL_MM_MEMLAY_H__ */

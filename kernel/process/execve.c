@@ -1,127 +1,162 @@
 #include "proc.h"
-#include <file/file.h>
+#include <fs/ext2fs.h>
 #include <loader/elfloader.h>
 #include <mm/memlay.h>
 #include <mm/phys.h>
 #include <mm/vm.h>
 #include <platform/riscv.h>
+#include <sys/ksyscall.h>
 #include <uniks/defs.h>
+#include <uniks/errno.h>
+#include <uniks/kstdlib.h>
 #include <uniks/kstring.h>
 #include <uniks/param.h>
 
 
-uintptr_t user_stack_argv_envp_bottom =
-	USER_STACK_TOP - PGSIZE * USER_STACK_ARGVENVP_UPPERLIMIT_PGAE;
-
-
-int32_t copy_argv_envp(struct proc_t *p, char *filename, char *argv[],
-		       char *envp[], uintptr_t string_split)
+int32_t copyout_argv_envp(struct proc_t *p, char *argv[], char *envp[],
+			  uintptr_t *ustack, char *sp, uint16_t *argv_len,
+			  uint16_t *envp_len)
 {
-	uintptr_t *ustack = kmalloc(MAXARG * sizeof(uintptr_t));
-	uintptr_t *current_sp = (uintptr_t *)string_split,
-		  *current_sp_vaddr = (uintptr_t *)user_stack_argv_envp_bottom,
-		  arg_env_string_bottom = string_split,
-		  arg_env_string_bottom_vaddr = user_stack_argv_envp_bottom;
-	int32_t argc;
-
-	// push environment strings
-	if (envp) {
-		for (argc = 0; envp[argc]; argc++) {
-			assert(argc < MAXARG);
-			char *env = (char *)vaddr2paddr(p->mm->pagetable,
-							(uintptr_t)envp[argc]);
-			size_t envp_length = strlen(env);
-			if (copyin_string(p->mm->pagetable,
-					  (char *)arg_env_string_bottom,
-					  (uintptr_t)envp[argc],
-					  envp_length + 1) < 0)
-				return -1;
-			ustack[argc] = arg_env_string_bottom_vaddr;
-			arg_env_string_bottom +=
-				envp_length + 1;   // '\0' terminate
-			arg_env_string_bottom_vaddr +=
-				envp_length + 1;   // '\0' terminate
-		}
-	}
-	ustack[argc] = 0;
-	for (; argc >= 0; argc--) {
-		*--current_sp = ustack[argc];
-		current_sp_vaddr--;
-	}
-	p->tf->a2 = (uintptr_t)(current_sp_vaddr);
-
-	// push argument strings
-	size_t argv_length;
-	if (argv) {
-		for (argc = 0; argv[argc]; argc++) {
-			assert(argc < MAXARG);
-			char *arg = (char *)vaddr2paddr(p->mm->pagetable,
-							(uintptr_t)argv[argc]);
-			argv_length = strlen(arg);
-			if (copyin_string(p->mm->pagetable,
-					  (char *)arg_env_string_bottom,
-					  (uintptr_t)argv[argc],
-					  argv_length + 1) < 0)
-				return -1;
-			ustack[argc] = arg_env_string_bottom_vaddr;
-			arg_env_string_bottom +=
-				argv_length + 1;   // '\0' terminate
-			arg_env_string_bottom_vaddr +=
-				argv_length + 1;   // '\0' terminate
-		}
-	}
-	int32_t ret_argc = argc + 1;
-	ustack[argc] = 0;
-	for (; argc >= 0; argc--) {
-		*--current_sp = ustack[argc];
-		current_sp_vaddr--;
+	int32_t argc, envc;
+	// Push argv[].
+	for (argc = 0; argv[argc]; argc++) {
+		uint32_t len = argv_len[argc];
+		if (copyout(p->mm->pagetable, sp, argv[argc], len) < 0)
+			goto ret;
+		*(ustack++) = (uintptr_t)sp;
+		sp += len;
 	}
 
-	// cope with filename as the first argv[]
-	strcpy((char *)arg_env_string_bottom, filename);
-	*--current_sp = arg_env_string_bottom_vaddr;
-	p->tf->sp = p->tf->a1 = (uintptr_t)(--current_sp_vaddr);
-	return ret_argc;
+	// Push envp[].
+	for (envc = 0; envp[envc]; envc++) {
+		uint32_t len = envp_len[envc];
+		if (copyout(p->mm->pagetable, sp, envp[envc], len) < 0)
+			goto ret;
+		ustack[1 + envc] = (uintptr_t)sp;
+		sp += len;
+	}
+
+	return 0;
+
+ret:
+	return -1;
 }
 
-uintptr_t make_user_stack(struct proc_t *p)
+void map_user_stack(struct proc_t *p, int32_t page_num, uintptr_t ustack_pa)
 {
-	char *pgstart = pages_alloc(2);
-	// int32_t perm = PTE_W | PTE_R | PTE_U;
-	// mappages(p->mm->pagetable, user_stack_argv_envp_bottom - PGSIZE * 2,
-	// 	 PGSIZE * 2, (uintptr_t)pgstart, perm);
-	p->tf->sp = USER_STACK_TOP;
-	add_vm_area(p->mm, USER_STACK_TOP - PGSIZE * 2, USER_STACK_TOP,
-		    PTE_R | PTE_W | PTE_U, 0, NULL);
-	return (uintptr_t)pgstart;
+	int32_t perm = PTE_W | PTE_R | PTE_U;
+	mappages(p->mm->pagetable, USER_STACK_TOP - PGSIZE * page_num,
+		 PGSIZE * page_num, ustack_pa, perm);
+	add_vm_area(p->mm, USER_STACK_TOP - PGSIZE * p->mm->stack_maxsize,
+		    USER_STACK_TOP, PTE_R | PTE_W | PTE_U, 0, NULL, 0);
 }
 
-int64_t do_execve(struct proc_t *p, char *pathname, char *argv[], char *envp[])
+int64_t do_execve(struct proc_t *p, char *path, char *argv[], char *envp[])
 {
-	int64_t ret = 0;
-	struct mm_struct *new_mm = kmalloc(sizeof(struct mm_struct)), *old_mm;
-	old_mm = p->mm, p->mm = new_mm;
+	int64_t res = -EINVAL;
+
+	struct m_inode_t *inode = namei(path);
+	if (inode == NULL)
+		goto ret3;
+
+	struct mm_struct *new_mm = kmalloc(sizeof(struct mm_struct));
 	init_mm(new_mm);
 
-	acquire(&pcblock[p->pid]);
-	// ret = copy_argv_envp(p, pathname, argv, envp,
-	// 		     make_user_stack(p) + PGSIZE);
-	make_user_stack(p);
-	if (ret < 0)
-		goto out;
-	if (load_elf(p, (struct m_inode_t *)pathname) != 0) {
+	char **tmp_envp, **tmp_argv;
+	uint16_t *envp_len, *argv_len;
+	if (load_elf(p, new_mm, inode) < 0) {
 		// load ELF failed then free new vm_area_list
+		iput(inode);
 		free_mm(new_mm);
-		p->mm = old_mm;
 	} else {
-		// load ELF success then free original vm_area_list
-		p->mm->kstack = old_mm->kstack;
-		user_basic_pagetable(p);
-		uvmfree(p->mm);
-		free_mm(old_mm);
-	}
+		/**
+		 * @brief load ELF success then copy argv/envp strings and free
+		 * original vm_area_list
+		 */
 
-out:
-	release(&pcblock[p->pid]);
-	return ret;
+		int32_t argc, envc = 0, totalen = 0, len;
+		tmp_envp = kzalloc((MAXARG + 1) * sizeof(uintptr_t));
+		envp_len = kmalloc(MAXARG * sizeof(uint16_t));
+		for (envc = 0; envc < MAXARG; envc++) {
+			// copy vaddr of string
+			if (verify_area(p->mm, (uintptr_t)(envp + envc),
+					sizeof(uintptr_t), PTE_R | PTE_U) < 0) {
+				res = -EFAULT;
+				goto ret1;
+			}
+			assert(copyin(p->mm->pagetable, &tmp_envp[envc],
+				      envp + envc, sizeof(uintptr_t)) != -1);
+			if (tmp_envp[envc] == NULL)
+				break;
+			char *envp_va = kmalloc(MAXARGLEN);
+			// fetch string by vaddr copyed into tmp_envp[envc]
+			if ((len = argstrfetch((uintptr_t)tmp_envp[envc],
+					       envp_va, MAXARGLEN)) < 0) {
+				iput(inode);
+				goto ret1;
+			}
+			tmp_envp[envc] = envp_va;
+			envp_len[envc] = len + 1;
+			totalen += envp_len[envc];
+			totalen += sizeof(uintptr_t);
+		}
+		tmp_envp[envc++] = NULL;
+		totalen += sizeof(uintptr_t);
+
+		tmp_argv = kzalloc((MAXARG + 1) * sizeof(uintptr_t));
+		argv_len = kmalloc(MAXARG * sizeof(uint16_t));
+		for (argc = 0; argc < MAXARG; argc++) {
+			// copy vaddr of string
+			if (verify_area(p->mm, (uintptr_t)(argv + argc),
+					sizeof(uintptr_t), PTE_R | PTE_U) < 0) {
+				res = -EFAULT;
+				goto ret2;
+			}
+			assert(copyin(p->mm->pagetable, &tmp_argv[argc],
+				      argv + argc, sizeof(uintptr_t)) != -1);
+			if (tmp_argv[argc] == NULL)
+				break;
+			char *argv_va = kmalloc(MAXARGLEN);
+			// fetch string by vaddr copyed into tmp_argv[argc]
+			if ((len = argstrfetch((uintptr_t)tmp_argv[argc],
+					       argv_va, MAXARGLEN)) < 0) {
+				iput(inode);
+				goto ret2;
+			}
+			tmp_argv[argc] = argv_va;
+			argv_len[argc] = len + 1;
+			totalen += argv_len[argc];
+			totalen += sizeof(uintptr_t);
+		}
+		tmp_argv[argc++] = NULL;
+		totalen += sizeof(uintptr_t);
+
+		totalen = div_round_up(totalen, PGSIZE);   // page number
+		uintptr_t *ustack = pages_alloc(totalen);
+		p->tf->sp = p->tf->a1 = USER_STACK_TOP - PGSIZE * totalen;
+		p->tf->a2 = p->tf->a1 + argc * sizeof(uintptr_t);
+		char *sp =
+			(char *)(p->tf->a1 + (envc + argc) * sizeof(uintptr_t));
+
+		new_mm->kstack = p->mm->kstack;
+		uvmfree(p->mm);
+		free_mm(p->mm);
+		p->mm = new_mm;
+		user_basic_pagetable(p);
+
+		map_user_stack(p, totalen, (uintptr_t)ustack);
+		assert(copyout_argv_envp(p, tmp_argv, tmp_envp, ustack, sp,
+					 argv_len, envp_len) == 0);
+		res = argc - 1;
+	}
+ret1:
+	kfree(envp_len);
+	for (int32_t i = 0; tmp_envp[i]; i++)
+		kfree(tmp_envp[i]);
+ret2:
+	kfree(argv_len);
+	for (int32_t i = 0; tmp_argv[i]; i++)
+		kfree(tmp_argv[i]);
+ret3:
+	return res;
 }

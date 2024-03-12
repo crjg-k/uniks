@@ -50,12 +50,12 @@ void sbi_shutdown()
 	sbi_call(SBI_SHUTDOWN);
 }
 
-struct sbiret sbi_hart_start(uint64_t hartid, uint64_t start_addr,
-			     uint64_t opaque)
+struct sbiretv_t sbi_hart_start(uint64_t hartid, uint64_t start_addr,
+				uint64_t opaque)
 {
 	sbi_call(SBI_HSM, hartid, start_addr, opaque, HART_START);
 	register uint64_t a0 asm("a0");
 	register uint64_t a1 asm("a1");
-	struct sbiret sr = {a0, a1};
+	struct sbiretv_t sr = {a0, a1};
 	return sr;
 }

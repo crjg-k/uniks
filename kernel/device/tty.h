@@ -3,7 +3,6 @@
 
 
 #include "device.h"
-#include "uart.h"
 #include <sync/spinlock.h>
 #include <uniks/defs.h>
 #include <uniks/list.h>
@@ -11,7 +10,6 @@
 #include <uniks/queue.h>
 
 
-#define NTTY	  (3)
 #define BACKSPACE ('\x7f')
 #define LINE_MAXN (1024)
 
@@ -24,7 +22,7 @@ struct tty_queue_t {
 };
 
 struct tty_struct_t {
-	struct uart_struct_t *uart_associated;
+	dev_t uart_associated;
 	int64_t (*read)(void *ttyptr, int32_t user_dst, void *buf, size_t cnt);
 	int64_t (*write)(void *ttyptr, int32_t user_src, void *buf, size_t cnt);
 	void (*tty_interrupt_handler)(void *ttyptr);

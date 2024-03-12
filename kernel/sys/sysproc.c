@@ -5,12 +5,13 @@
 #include <process/proc.h>
 #include <sys/ksyscall.h>
 #include <uniks/defs.h>
+#include <uniks/errno.h>
 #include <uniks/kassert.h>
 #include <uniks/list.h>
 #include <uniks/priority_queue.h>
 
 
-extern int64_t do_execve(struct proc_t *p, char *pathname, char *argv[],
+extern int64_t do_execve(struct proc_t *p, char *path, char *argv[],
 			 char *envp[]);
 
 
@@ -26,13 +27,21 @@ int64_t sys_fork()
 
 int64_t sys_execve()
 {
+	int32_t res = -EFAULT;
 	struct proc_t *p = myproc();
-	char *file = (char *)vaddr2paddr(p->mm->pagetable, argufetch(p, 0)),
-	     **argv = (char **)vaddr2paddr(p->mm->pagetable, argufetch(p, 1)),
-	     **envp = (char **)vaddr2paddr(p->mm->pagetable, argufetch(p, 2));
-	file++;
-	extern char fib[];
-	return do_execve(p, fib, argv, envp);
+	char *path = kmalloc(MAX_PATH_LEN);
+
+	uintptr_t uaddr = argufetch(p, 0);
+	if (argstrfetch(uaddr, path, MAX_PATH_LEN) < 0)
+		goto ret;
+
+	char **argv = (char **)argufetch(p, 1),
+	     **envp = (char **)argufetch(p, 2);
+	res = do_execve(p, path, argv, envp);
+
+ret:
+	kfree(path);
+	return res;
 }
 
 int64_t sys_msleep()
@@ -84,9 +93,10 @@ recycle:
 		// if proc[target_pid] has exited, tackle and return immediately
 		acquire(&pcblock[p->pid]);
 		int64_t *status_addr = (int64_t *)argufetch(p, 1);
-		copyout(p->mm->pagetable, (void *)status_addr,
-			(void *)&pcbtable[target_pid]->exitstate,
-			sizeof(pcbtable[target_pid]->exitstate));
+		// verify_area();
+		assert(copyout(p->mm->pagetable, status_addr,
+			       (void *)&(pcbtable[target_pid]->exitstate),
+			       sizeof(pcbtable[target_pid]->exitstate)) != -1);
 		release(&pcblock[p->pid]);
 		release(&pcblock[target_pid]);
 	} else {

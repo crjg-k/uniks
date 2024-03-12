@@ -28,6 +28,7 @@ void device_init()
 {
 	device_install(DEV_NULL, DEV_TTY, NULL, "null", 0, NULL, NULL,
 		       null_read, null_write, &devices[0]);
+	devices[0].dev = 0;
 
 	for (int32_t i = 1; i < NDEVICE; i++) {
 		struct device_t *device = &devices[i];

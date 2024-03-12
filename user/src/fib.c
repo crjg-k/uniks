@@ -1,3 +1,4 @@
+#include <udefs.h>
 #include <ufcntl.h>
 #include <ustdio.h>
 #include <usyscall.h>
@@ -5,7 +6,7 @@
 
 int fib(int n)
 {
-	if ((n == 1) || (n == 2)) {
+	if ((n == 1) or (n == 2)) {
 		return 1;
 	}
 	int prev = 1;
@@ -17,20 +18,12 @@ int fib(int n)
 	}
 	return curr;
 }
-int getnum()
-{
-	char ch;
-	int sum = 0;
-	while ((ch = getchar()) != '\r') {
-		sum *= 10;
-		sum += ch - '0';
-	}
-	return sum;
-}
+
 int main()
 {
+	int n;
 	while (1) {
-		int n = getnum();
+		scanf("%d", &n);
 		printf("%dth fib:%d\n", n, fib(n));
 	}
 }

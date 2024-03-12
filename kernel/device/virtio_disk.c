@@ -338,6 +338,7 @@ void do_virtio_disk_interrupt(void *ptr)
 int64_t virtio_disk_read(void *virtio_ptr, int32_t user_dst,
 			 struct blkbuf_t *bb, size_t cnt)
 {
+	assert(user_dst == 0);
 	assert(cnt == PGSIZE);
 	assert(virtio_ptr == &disk);
 	virtio_disk_rw(bb, 0);
@@ -347,6 +348,7 @@ int64_t virtio_disk_read(void *virtio_ptr, int32_t user_dst,
 int64_t virtio_disk_write(void *virtio_ptr, int32_t user_src,
 			  struct blkbuf_t *bb, size_t cnt)
 {
+	assert(user_src == 0);
 	assert(bb->b_dirty == 1);
 	assert(cnt == PGSIZE);
 	assert(virtio_ptr == &disk);

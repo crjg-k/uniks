@@ -52,6 +52,7 @@ int write(int fd, char *buf, long count);
 int getpid();
 int msleep(int msec);
 int waitpid(int pid, int *status);
+int execve(const char *path, char *argv[], char *envp[]);
 void exit(int status);
 int dup(int oldfd);
 

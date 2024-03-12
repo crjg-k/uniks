@@ -22,6 +22,7 @@ void pages_free(void *pa);
 // === kmalloc implemented by slub allocator ===
 void kmem_cache_init();
 void *kmalloc(size_t size);
+void *kzalloc(size_t size);
 void kfree(void *ptr);
 
 

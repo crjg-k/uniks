@@ -7,7 +7,7 @@ extern int main(int argc, char *argv[], char *envp[]);
 
 void _start(int argc, char *argv[], char *envp[])
 {
-	init_io();
+	ustdioinit();
 	int exitcode = main(argc, argv, envp);
 	exit(exitcode);
 }

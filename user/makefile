@@ -1,5 +1,5 @@
 
-# DEBUG ?= gdb
+DEBUG ?= gdb
 
 # basic tools
 SHELL = /bin/bash
@@ -37,23 +37,26 @@ endif
 LDFLAGS = \
 	-T ${LINKER}
 
-SRCS := $(wildcard ./src/*.c)
-OBJS := $(patsubst ./src/%.c, %, $(SRCS))
+LIBS := $(patsubst %.c, %.o, $(notdir $(wildcard $(LIBS_DIR)/*.c)))
+OBJS := $(patsubst ./src/%.c, %, $(wildcard ./src/*.c))
 
 .PHONY: build
-build: init $(OBJS)
+build: init lib $(OBJS)
+	rm *.o
 
 .PHONY: init
 init:
 	$(shell if [ ! -e ${BIN_DIR} ]; then mkdir ${BIN_DIR}; fi)
 	$(shell if [ ! -e ${ABSM_DIR} ]; then mkdir ${ABSM_DIR}; fi)
 
-%: src/%.c ${LIBS_DIR}/*
+lib: ${LIBS_DIR}/*
 	${CC} $^ ${CFLAGS}
-	${LD} ${LDFLAGS} ulib.o $@.o usyscall.o ustdio.o -o ${BIN_DIR}/$@
+
+%: src/%.c
+	${CC} $< ${CFLAGS}
+	${LD} ${LDFLAGS} ${LIBS} $@.o -o ${BIN_DIR}/$@
 	${OBJDUMP} -S ${BIN_DIR}/$@ > ${ABSM_DIR}/$@.asm
 	${OBJDUMP} -s ${BIN_DIR}/$@ > ${ABSM_DIR}/$@.bsm
-	rm *.o
 
 .PHONY: ${INITCODE}
 ${INITCODE}: init src/${INITCODE}.S
@@ -61,8 +64,8 @@ ${INITCODE}: init src/${INITCODE}.S
 	${LD} ${LDFLAGS} ${INITCODE}.o -o ${BIN_DIR}/${INITCODE}
 	${OBJDUMP} -S ${BIN_DIR}/${INITCODE} > ${ABSM_DIR}/${INITCODE}.asm
 	${OBJDUMP} -s ${BIN_DIR}/${INITCODE} > ${ABSM_DIR}/${INITCODE}.bsm
-	od -t x -v ${BIN_DIR}/${INITCODE}
-	rm ${BIN_DIR}/${INITCODE}
+	${OBJCOPY} ${BIN_DIR}/${INITCODE} --strip-all -O binary ${BIN_DIR}/${INITCODE}
+	hexdump -ve '4/4 "0x%08x, " "\n"' ${BIN_DIR}/${INITCODE}
 	rm *.o
 
 .PHONY: clean

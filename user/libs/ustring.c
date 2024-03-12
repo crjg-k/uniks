@@ -1,17 +1,17 @@
-#include <uniks/kstring.h>
+#include <ustring.h>
 
 
-size_t strlen(const char *s)
+unsigned long strlen(const char *s)
 {
-	size_t cnt = 0;
+	unsigned long cnt = 0;
 	while (*s++ != 0)
 		cnt++;
 	return cnt;
 }
 
-size_t strnlen(const char *s, size_t len)
+unsigned long strnlen(const char *s, unsigned long len)
 {
-	size_t cnt = 0;
+	unsigned long cnt = 0;
 	while (cnt < len and *s++ != 0)
 		cnt++;
 	return cnt;
@@ -25,7 +25,7 @@ char *strcpy(char *dst, const char *src)
 	return dst;
 }
 
-char *strncpy(char *dst, const char *src, size_t len)
+char *strncpy(char *dst, const char *src, unsigned long len)
 {
 	char *p = dst;
 	while (len > 0) {
@@ -39,23 +39,23 @@ char *strncpy(char *dst, const char *src, size_t len)
 	return dst;
 }
 
-int32_t strcmp(const char *s1, const char *s2)
+int strcmp(const char *s1, const char *s2)
 {
 	while (*s1 != '\0' and *s1 == *s2) {
 		s1++, s2++;
 	}
-	return (int)((uint8_t)*s1 - (uint8_t)*s2);
+	return (int)((unsigned char)*s1 - (unsigned char)*s2);
 }
 
-int32_t strncmp(const char *s1, const char *s2, size_t n)
+int strncmp(const char *s1, const char *s2, unsigned long n)
 {
 	while (n > 0 and *s1 != '\0' and *s1 == *s2) {
 		n--, s1++, s2++;
 	}
-	return (n == 0) ? 0 : (int)((uint8_t)*s1 - (uint8_t)*s2);
+	return (n == 0) ? 0 : (int)((unsigned char)*s1 - (unsigned char)*s2);
 }
 
-void *memset(void *s, char c, size_t n)
+void *memset(void *s, char c, unsigned long n)
 {
 	char *p = s;
 	while (n-- > 0) {
@@ -64,7 +64,7 @@ void *memset(void *s, char c, size_t n)
 	return s;
 }
 
-void *memcpy(void *dst, const void *src, size_t n)
+void *memcpy(void *dst, const void *src, unsigned long n)
 {
 	const char *s = src;
 	char *d = dst;
@@ -74,13 +74,13 @@ void *memcpy(void *dst, const void *src, size_t n)
 	return dst;
 }
 
-int32_t memcmp(const void *v1, const void *v2, size_t n)
+int memcmp(const void *v1, const void *v2, unsigned long n)
 {
 	const char *s1 = (const char *)v1;
 	const char *s2 = (const char *)v2;
 	while (n-- > 0) {
 		if (*s1 != *s2)
-			return (int32_t)((uint8_t)*s1 - (uint8_t)*s2);
+			return (int)((unsigned char)*s1 - (unsigned char)*s2);
 		s1++, s2++;
 	}
 	return 0;

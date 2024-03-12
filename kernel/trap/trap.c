@@ -5,20 +5,20 @@
 #include <platform/plic.h>
 #include <platform/riscv.h>
 #include <process/proc.h>
+#include <sys/ksyscall.h>
 #include <uniks/kassert.h>
 #include <uniks/kstdio.h>
 #include <uniks/log.h>
 
 
-extern void scheduler(), syscall(), yield();
 extern char kerneltrapvec[], trampoline[], usertrapvec[], userret[];
-void usertrap_handler();
 uint64_t trampoline_uservec, trampoline_usertrapret;
 
 void trap_inithart()
 {
 	write_csr(stvec, &kerneltrapvec);
 }
+
 void trap_init()
 {
 	// note: the 2nd operand should change according to if using OpenSBI

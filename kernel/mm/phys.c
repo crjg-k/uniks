@@ -312,6 +312,13 @@ void *kmalloc(size_t size)
 	return ptr;
 }
 
+void *kzalloc(size_t size)
+{
+	void *ptr = kmalloc(size);
+	memset(ptr, 0, size);
+	return ptr;
+}
+
 void kfree(void *ptr)
 {
 	if (ptr == NULL)

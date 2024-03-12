@@ -81,13 +81,14 @@ else ifeq ($(LOG), trace)
 endif
 
 .PHONY: run
-run: clean qemu dump
+run: clean qemu
 
 .PHONY: build
 build:
 	$(shell if [ ! -e bin ]; then mkdir bin; fi)
 	${CC} ${SRC_FILES} ${CFLAGS} -o ${TARGET}
 	${OBJCOPY} ${TARGET} --strip-all -O binary ${OSBIN}
+	${OBJDUMP} -S ${TARGET} > ./bin/kerneldump.asm
 
 
 # qemu option
@@ -136,11 +137,6 @@ debug-front:
 debug-vscode: build
 	${QEMU} ${QFLAGS} -S ${QEMUGDB2}
 
-.PHONY: dump
-dump: build
-	${OBJDUMP} -S ${TARGET} > ./bin/kerneldump.asm
-	# vim ./bin/kerneldump.txt
-
 .PHONY: ${DISKIMG}
 ${DISKIMG}:
 	$(shell if [ -e ${DISKIMG} ]; then rm ${DISKIMG}; fi)
@@ -155,13 +151,17 @@ fs:
 	$(shell if [ ! -e uniksfs ]; then mkdir uniksfs; fi)
 	sudo mount disk.img uniksfs
 	mkdir ./uniksfs/dev ./uniksfs/bin  ./uniksfs/root
-	mknod ./uniksfs/dev/tty2 c 00 36
-	mknod ./uniksfs/dev/tty1 c 00 37
-	mknod ./uniksfs/dev/tty0 c 00 38
-	mknod ./uniksfs/dev/vda b 00 01
+	mknod ./uniksfs/dev/tty0 c 00 36
+	mknod ./uniksfs/dev/vda0 b 00 01
 	mknod ./uniksfs/dev/null c 00 00
-	cp ./user/bin/* ./uniksfs/bin/
+	make user
+	find ./user/bin/ -type f -not -name 'initcode' -exec cp {} ./uniksfs/bin/ \;
 	umount uniksfs
+
+.PHONY: user
+user:
+	cd ./user && make
+
 
 PROPERTIES = .vscode/c_cpp_properties.json
 LAUNCH = .vscode/launch.json

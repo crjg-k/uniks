@@ -46,7 +46,6 @@ __always_inline void uart_hard_init()
 
 __always_inline void uart_soft_init()
 {
-	assert(current_tty != -1);
 	uart_queue_init();
 	char uart0_name[] = "uart0";
 	device_install(DEV_CHAR, DEV_SERIAL, &uart_struct, uart0_name,
@@ -106,6 +105,7 @@ int64_t uart_read(void *uartptr, int32_t user_dst, void *buf, size_t cnt)
 	int64_t n = 0;
 	char *buffer = buf;
 	struct uart_struct_t *uart = uartptr;
+	assert(user_dst == 0);
 
 	acquire(&uart->uart_rx_queue.uart_rxbuf_lock);
 	while (n < cnt) {
@@ -135,6 +135,7 @@ int64_t uart_write(void *uartptr, int32_t user_src, void *buf, size_t cnt)
 	int64_t n = 0;
 	char *buffer = buf;
 	struct uart_struct_t *uart = uartptr;
+	assert(user_src == 0);
 
 	acquire(&uart->uart_tx_queue.uart_txbuf_lock);
 	while (cnt-- > 0) {

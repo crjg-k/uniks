@@ -171,7 +171,7 @@ int32_t killed(struct proc_t *);
 void recycle_exitedproc(pid_t pid);
 struct cpu_t *mycpu();
 struct proc_t *myproc();
-void proc_block(struct list_node_t *list, struct spinlock_t *lk);
+void proc_block(struct list_node_t *wait_list, struct spinlock_t *lk);
 void proc_unblock_all(struct list_node_t *wait_list);
 int32_t user_basic_pagetable(struct proc_t *p);
 

@@ -10,22 +10,22 @@
 
 
 struct vm_area_struct {
-	/* VMA covers [vm_start, vm_end) addresses within mm */
-	uintptr_t vm_start;
-	uintptr_t vm_end;
+	/**
+	 * @brief VMA covers [vm_start, vm_end) addresses, and these must be
+	 * aligned to a page.
+	 */
+	uintptr_t vm_start, vm_end;
 
 	struct mm_struct *vm_mm; /* The address space we belong to */
 
 	struct list_node_t vm_area_list;
 
-	/**
-	 * @brief bit function: [D|A|G|U|X|W|R|V]
-	 */
+	// bit function: [D|A|G|U|X|W|R|V]
 	uint32_t vm_flags;
+	uint64_t _filesz;   // to cope with .bss and .data
 
-	// Offset (within vm_file) in PAGE_SIZE units
-	uint64_t vm_pgoff;
-	struct file_t *vm_file;	  // if this segment map a file
+	uint64_t vm_pgoff;   // Offset (within vm_inode) in PAGE_SIZE units
+	struct m_inode_t *vm_inode;   // if this segment map a file
 };
 
 struct mm_struct {
@@ -43,6 +43,8 @@ struct mm_struct {
 	 */
 	uint32_t mm_count;
 	int32_t map_count;   // number of VMA
+
+	uint32_t stack_maxsize;
 
 	uintptr_t start_stack;	 // start_stack means the high addr of stack
 	uintptr_t mmap_base;	 // base of mmap area
@@ -72,7 +74,8 @@ void uvmunmap(pagetable_t pagetable, uintptr_t va_start, uintptr_t va_end,
 int32_t init_mm(struct mm_struct *mm);
 void free_mm(struct mm_struct *mm);
 int32_t add_vm_area(struct mm_struct *mm, uintptr_t va_start, uintptr_t va_end,
-		    uint64_t flags, uint64_t pgoff, struct file_t *file);
+		    uint64_t flags, uint64_t pgoff, struct m_inode_t *vm_inode,
+		    uint64_t _filesz);
 struct vm_area_struct *search_vmareas(struct mm_struct *mm,
 				      uintptr_t target_vaddr, size_t size,
 				      uint32_t *flag_res);

@@ -87,7 +87,7 @@ static void rmold_then_insert_newhash(struct blkbuf_t *bb, dev_t dev,
  * @param blkno
  * @return struct blkbuf_t*
  */
-static struct blkbuf_t *getblk(dev_t dev, uint32_t blkno)
+struct blkbuf_t *getblk(dev_t dev, uint32_t blkno)
 {
 	struct blkbuf_t *bb;
 	acquire(&blk_cache.lock);

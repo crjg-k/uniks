@@ -18,8 +18,6 @@ int32_t mutex_holding(struct mutex_t *m)
 
 void mutex_acquire(struct mutex_t *m)
 {
-	push_off();
-
 	struct proc_t *p = myproc();
 	while (__sync_lock_test_and_set(&m->locked, 1) != 0) {
 		acquire(&pcblock[p->pid]);
@@ -30,14 +28,10 @@ void mutex_acquire(struct mutex_t *m)
 	}
 	__sync_synchronize();
 	m->pid = myproc()->pid;
-
-	pop_off();
 }
 
 void mutex_release(struct mutex_t *m)
 {
-	push_off();
-
 	assert(mutex_holding(m));   // ensure that this mutex had been held
 
 	m->pid = 0;
@@ -45,6 +39,4 @@ void mutex_release(struct mutex_t *m)
 	__sync_lock_release(&m->locked);
 	proc_unblock_all(&m->waiters);
 	assert(list_empty(&m->waiters));
-
-	pop_off();
 }

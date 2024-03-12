@@ -1,5 +1,6 @@
 #include "file.h"
 #include "kfcntl.h"
+#include <device/blk_dev.h>
 #include <device/device.h>
 #include <process/proc.h>
 #include <sync/spinlock.h>
@@ -14,13 +15,13 @@ void sys_ftable_init()
 {
 	initlock(&fcbtable.lock, "fcbtable");
 	INIT_LIST_HEAD(&fcbtable.wait_list);
-	for (int32_t i = 1; i < NFILE; i++) {
+	for (int32_t i = 0; i < NFILE; i++) {
 		mutex_init(&fcbtable.files[i].f_mtx, "fcblock");
 		fcbtable.files[i].f_count = 0;
 	}
 
 	queue_init(&fcbtable.qm, NFILE, fcbtable.idle_fcb_queue_array);
-	for (int32_t i = 1; i < NFILE; i++)
+	for (int32_t i = 0; i < NFILE; i++)
 		queue_push_int32type(&fcbtable.qm, i);
 }
 
@@ -66,6 +67,7 @@ void file_close(int32_t fcb_no)
 	mutex_acquire(&f->f_mtx);
 	if (--f->f_count == 0) {
 		if (S_ISCHR(f->f_inode->d_inode_ctnt.i_mode) or
+		    S_ISBLK(f->f_inode->d_inode_ctnt.i_mode) or
 		    S_ISREG(f->f_inode->d_inode_ctnt.i_mode) or
 		    S_ISDIR(f->f_inode->d_inode_ctnt.i_mode)) {
 			iput(f->f_inode);
@@ -82,9 +84,12 @@ int64_t file_read(struct file_t *f, void *addr, int32_t cnt)
 	int64_t res = -EINVAL;
 	if (!READABLE(f->f_flags))
 		goto ret2;
+	if (verify_area(myproc()->mm, (uintptr_t)addr, cnt, PTE_W | PTE_U) <
+	    0) {
+		res = -EFAULT;
+		goto ret2;
+	}
 
-	assert(verify_area(myproc()->mm, (uintptr_t)addr, cnt,
-			   PTE_R | PTE_W | PTE_U) != -1);
 	struct m_inode_t *inode = f->f_inode;
 	mutex_acquire(&f->f_mtx);
 
@@ -97,6 +102,12 @@ int64_t file_read(struct file_t *f, void *addr, int32_t cnt)
 	// else if character DEVICE
 	if (S_ISCHR(inode->d_inode_ctnt.i_mode)) {
 		res = device_read(inode->d_inode_ctnt.i_block[0], 1, addr, cnt);
+	}
+	// else if block DEVICE
+	if (S_ISBLK(inode->d_inode_ctnt.i_mode)) {
+		res = blkdev_read(inode->d_inode_ctnt.i_block[0], addr,
+				  f->f_pos, cnt);
+		f->f_pos += res;
 	}
 	// else if ordinary file or directory
 	else if (S_ISREG(inode->d_inode_ctnt.i_mode) or
@@ -119,6 +130,12 @@ int64_t file_write(struct file_t *f, void *addr, int32_t cnt)
 	if (!WRITEABLE(f->f_flags))
 		goto ret2;
 
+	if (verify_area(myproc()->mm, (uintptr_t)addr, cnt, PTE_R | PTE_U) <
+	    0) {
+		res = -EFAULT;
+		goto ret2;
+	}
+
 	struct m_inode_t *inode = f->f_inode;
 	mutex_acquire(&f->f_mtx);
 
@@ -132,6 +149,12 @@ int64_t file_write(struct file_t *f, void *addr, int32_t cnt)
 	if (S_ISCHR(inode->d_inode_ctnt.i_mode)) {
 		res = device_write(inode->d_inode_ctnt.i_block[0], 1, addr,
 				   cnt);
+	}
+	// else if block DEVICE
+	if (S_ISBLK(inode->d_inode_ctnt.i_mode)) {
+		res = blkdev_write(inode->d_inode_ctnt.i_block[0], addr,
+				   f->f_pos, cnt);
+		f->f_pos += res;
 	}
 	// else if ordinary file or directory
 	else if (S_ISREG(inode->d_inode_ctnt.i_mode) or
