@@ -23,9 +23,9 @@
 #define KiB		 (1024)
 #define MiB		 (1024 * KiB)
 #define GiB		 (1024 * MiB)
-#define NBUF		 (8192)	  // size of disk block buffer cache
+#define NBBUF		 (8192)	  // size of disk block buffer cache
 #define NFD		 (64)	  // number of fds of each process
-#define NINODE		 (1024)	  // max number of active inodes
+#define NINODE		 (512)	  // max number of active inodes
 #define NFILE		 (256)	  // max number of opening files in system
 #define MAX_PATH_LEN	 (1024)
 // device module configurable parameters

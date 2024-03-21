@@ -8,6 +8,7 @@
 
 // basic C enviroment
 void _start(int argc, char *argv[], char *envp[]);
+int atoi(const char *str);
 
 
 #endif /* !__USER_INCLUDE_ULIB_H__ */

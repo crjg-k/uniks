@@ -1,5 +1,6 @@
 #include "proc.h"
 #include <device/clock.h>
+#include <file/file.h>
 #include <loader/elfloader.h>
 #include <mm/memlay.h>
 #include <mm/phys.h>
@@ -72,7 +73,7 @@ static pid_t allocpid()
 	return pid;
 }
 
-static void freepid(pid_t pid)
+void freepid(pid_t pid)
 {
 	acquire(&pids_queue.pid_lock);
 	queue_push_int32type(&pids_queue.qm, pid);
@@ -80,9 +81,8 @@ static void freepid(pid_t pid)
 }
 
 /**
- * @brief create a basic user page table for a given process, and only initial
- * with trampoline and trapframe pages
- *
+ * @brief Create a basic user page table for a given mm_struct, and only initial
+ * with trampoline and trapframe pages.
  * @param p
  * @return int32_t
  */
@@ -92,21 +92,15 @@ int32_t user_basic_pagetable(struct proc_t *p)
 	 * @brief map the trampoline.S code at the highest user virtual address.
 	 * only S mode can use it, on the way to/from user space, so not PTE_U
 	 */
-	if (mappages(p->mm->pagetable, TRAMPOLINE, PGSIZE, (uint64_t)trampoline,
-		     PTE_R | PTE_X) == -1)
+	if (mappages(p->mm->pagetable, TRAMPOLINE, PGSIZE,
+		     (uintptr_t)trampoline, PTE_R | PTE_X) == -1)
 		return -1;
 	// map the trapframe page just below the trampoline page
-	if (mappages(p->mm->pagetable, TRAPFRAME, PGSIZE, (uint64_t)(p->tf),
+	if (mappages(p->mm->pagetable, TRAPFRAME, PGSIZE, (uintptr_t)(p->tf),
 		     PTE_R | PTE_W) == -1)
 		return -1;
 
 	return 0;
-}
-
-// free a process's page table, and free the physical memory it refers to
-__always_inline void proc_free_pagetable(struct proc_t *p)
-{
-	uvmfree(p->mm);
 }
 
 /**
@@ -116,13 +110,24 @@ __always_inline void proc_free_pagetable(struct proc_t *p)
  * p->lock must be held before calling this function
  * @param p
  */
-static void freeproc(pid_t pid)
+static void freeproc(struct proc_t *p)
 {
-	assert(holding(&pcblock[pid]));
-	if (pcbtable[pid]->mm->pagetable)
-		proc_free_pagetable(pcbtable[pid]);
-	pages_free(pcbtable[pid]->tf);
-	pcbtable[pid] = NULL;
+	assert(holding(&pcblock[p->pid]));
+
+	// Close all open files.
+	for (int32_t fd = 0; fd < NFD; fd++) {
+		if (p->fdtable[fd] != -1) {
+			file_close(p->fdtable[fd]);
+			p->fdtable[fd] = -1;
+		}
+	}
+
+	iput(p->cwd);
+	p->cwd = NULL;
+
+	if (p->mm->pagetable)
+		free_pgtable(p->mm->pagetable, 0);
+	free_mm_struct(p->mm);
 }
 
 // a fork child's 1st scheduling by scheduler() will swtch to forkret
@@ -135,7 +140,7 @@ void forkret()
 
 	if (first) {
 		/**
-		 * @brief Fs initialization must be run in the context of a
+		 * @brief FS initialization must be run in the context of a
 		 * regular process (e.g., because it calls proc_block), and thus
 		 * cannot be run @kernel_start.
 		 */
@@ -168,47 +173,42 @@ struct proc_t *allocproc()
 	 */
 	if ((tf = pages_alloc(1)) == NULL)
 		goto err;
-	pcbtable[newpid] =
+	struct proc_t *p = pcbtable[newpid] =
 		(struct proc_t *)((uintptr_t)tf + sizeof(struct trapframe_t));
-	pcbtable[newpid]->pid = newpid;
-	pcbtable[newpid]->mm = kmalloc(sizeof(struct mm_struct));
-	pcbtable[newpid]->tf = tf;
-	if (init_mm(pcbtable[newpid]->mm) == -1) {
+	p->pid = newpid;
+	p->mm = new_mm_struct();
+	tf->ra = 0;
+	p->tf = tf;
+
+	if (user_basic_pagetable(p) == -1) {
 		pages_free(tf);
-		goto err;
-	}
-	if (user_basic_pagetable(pcbtable[newpid]) == -1) {
-		pages_free(tf);
-		free_mm(pcbtable[newpid]->mm);
+		free_mm_struct(p->mm);
 		goto err;
 	}
 
-	pcbtable[newpid]->state = TASK_INITING;
-	pcbtable[newpid]->killed = 0;
-	pcbtable[newpid]->mm->kstack = (uintptr_t)tf + PGSIZE;
+	p->state = TASK_INITING;
+	p->killed = p->w4child = 0;
+	p->mm->kstack = (uintptr_t)tf + PGSIZE;
+
 	/**
 	 * @brief set new ctxt to start executing at forkret, where returns to
 	 * user space. this forges a trap scene for new forked process to
 	 * release lock right set sp point to the correct kstack address
 	 */
-	pcbtable[newpid]->ctxt.ra = (uint64_t)forkret;
-	pcbtable[newpid]->ctxt.sp = pcbtable[newpid]->mm->kstack;
-	pcbtable[newpid]->magic = UNIKS_MAGIC;
+	memset(&p->ctxt, 0, sizeof(p->ctxt));
+	p->ctxt.ra = (uint64_t)forkret;
+	p->ctxt.sp = p->mm->kstack;
+	p->magic = UNIKS_MAGIC;
 
-	INIT_LIST_HEAD(&pcbtable[newpid]->block_list);
-	INIT_LIST_HEAD(&pcbtable[newpid]->wait_list);
+	INIT_LIST_HEAD(&p->block_list);
+	INIT_LIST_HEAD(&p->wait_list);
 
-	return pcbtable[newpid];
+	return p;
 
 err:
 	release(&pcblock[newpid]);
 	freepid(newpid);
 	return NULL;
-}
-
-__always_inline void initidleproc()
-{
-	pcbtable[0] = &idlepcb;
 }
 
 // initialize the pcb table lock
@@ -223,7 +223,7 @@ void proc_init()
 		initlock(plk, "proclock");
 	}
 
-	initidleproc();
+	FIRST_PROC = &idlepcb;
 
 	initlock(&sleep_queue.sleep_lock, "sleeplock");
 	priority_queue_init(&sleep_queue.pqm, NPROC,
@@ -236,10 +236,12 @@ __noreturn void scheduler(struct cpu_t *c)
 	while (1) {
 		int32_t i = 1;
 		for (struct proc_t *p; i < NPROC; i++) {
-			if ((p = pcbtable[i]) == NULL)
+			acquire(&pcblock[i]);
+			if ((p = pcbtable[i]) == NULL) {
+				release(&pcblock[i]);
 				continue;
+			}
 			// tracef("idle process running");
-			acquire(&pcblock[p->pid]);
 			if (p->state == TASK_READY) {
 				tracef("switch to: %d\n", p->pid);
 				/**
@@ -256,7 +258,7 @@ __noreturn void scheduler(struct cpu_t *c)
 				 * @brief process is done running for now since
 				 * timer interrupt
 				 */
-				c->proc = pcbtable[0];
+				c->proc = FIRST_PROC;
 			}
 			release(&pcblock[p->pid]);
 		}
@@ -300,13 +302,12 @@ __naked void switch_to(struct context_t *old, struct context_t *new)
 }
 
 /**
- * @brief Switch to scheduler. Must hold only proc->lock and have changed
- * proc->state. Saves and restores intena because intena is a property of this
- * kernel thread, not this CPU (In multi-hart condition, when a process exit
- * executing in a hart, it may re-execute in another hart, so this is the
- * situation that we need to tackle). It should be proc->intena and proc->noff,
- * but that would break in the few places where a lock is held but there's no
- * process.
+ * @brief Switch to scheduler. Must hold only proc->lock (because NO process can
+ * hold any spin lock then becomes BLOCK state) and have changed proc->state.
+ * Saves and restores intstat because intstat is a property of this kernel
+ * thread, not this CPU (In multi-hart condition, when a process exit executing
+ * in a hart, it may re-execute in another hart, so this is the situation that
+ * we need to tackle).
  */
 void sched()
 {
@@ -328,7 +329,7 @@ void sched()
 void yield()
 {
 	struct proc_t *p = myproc();
-	acquire(&pcblock[p->pid]);
+	assert(holding(&pcblock[p->pid]));
 	p->state = TASK_READY;
 	sched();
 	release(&pcblock[p->pid]);
@@ -368,13 +369,15 @@ void proc_block(struct list_node_t *wait_list, struct spinlock_t *lk)
 }
 
 /**
- * @brief Wake up all processes blocked on wait_list. Must be called with lock
+ * @brief Unblock all processes blocked on wait_list. Must be called with lock
  * protecting for wait_list.
  * @param wait_list
  * @param lk
+ * @return int32_t:
  */
-void proc_unblock_all(struct list_node_t *wait_list)
+int32_t proc_unblock_all(struct list_node_t *wait_list)
 {
+	int32_t tot = 0;
 	while (!list_empty(wait_list)) {
 		struct list_node_t *next_node = list_next_then_del(wait_list);
 		struct proc_t *p =
@@ -385,7 +388,10 @@ void proc_unblock_all(struct list_node_t *wait_list)
 		assert(p != myproc());
 		p->state = TASK_READY;
 		release(&pcblock[p->pid]);
+		tot++;
 	}
+
+	return tot;
 }
 
 void time_wakeup()
@@ -395,13 +401,24 @@ void time_wakeup()
 		struct pair_t temppair = priority_queue_top(&sleep_queue.pqm);
 		if (ticks < temppair.key)
 			break;
-		acquire(&pcblock[temppair.value]);
-		assert(pcbtable[temppair.value]->state == TASK_BLOCK);
-		pcbtable[temppair.value]->state = TASK_READY;
-		release(&pcblock[temppair.value]);
+		struct proc_t *p = pcbtable[temppair.value];
+
+		acquire(&pcblock[p->pid]);
+		assert(p->state == TASK_BLOCK);
+		assert(p != myproc());
+		p->state = TASK_READY;
+		release(&pcblock[p->pid]);
+
 		priority_queue_pop(&sleep_queue.pqm);
 	}
 	release(&sleep_queue.sleep_lock);
+}
+
+void setkill(struct proc_t *p)
+{
+	acquire(&pcblock[p->pid]);
+	p->killed = 1;
+	release(&pcblock[p->pid]);
 }
 
 int32_t killed(struct proc_t *p)
@@ -414,17 +431,12 @@ int32_t killed(struct proc_t *p)
 	return k;
 }
 
-void recycle_exitedproc(pid_t pid)
-{
-	freeproc(pid);
-}
-
 /**
  * @brief The 1st user program that calls execve("/bin/initrc"). Assembled from
  * ../user/src/initcode.S.
  * Command: `hexdump -ve '4/4 "0x%08x, " "\n"' ./user/bin/initcode`
  */
-__aligned(PGSIZE) uint32_t initcode[] = {
+uint32_t initcode[] = {
 	0x00b00893, 0x00000517, 0x02c50513, 0x00000597, 0x04458593, 0x00000617,
 	0x07c60613, 0x00000073, 0x00100893, 0xfff00513, 0x00000073, 0x00000000,
 	0x6e69622f, 0x696e692f, 0x00637274, 0x6c6c6568, 0x6e75006f, 0x00736b69,
@@ -438,21 +450,25 @@ void user_init(uint32_t priority)
 {
 	struct proc_t *p = allocproc();
 	assert(p != NULL);
+	assert(p->pid == 1);
 	p->parentpid = 0;
 	p->state = TASK_READY;
 	p->ticks = p->priority = priority;
+	p->name = "initrc";
 
-	for (int32_t i = 0; i < NFD; i++)
-		p->fdtable[i] = -1;
+	for (int32_t fd = 0; fd < NFD; fd++)
+		p->fdtable[fd] = -1;
 	release(&pcblock[p->pid]);
 
-// this value is corresponding to user/makefile:64
+// this value is corresponding to user/user.ld
 #define INITSTART 0x1000
+	char *initpage = pages_alloc(1);
+	assert(initpage != NULL);
 	assert(mappages(p->mm->pagetable, INITSTART, PGSIZE,
-			(uintptr_t)initcode,
-			PTE_X | PTE_R | PTE_U | PTE_V) != -1);
+			(uintptr_t)initpage, PTE_X | PTE_R | PTE_U) != -1);
 	add_vm_area(p->mm, INITSTART, INITSTART + PGSIZE, PTE_X | PTE_R | PTE_U,
 		    0, NULL, 0);
+	memcpy(initpage, initcode, sizeof(initcode));
 	p->tf->epc = INITSTART;
 }
 
@@ -465,17 +481,18 @@ int64_t do_fork()
 		return -1;
 	}
 
-	// copy user memory from parent to child with cow mechanism
-	if (uvmcopy(parentproc->mm, childproc->mm) < 0) {
-		freeproc(childproc->pid);
-		release(&pcblock[childproc->pid]);
-		return -1;
-	}
+	// copy user memory from parent to child with COW mechanism
+	uvm_space_copy(childproc->mm, parentproc->mm);
 
 	*(childproc->tf) = *(parentproc->tf);	// copy saved user's registers
-	// childproc's ret val of fork need to be set to 0 according to
-	// POSIX
+
+	// childproc's ret val of fork need to be set to 0 according to POSIX
 	childproc->tf->a0 = 0;
+
+	// increment reference counts on open file descriptors
+	for (int32_t i = 0; i < NFD; i++)
+		childproc->fdtable[i] = file_dup(parentproc->fdtable[i]);
+	childproc->cwd = idup(parentproc->cwd);
 
 	childproc->parentpid = parentproc->pid;
 	childproc->state = TASK_READY;
@@ -486,8 +503,33 @@ int64_t do_fork()
 
 	release(&pcblock[childproc->pid]);
 	assert(parentproc->magic == UNIKS_MAGIC);
+	assert(childproc->magic == UNIKS_MAGIC);
 
 	return childproc->pid;
+}
+
+// Pass p's abandoned children to init.
+void reparent(struct proc_t *p)
+{
+	int32_t i = 1;
+	for (struct proc_t *pp; i < NPROC; i++) {
+		if (i == p->pid)
+			continue;
+		acquire(&pcblock[i]);
+		if ((pp = pcbtable[i]) == NULL) {
+			release(&pcblock[i]);
+			continue;
+		}
+		if (pp->parentpid == p->pid) {
+			pp->parentpid = INIT_PROC->pid;
+			release(&pcblock[i]);
+
+			acquire(&pcblock[INIT_PROC->pid]);
+			INIT_PROC->state = TASK_READY;
+			release(&pcblock[INIT_PROC->pid]);
+		} else
+			release(&pcblock[i]);
+	}
 }
 
 /**
@@ -501,19 +543,50 @@ int64_t do_fork()
 void do_exit(int32_t status)
 {
 	struct proc_t *p = myproc();
-
-	assert(p != pcbtable[0]);
+	assert(p != FIRST_PROC);
+	assert(p != INIT_PROC);
 
 	acquire(&pcblock[p->pid]);
 	p->exitstate = status;
 	p->state = TASK_ZOMBIE;
 
 	/**
+	 * @brief free all memorys and files that the process holds, including
+	 * the kstack, the pagetable, physical memory page which is
+	 * mapped by pagetable and etc.
+	 */
+	freeproc(p);
+
+	// Give any childproc to init.
+	reparent(p);
+
+	/**
 	 * @brief Unblock all the processes which are waiting for
 	 * myproc() to exit.
 	 */
-	proc_unblock_all(&p->wait_list);
+	int32_t num = proc_unblock_all(&p->wait_list);
+	if (num == 0) {
+		/**
+		 * @brief Means that no other process is waiting for the process
+		 * to exit through waitpid(). So Next, it is necessary to check
+		 * whether there is another process is waiting through wait().
+		 */
+		int32_t i = 1;
+		for (struct proc_t *pp; i < NPROC; i++) {
+			if (i == p->pid)
+				continue;
+			acquire(&pcblock[i]);
+			if ((pp = pcbtable[i]) == NULL) {
+				release(&pcblock[i]);
+				continue;
+			}
+			if (p->parentpid == pp->pid and pp->w4child == 1)
+				pp->state = TASK_READY;
+			release(&pcblock[i]);
+		}
+	}
 
+	// Jump into the scheduler, never to return.
 	sched();
 	BUG();
 }

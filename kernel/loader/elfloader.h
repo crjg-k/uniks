@@ -8,8 +8,7 @@
 #include <uniks/defs.h>
 
 
-int32_t load_elf(struct proc_t *p, struct mm_struct *mm,
-		 struct m_inode_t *inode);
+uint64_t load_elf(struct mm_struct *mm, struct m_inode_t *inode);
 
 
 #endif

@@ -23,7 +23,19 @@
 #define TRAPFRAME  (TRAMPOLINE - PGSIZE)
 
 // user process vaddr space
-#define USER_STACK_TOP			    (TRAPFRAME)
+#define USER_STACK_TOP (TRAPFRAME)
+
+
+#if (__ASSEMBLER__ == 0)
+
+extern char stext[], etext[];
+extern char sdata[], edata[];
+extern char sbss[], ebss[];
+extern char end[];
+extern char kernel_entry[];
+extern char KERNEL_BASE_ADDR[];
+
+#endif
 
 
 #endif /* !__KERNEL_MM_MEMLAY_H__ */

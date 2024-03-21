@@ -1,8 +1,9 @@
 #include <stdarg.h>
+#include <udefs.h>
 #include <usyscall.h>
 
 
-static inline long syscall(long num, ...)
+static long syscall(long num, ...)
 {
 	va_list ap;
 	va_start(ap, num);
@@ -59,12 +60,17 @@ int waitpid(int pid, int *status)
 	return syscall(SYS_waitpid, pid, status);
 }
 
+int wait(int *status)
+{
+	return waitpid(-1, status);
+}
+
 int execve(const char *path, char *argv[], char *envp[])
 {
 	return syscall(SYS_execve, path, argv, envp);
 }
 
-void exit(int status)
+void _exit(int status)
 {
 	syscall(SYS_exit, status);
 }

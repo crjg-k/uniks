@@ -25,8 +25,7 @@ CFLAGS = \
 	-static \
 	-march=rv64g \
 	-nostdlib \
-	-fno-builtin \
-	-ffreestanding
+	-fno-builtin
 
 CFLAGS += $(foreach dir, ${INC_DIR}, -I${dir})
 

@@ -15,10 +15,8 @@ void sys_ftable_init()
 {
 	initlock(&fcbtable.lock, "fcbtable");
 	INIT_LIST_HEAD(&fcbtable.wait_list);
-	for (int32_t i = 0; i < NFILE; i++) {
-		mutex_init(&fcbtable.files[i].f_mtx, "fcblock");
+	for (int32_t i = 0; i < NFILE; i++)
 		fcbtable.files[i].f_count = 0;
-	}
 
 	queue_init(&fcbtable.qm, NFILE, fcbtable.idle_fcb_queue_array);
 	for (int32_t i = 0; i < NFILE; i++)
@@ -42,13 +40,16 @@ int32_t file_alloc()
 }
 
 // Increment ref count for file fcb_no.
-void file_dup(int32_t fcb_no)
+int32_t file_dup(int32_t fcb_no)
 {
+	if (fcb_no < 0)
+		return fcb_no;
 	struct file_t *f = &fcbtable.files[fcb_no];
-	mutex_acquire(&f->f_mtx);
+	acquire(&fcbtable.lock);
 	assert(f->f_count >= 1);
 	f->f_count++;
-	mutex_release(&f->f_mtx);
+	release(&fcbtable.lock);
+	return fcb_no;
 }
 
 // Free a file structure entry
@@ -64,18 +65,23 @@ void file_free(int32_t fcb_no)
 void file_close(int32_t fcb_no)
 {
 	struct file_t *f = &fcbtable.files[fcb_no];
-	mutex_acquire(&f->f_mtx);
-	if (--f->f_count == 0) {
-		if (S_ISCHR(f->f_inode->d_inode_ctnt.i_mode) or
-		    S_ISBLK(f->f_inode->d_inode_ctnt.i_mode) or
-		    S_ISREG(f->f_inode->d_inode_ctnt.i_mode) or
-		    S_ISDIR(f->f_inode->d_inode_ctnt.i_mode)) {
-			iput(f->f_inode);
-		}
-		mutex_release(&f->f_mtx);
-		file_free(fcb_no);
-	} else
-		mutex_release(&f->f_mtx);
+
+	acquire(&fcbtable.lock);
+	struct m_inode_t *tmp_inode = f->f_inode;
+	assert(f->f_count >= 1);
+	if (--f->f_count > 0) {
+		release(&fcbtable.lock);
+		return;
+	}
+	release(&fcbtable.lock);
+
+	if (S_ISCHR(tmp_inode->d_inode_ctnt.i_mode) or
+	    S_ISBLK(tmp_inode->d_inode_ctnt.i_mode) or
+	    S_ISREG(tmp_inode->d_inode_ctnt.i_mode) or
+	    S_ISDIR(tmp_inode->d_inode_ctnt.i_mode)) {
+		iput(tmp_inode);
+	}
+	file_free(fcb_no);
 }
 
 // Read from file f. Addr is a user virtual address.
@@ -83,19 +89,18 @@ int64_t file_read(struct file_t *f, void *addr, int32_t cnt)
 {
 	int64_t res = -EINVAL;
 	if (!READABLE(f->f_flags))
-		goto ret2;
+		goto ret;
 	if (verify_area(myproc()->mm, (uintptr_t)addr, cnt, PTE_W | PTE_U) <
 	    0) {
 		res = -EFAULT;
-		goto ret2;
+		goto ret;
 	}
 
 	struct m_inode_t *inode = f->f_inode;
-	mutex_acquire(&f->f_mtx);
 
 	// if PIPE
 	if (S_ISFIFO(inode->d_inode_ctnt.i_mode)) {
-		goto ret1;
+		goto ret;
 	}
 
 	ilock(inode);
@@ -117,9 +122,7 @@ int64_t file_read(struct file_t *f, void *addr, int32_t cnt)
 	}
 
 	iunlock(inode);
-ret1:
-	mutex_release(&f->f_mtx);
-ret2:
+ret:
 	return res;
 }
 
@@ -128,20 +131,19 @@ int64_t file_write(struct file_t *f, void *addr, int32_t cnt)
 {
 	int64_t res = -EINVAL;
 	if (!WRITEABLE(f->f_flags))
-		goto ret2;
+		goto ret;
 
 	if (verify_area(myproc()->mm, (uintptr_t)addr, cnt, PTE_R | PTE_U) <
 	    0) {
 		res = -EFAULT;
-		goto ret2;
+		goto ret;
 	}
 
 	struct m_inode_t *inode = f->f_inode;
-	mutex_acquire(&f->f_mtx);
 
 	// if PIPE
 	if (S_ISFIFO(inode->d_inode_ctnt.i_mode)) {
-		goto ret1;
+		goto ret;
 	}
 
 	ilock(inode);
@@ -163,8 +165,6 @@ int64_t file_write(struct file_t *f, void *addr, int32_t cnt)
 	}
 
 	iunlock(inode);
-ret1:
-	mutex_release(&f->f_mtx);
-ret2:
+ret:
 	return res;
 }

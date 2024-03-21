@@ -52,10 +52,9 @@ static int32_t pre_load_segment(struct mm_struct *mm, struct m_inode_t *inode,
 		prgm_header->p_offset, inode, prgm_header->p_filesz);
 }
 
-int32_t load_elf(struct proc_t *p, struct mm_struct *mm,
-		 struct m_inode_t *inode)
+uint64_t load_elf(struct mm_struct *mm, struct m_inode_t *inode)
 {
-	int32_t res = -1;
+	int32_t res = 0;
 	struct Elf64_Ehdr_t elf_header;
 
 	ilock(inode);
@@ -76,8 +75,7 @@ int32_t load_elf(struct proc_t *p, struct mm_struct *mm,
 				goto ret;
 		}
 	}
-	p->tf->epc = elf_header.e_entry;
-	res = 0;
+	res = elf_header.e_entry;
 
 ret:
 	iunlock(inode);

@@ -23,7 +23,7 @@ uint64_t argufetch(struct proc_t *p, int32_t n)
 
 /**
  * @brief Fetch the nth word-sized system call argument as a null-terminated
- * string. Copies into buf, at most max. Returns
+ * string. Copies into buf, at most max.
  * @param vaddr
  * @param buf
  * @param max
@@ -31,10 +31,26 @@ uint64_t argufetch(struct proc_t *p, int32_t n)
  */
 int32_t argstrfetch(uintptr_t vaddr, char *buf, int32_t max)
 {
-	struct proc_t *p = myproc();
-	if (verify_area(p->mm, vaddr, max, PTE_R | PTE_U) < 0)
-		return -1;
-	return copyin_string(p->mm->pagetable, buf, vaddr, max);
+	struct mm_struct *mm = myproc()->mm;
+	int32_t got_null = -1, len = 0, offset = OFFSETPAGE(vaddr), bytes;
+
+	while (got_null == -1) {
+		bytes = PGSIZE - offset;
+		if (bytes > max)
+			bytes = max;
+		if (verify_area(mm, vaddr, bytes, PTE_R | PTE_U) < 0)
+			return -1;
+		got_null =
+			copyin_string(mm->pagetable, buf + len, vaddr, bytes);
+
+		if (got_null > 0)
+			len += got_null;
+		offset = 0;
+		max -= bytes;
+		vaddr += bytes;
+	}
+
+	return len;
 }
 
 

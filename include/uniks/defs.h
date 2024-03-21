@@ -54,12 +54,4 @@ enum {
 #define get_high_32bit(var)	({ (var) >> 32; })
 
 
-extern char stext[], etext[];
-extern char sdata[], edata[];
-extern char sbss[], ebss[];
-extern char end[];
-extern char kernel_entry[];
-extern char KERNEL_BASE_ADDR[];
-
-
 #endif /* !__DEFS_H__ */

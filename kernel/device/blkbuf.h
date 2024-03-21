@@ -30,7 +30,7 @@ struct blkbuf_t {
 
 struct blk_cache_t {
 	struct spinlock_t lock;
-	struct blkbuf_t blkbuf[NBUF];
+	struct blkbuf_t blkbuf[NBBUF];
 	struct list_node_t free_list;	// free_list
 	struct list_node_t wait_list;	// wait for free_list
 	struct list_node_t hash_bucket_table[HASH_TABLE_PRIME];

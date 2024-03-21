@@ -224,10 +224,14 @@ static void ifree(dev_t dev, uint32_t i_no)
  */
 struct m_inode_t *idup(struct m_inode_t *ip)
 {
+	if (ip == NULL)
+		goto ret;
 	acquire(&inode_table.lock);
 	assert(ip->i_count >= 1);
 	ip->i_count++;
 	release(&inode_table.lock);
+
+ret:
 	return ip;
 }
 
@@ -269,6 +273,8 @@ void iunlock(struct m_inode_t *ip)
  */
 void iput(struct m_inode_t *ip)
 {
+	if (ip == NULL)
+		return;
 	acquire(&inode_table.lock);
 
 	if (ip->i_count == 1 and ip->i_valid and
@@ -484,7 +490,8 @@ int64_t readi(struct m_inode_t *ip, int32_t user_dst, char *dst, uint64_t off,
  */
 struct m_inode_t *dirlookup(struct m_inode_t *ip, char *name, uint64_t *poff)
 {
-	uint64_t off;
+	uint64_t off, namelen = strlen(name);
+	assert(namelen <= EXT2_NAME_LEN);
 	char tmp_de[EXT2_DIRENTRY_MAXSIZE];
 	struct ext2_dir_entry_t *de = (struct ext2_dir_entry_t *)tmp_de;
 
@@ -494,7 +501,7 @@ struct m_inode_t *dirlookup(struct m_inode_t *ip, char *name, uint64_t *poff)
 		readi(ip, 0, tmp_de, off, EXT2_DIRENTRY_MAXSIZE);
 		if (de->inode == 0)
 			continue;
-		if (strncmp(name, de->name, de->name_len) == 0) {
+		if (strncmp(name, de->name, MAX(namelen, de->name_len)) == 0) {
 			// entry matches path element
 			if (poff)
 				*poff = off;
@@ -502,7 +509,7 @@ struct m_inode_t *dirlookup(struct m_inode_t *ip, char *name, uint64_t *poff)
 		}
 	}
 
-	return 0;
+	return NULL;
 }
 
 
@@ -533,9 +540,10 @@ static char *skipelem(char *path, char *name)
 	while (*path != '/' and *path != 0)
 		path++;
 	len = path - s;
-	if (len >= EXT2_NAME_LEN)
+	if (len >= EXT2_NAME_LEN) {
 		memcpy(name, s, EXT2_NAME_LEN);
-	else {
+		name[EXT2_NAME_LEN] = 0;
+	} else {
 		memcpy(name, s, len);
 		name[len] = 0;
 	}
@@ -562,7 +570,7 @@ static struct m_inode_t *namex(char *path, int nameiparent, char *name)
 	else
 		ip = idup(myproc()->cwd);
 
-	while ((path = skipelem(path, name)) != 0) {
+	while ((path = skipelem(path, name)) != NULL) {
 		if (strncmp(name, ".", 1) == 0)
 			continue;
 		ilock(ip);
@@ -572,7 +580,7 @@ static struct m_inode_t *namex(char *path, int nameiparent, char *name)
 			iunlock(ip);
 			return ip;
 		}
-		if ((next = dirlookup(ip, name, 0)) == 0) {
+		if ((next = dirlookup(ip, name, 0)) == NULL) {
 			iunlockput(ip);
 			return NULL;
 		}
@@ -588,7 +596,7 @@ static struct m_inode_t *namex(char *path, int nameiparent, char *name)
 
 struct m_inode_t *namei(char *path)
 {
-	char name[EXT2_NAME_LEN];
+	char name[EXT2_NAME_LEN + 1];
 	return namex(path, 0, name);
 }
 

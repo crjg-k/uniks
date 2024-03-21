@@ -2,6 +2,7 @@
 #define __KERNEL_MM_PHYS_H__
 
 
+#include <sync/spinlock.h>
 #include <uniks/defs.h>
 
 
@@ -14,8 +15,17 @@
 void phymem_init();
 
 // === buddy system ===
+struct phys_page_record_t {
+	int16_t order;
+	uint16_t count;
+	struct spinlock_t lk;
+};
 void buddy_system_init(uintptr_t start, uintptr_t end);
 void *pages_alloc(size_t npages);
+void *pages_zalloc(size_t npages);
+void *pages_dup(void *ptr);
+int32_t pages_undup(void *ptr);
+void release_pglock(void *ptr);
 void pages_free(void *pa);
 
 

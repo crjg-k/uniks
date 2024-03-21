@@ -1,6 +1,7 @@
 #ifndef __LIST_H__
 #define __LIST_H__
 
+
 #include <uniks/defs.h>
 
 /* this list template is excerpted from linux:include/linux/list.h with url:
@@ -95,5 +96,6 @@ list_prev_then_del(struct list_node_t *listelm)
 	list_del(node);
 	return node;
 }
+
 
 #endif /* !__LIST_H__ */

@@ -6,6 +6,7 @@
 void mutex_init(struct mutex_t *m, char *name)
 {
 	m->locked = 0;
+	initlock(&m->lk, "mtxlk");
 	INIT_LIST_HEAD(&m->waiters);
 	m->name = name;
 	m->pid = 0;
@@ -13,30 +14,31 @@ void mutex_init(struct mutex_t *m, char *name)
 
 int32_t mutex_holding(struct mutex_t *m)
 {
-	return (m->locked and (m->pid == myproc()->pid));
+	int32_t res;
+	acquire(&m->lk);
+	res = (m->locked and (m->pid == myproc()->pid));
+	release(&m->lk);
+	return res;
 }
 
 void mutex_acquire(struct mutex_t *m)
 {
-	struct proc_t *p = myproc();
-	while (__sync_lock_test_and_set(&m->locked, 1) != 0) {
-		acquire(&pcblock[p->pid]);
-		list_add_front(&p->block_list, &m->waiters);
-		p->state = TASK_BLOCK;
-		sched();
-		release(&pcblock[p->pid]);
+	acquire(&m->lk);
+	while (m->locked) {
+		proc_block(&m->waiters, &m->lk);
 	}
-	__sync_synchronize();
+	m->locked = 1;
 	m->pid = myproc()->pid;
+	release(&m->lk);
 }
 
 void mutex_release(struct mutex_t *m)
 {
 	assert(mutex_holding(m));   // ensure that this mutex had been held
 
-	m->pid = 0;
-	__sync_synchronize();
-	__sync_lock_release(&m->locked);
+	acquire(&m->lk);
+	m->pid = m->locked = 0;
 	proc_unblock_all(&m->waiters);
 	assert(list_empty(&m->waiters));
+	release(&m->lk);
 }

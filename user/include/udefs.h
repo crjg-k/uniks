@@ -18,4 +18,12 @@
 #endif
 
 
+#define __always_inline inline __attribute__((always_inline))
+#define __noinline	__attribute__((noinline))
+#define __noreturn	__attribute__((noreturn))
+#define __packed	__attribute__((packed))
+#define __naked		__attribute__((naked))
+#define __aligned(N)	__attribute__((aligned(N)))
+
+
 #endif /* !__USER_INCLUDE_UDEFS_H__ */

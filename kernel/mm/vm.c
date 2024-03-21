@@ -21,39 +21,37 @@ void kvmenablehart()
 {
 	// wait for any previous writes to the page table memory to finish.
 	sfence_vma();
-	w_satp(MAKE_SATP(kernel_pagetable));
+	W_SATP(MAKE_SATP(kernel_pagetable));
 	// flush stale entries from the TLB.
 	sfence_vma();
 }
 
 /**
- * @brief return the address of the PTE in pagetable that corresponds to virtual
+ * @brief Return the address of the PTE in pagetable that corresponds to virtual
  * address va.
- * if alloc!=0, create any required page table pages
- *
+ * If alloc!=0, create any required page table pages.
  * @param pagetable
  * @param va
  * @param alloc wether allow to allocate memory
- * @return pte_t *: the 3rd level pte
+ * @return pgtable_entry_t *: the 3rd level pte
  */
-static pte_t *walk(pagetable_t pagetable, uint64_t va, int32_t alloc)
+struct pgtable_entry_t *walk(pagetable_t pagetable, uint64_t va, int32_t alloc)
 {
 	assert(va < MAXVA);
 
 	for (int32_t level = 2; level > 0; level--) {
-		struct pagetable_entry_t *pte =
-			(struct pagetable_entry_t *)&pagetable[PX(level, va)];
+		struct pgtable_entry_t *pte =
+			(struct pgtable_entry_t *)&pagetable[PX(level, va)];
 		if (pte->valid) {
-			pagetable = (pagetable_t)PTE2PA(pte);
-		} else {   // this page is not valid
-			if (!alloc or
-			    (pagetable = (pde_t *)pages_alloc(1)) == NULL)
+			pagetable = (pagetable_t)PNO2PA(pte->paddr);
+		} else {
+			// this page is not valid
+			if (!alloc or (pagetable = pages_zalloc(1)) == NULL)
 				return NULL;
-			memset(pagetable, 0, PGSIZE);
 			*(pte_t *)pte = PA2PTE(pagetable) | (level ? PTE_V : 0);
 		}
 	}
-	return &pagetable[PX(0, va)];
+	return (struct pgtable_entry_t *)&pagetable[PX(0, va)];
 }
 
 /**
@@ -65,15 +63,14 @@ static pte_t *walk(pagetable_t pagetable, uint64_t va, int32_t alloc)
  */
 static uintptr_t walkaddr(pagetable_t pagetable, uintptr_t va)
 {
-	struct pagetable_entry_t *pte =
-		(struct pagetable_entry_t *)walk(pagetable, va, 0);
+	struct pgtable_entry_t *pte = walk(pagetable, va, 0);
 	if (pte == NULL)
 		return 0;
 	if (!pte->valid)
 		return 0;
 	if (!pte->user)
 		return 0;
-	return PTE2PA(pte);
+	return PNO2PA(pte->paddr);
 }
 
 uintptr_t vaddr2paddr(pagetable_t pagetable, uintptr_t va)
@@ -90,10 +87,9 @@ int32_t mappages(pagetable_t pagetable, uintptr_t va, size_t size, uintptr_t pa,
 	assert(size != 0);
 
 	uint64_t a = PGROUNDDOWN(va), last = PGROUNDUP(a + size - 1);
-	struct pagetable_entry_t *pte;
+	struct pgtable_entry_t *pte;
 	while (a < last) {
-		if ((pte = (struct pagetable_entry_t *)walk(pagetable, a, 1)) ==
-		    NULL)
+		if ((pte = walk(pagetable, a, 1)) == NULL)
 			return -1;
 		/**
 		 * @brief assert that this entry does not
@@ -101,6 +97,8 @@ int32_t mappages(pagetable_t pagetable, uintptr_t va, size_t size, uintptr_t pa,
 		 */
 		assert(pte->valid == 0);
 		*(pte_t *)pte = PA2PTE(pa) | perm | PTE_V;
+		if (va >= TRAPFRAME)
+			pte->unrelease = 1;
 		a += PGSIZE;
 		pa += PGSIZE;
 	}
@@ -110,8 +108,7 @@ int32_t mappages(pagetable_t pagetable, uintptr_t va, size_t size, uintptr_t pa,
 static pagetable_t kvmmake()
 {
 	pagetable_t kpgtbl;
-	kpgtbl = (pagetable_t)pages_alloc(1);
-	memset(kpgtbl, 0, PGSIZE);
+	kpgtbl = (pagetable_t)pages_zalloc(1);
 	// uart registers
 	assert(mappages(kpgtbl, UART0, PGSIZE, UART0, PTE_R | PTE_W) != -1);
 	// virtio mmio disk interface
@@ -146,121 +143,194 @@ void kvminit()
  */
 pagetable_t uvmcreate()
 {
-	pagetable_t pagetable;
-	pagetable = pages_alloc(1);
-	if (pagetable == NULL)
-		return NULL;
-	memset(pagetable, 0, PGSIZE);
-	return pagetable;
+	return (pagetable_t)pages_zalloc(1);
 }
 
 /**
- * @brief Set several pages' flags covers [va_start, va_end) in pagetable.
- *
+ * @brief Compeletely free user memory pages, then free page-table pages. Except
+ * trapframe page.
  * @param pagetable
- * @param va_start must be page-aligned namely 4096 bytes aligned
- * @param va_end
- * @param perm
+ * @param level
  */
-void uvmmap(pagetable_t pagetable, uintptr_t va_start, uintptr_t va_end,
-	    int32_t perm)
+void free_pgtable(pagetable_t pagetable, int32_t layer)
 {
-	assert((va_start % PGSIZE) == 0);
+	for (int32_t i = 0; i < PTENUM; i++) {
+		struct pgtable_entry_t *pte =
+			(struct pgtable_entry_t *)&pagetable[i];
+		void *child = (void *)PNO2PA(pte->paddr);
+		if (layer < 2) {
+			if (pte->valid)	  // this pte has child layer
+				free_pgtable(child, layer + 1);
+		} else if (layer == 2) {
+			if (pte->unrelease)
+				continue;
+			if (pte->valid)	  // this pte has child layer
+				pages_free(child);
+		} else
+			BUG();
+	}
+}
 
-	struct pagetable_entry_t *pte;
-	for (uintptr_t va = va_start; va < va_end; va += PGSIZE) {
-		assert((pte = (struct pagetable_entry_t *)walk(pagetable, va,
-							       0)) != NULL);
-		pte->perm |= perm;   // set corresponding bits
+static void copy_pgtable(pagetable_t new_pagetable, pagetable_t old_pagetable,
+			 int32_t layer, uint32_t perm)
+{
+	assert(layer <= 2);
+
+	for (int32_t i = 0; i < PTENUM; i++) {
+		struct pgtable_entry_t *old_pte =
+			(struct pgtable_entry_t *)&old_pagetable[i];
+		if (old_pte->unrelease)
+			continue;
+		void *old_child = (void *)PNO2PA(old_pte->paddr);
+		if (old_pte->valid and layer < 2) {
+			// this old_pte has child layer
+			void *new_child;
+			struct pgtable_entry_t *new_pte =
+				(struct pgtable_entry_t *)&new_pagetable[i];
+			if (new_pte->valid)
+				new_child = (void *)PNO2PA(new_pte->paddr);
+			else {
+				new_child = pages_zalloc(1);
+				new_pagetable[i] =
+					PA2PTE(new_child) | PTE_FLAGS(old_pte);
+			}
+			copy_pgtable(new_child, old_child, layer + 1, perm);
+		} else if (old_pte->valid and layer == 2) {
+			// this old_pte maps to a physical page
+			clear_var_bit(old_pte->perm, perm);
+			new_pagetable[i] = old_pagetable[i];
+			pages_dup(old_child);
+		}
 	}
 }
 
 /**
- * @brief Clear several pages' flags covers [va_start, va_end) in pagetable.
- *
- * @param pagetable
- * @param va_start must be page-aligned namely 4096 bytes aligned
- * @param va_end
- * @param perm
+ * @brief receive a parent process's mm_struct, and copy its mm_struct only into
+ * child's address space without physical memory page it refers to (since COW
+ * mechanism is implemented).
+ * @param new_mm
+ * @param old_mm
+ * @return int64_t
  */
-void uvmunmap(pagetable_t pagetable, uintptr_t va_start, uintptr_t va_end,
-	      int32_t perm)
+int64_t uvm_space_copy(struct mm_struct *new_mm, struct mm_struct *old_mm)
 {
-	assert((va_start % PGSIZE) == 0);
+	// copy mm_struct
+	new_mm->map_count = old_mm->map_count;
+	new_mm->stack_maxsize = old_mm->stack_maxsize;
+	new_mm->start_ustack = old_mm->start_ustack;
+	new_mm->mmap_base = old_mm->mmap_base;
+	new_mm->start_brk = old_mm->start_brk;
+	new_mm->brk = old_mm->brk;
+	new_mm->start_code = old_mm->start_code;
+	new_mm->end_code = old_mm->end_code;
+	new_mm->start_data = old_mm->start_data;
+	new_mm->end_data = old_mm->end_data;
 
-	struct pagetable_entry_t *pte;
-	for (uintptr_t va = va_start; va < va_end; va += PGSIZE) {
-		assert((pte = (struct pagetable_entry_t *)walk(pagetable, va,
-							       0)) != NULL);
-		pte->perm &= ~perm;   // clear corresponding bits
+	// copy vm_area_struct
+	struct vm_area_struct *old_vma, *new_vma;
+	struct list_node_t *old_node = list_next(&old_mm->vm_area_list_head),
+			   *new_node = &new_mm->vm_area_list_head;
+	while (old_node != &old_mm->vm_area_list_head) {
+		old_vma = element_entry(old_node, struct vm_area_struct,
+					vm_area_list);
+		new_vma = new_vmarea_struct(
+			old_vma->vm_start, old_vma->vm_end, old_vma->vm_flags,
+			old_vma->vm_pgoff, old_vma->vm_inode, old_vma->_filesz);
+
+		new_vma->vm_mm = new_mm;
+		list_add_front(&new_vma->vm_area_list, new_node);
+		old_node = list_next(old_node);
+		new_node = list_next(new_node);
+
+		for (uintptr_t va = old_vma->vm_start; va < old_vma->vm_end;
+		     va += PGSIZE)
+			invalidate(va);
 	}
-}
 
-int32_t init_mm(struct mm_struct *mm)
-{
-	if ((mm->pagetable = uvmcreate()) == NULL)
-		return -1;
-	initlock(&mm->mmap_lk, "mm_lock");
-	INIT_LIST_HEAD(&mm->vm_area_list_head);
-	mm->mm_count = mm->map_count = 0;
-	mm->stack_maxsize = MAXSTACK;
-	struct vm_area_struct *vm0 = kmalloc(sizeof(struct vm_area_struct));
-	vm0->vm_start = vm0->vm_end = 0;
-	vm0->vm_flags = PTE_V | PTE_R | PTE_W | PTE_X | PTE_U;
-	list_add_front(&vm0->vm_area_list, &mm->vm_area_list_head);
-
-	vm0 = kmalloc(sizeof(struct vm_area_struct));
-	vm0->vm_start = vm0->vm_end = USER_STACK_TOP;
-	vm0->vm_flags = PTE_V | PTE_R | PTE_W | PTE_X | PTE_U;
-	list_add_tail(&vm0->vm_area_list, &mm->vm_area_list_head);
+	copy_pgtable(new_mm->pagetable, old_mm->pagetable, 0, PTE_W);
 
 	return 0;
 }
 
+struct mm_struct *new_mm_struct()
+{
+	struct mm_struct *mm = kmalloc(sizeof(struct mm_struct));
+
+	if ((mm->pagetable = uvmcreate()) == NULL)
+		return NULL;
+	initlock(&mm->mmap_lk, "mmlock");
+	INIT_LIST_HEAD(&mm->vm_area_list_head);
+	mm->map_count = 0;
+	mm->mm_count = 1;
+	mm->stack_maxsize = MAXSTACK;
+
+	return mm;
+}
+
 /**
  * @brief free an mm_struct with its vm_area_list
- *
  * @param mm
  */
-void free_mm(struct mm_struct *mm)
+void free_mm_struct(struct mm_struct *mm)
 {
+	// free all vm_area structs linked in mm
+	struct vm_area_struct *vma;
+	struct list_node_t *vm_area_node = list_next(&mm->vm_area_list_head);
+	while (vm_area_node != &mm->vm_area_list_head) {
+		vma = element_entry(vm_area_node, struct vm_area_struct,
+				    vm_area_list);
+		iput(vma->vm_inode);
+		kfree(vma);
+		vm_area_node = list_next(vm_area_node);
+	}
+
 	kfree(mm);
 }
 
-// hint: this will not deal with a bad overlay range!
-int32_t add_vm_area(struct mm_struct *mm, uintptr_t va_start, uintptr_t va_end,
-		    uint64_t flags, uint64_t pgoff, struct m_inode_t *inode,
-		    uint64_t _filesz)
+struct vm_area_struct *new_vmarea_struct(uintptr_t _va_start, uintptr_t _va_end,
+					 uint64_t flags, uint64_t pgoff,
+					 struct m_inode_t *inode,
+					 uint64_t _filesz)
 {
-	acquire(&mm->mmap_lk);
-	struct vm_area_struct *vm_area_new =
-				      kmalloc(sizeof(struct vm_area_struct)),
-			      *vm_area_target, *vm_area_target_next;
-	INIT_LIST_HEAD(&vm_area_new->vm_area_list);
-	vm_area_new->vm_start = va_start;
-	vm_area_new->vm_end = va_end;
-	vm_area_new->vm_flags = flags;
-	vm_area_new->vm_inode = inode;
-	vm_area_new->vm_pgoff = pgoff;
-	vm_area_new->_filesz = _filesz;
-	mm->map_count++;
+	struct vm_area_struct *vma = kmalloc(sizeof(struct vm_area_struct));
 
+	INIT_LIST_HEAD(&vma->vm_area_list);
+	vma->vm_start = _va_start;
+	vma->vm_end = _va_end;
+	vma->vm_flags = flags;
+	vma->vm_inode = idup(inode);
+	vma->vm_pgoff = pgoff;
+	vma->_filesz = _filesz;
+
+	return vma;
+}
+
+int32_t add_vm_area(struct mm_struct *mm, uintptr_t _va_start,
+		    uintptr_t _va_end, uint64_t flags, uint64_t pgoff,
+		    struct m_inode_t *inode, uint64_t _filesz)
+{
+	assert(OFFSETPAGE(_va_start) == 0);   // align to page
+	assert(OFFSETPAGE(_va_end) == 0);     // align to page
+
+	struct vm_area_struct *vma;
+
+	acquire(&mm->mmap_lk);
 	// "insert sorting"
-	struct list_node_t *vm_area_node = mm->vm_area_list_head.next,
-			   *vm_area_node_next = vm_area_node->next;
-	while (vm_area_node_next->next != &mm->vm_area_list_head) {
-		vm_area_target = element_entry(
-			vm_area_node, struct vm_area_struct, vm_area_list);
-		vm_area_target_next = element_entry(
-			vm_area_node_next, struct vm_area_struct, vm_area_list);
-		if (va_start >= vm_area_target->vm_end and
-		    va_end < vm_area_target_next->vm_start) {
+	struct list_node_t *vm_area_node = list_next(&mm->vm_area_list_head);
+	while (vm_area_node != &mm->vm_area_list_head) {
+		vma = element_entry(vm_area_node, struct vm_area_struct,
+				    vm_area_list);
+		assert(_va_end <= vma->vm_start or _va_start >= vma->vm_end);
+		if (vma->vm_start >= _va_end)
 			break;
-		}
-		vm_area_node = vm_area_node_next;
-		vm_area_node_next = vm_area_node->next;
+		vm_area_node = list_next(vm_area_node);
 	}
-	list_add_front(&vm_area_new->vm_area_list, vm_area_node);
+
+	vma = new_vmarea_struct(_va_start, _va_end, flags, pgoff, inode,
+				_filesz);
+	vma->vm_mm = mm;
+	mm->map_count++;
+	list_add_tail(&vma->vm_area_list, vm_area_node);
 
 	release(&mm->mmap_lk);
 	return 0;
@@ -270,127 +340,91 @@ struct vm_area_struct *search_vmareas(struct mm_struct *mm,
 				      uintptr_t target_vaddr, size_t size,
 				      uint32_t *flag_res)
 {
-	uint32_t perm = UINT32_MAX;
+	uint32_t perm = 0;
 	uintptr_t end_vaddr = target_vaddr + size;
+
 	acquire(&mm->mmap_lk);
 	struct list_node_t *vm_area_node = list_next(&mm->vm_area_list_head);
-	// vm_area_first record the first suitable vm_area_struct's addr
-	struct vm_area_struct *vm_area, *vm_area_first = NULL;
-	for (; vm_area_node != &mm->vm_area_list_head;
-	     vm_area_node = list_next(vm_area_node)) {
-		vm_area = element_entry(vm_area_node, struct vm_area_struct,
-					vm_area_list);
-		if (target_vaddr >= vm_area->vm_end)
-			continue;
-		if (target_vaddr >= vm_area->vm_start and
-		    target_vaddr < vm_area->vm_end) {
-			if (vm_area_first == NULL)
-				vm_area_first = vm_area;
-			target_vaddr = vm_area->vm_end;
-			perm &= vm_area->vm_flags;
+	struct vm_area_struct *vma;
+	while (vm_area_node != &mm->vm_area_list_head) {
+		vma = element_entry(vm_area_node, struct vm_area_struct,
+				    vm_area_list);
+		if (target_vaddr >= vma->vm_start and
+		    end_vaddr <= vma->vm_end) {
+			set_var_bit(perm, vma->vm_flags);
 			break;
-		} else
-			break;
+		}
+		vm_area_node = list_next(vm_area_node);
 	}
 	release(&mm->mmap_lk);
 
-	if (target_vaddr < end_vaddr)
+	if (vm_area_node == &mm->vm_area_list_head)
 		return NULL;
+
 	*flag_res = perm;
-	return vm_area_first;
+	return vma;
 }
 
-void free_pagetable() {}
-
-void free_mm_struct() {}
-
-/**
- * @brief free page table(both pde and pte), and all leaf must already
- * have been removed
- * @param pagetable
- * @param level
- */
-void freewalk(pagetable_t pagetable, int32_t level)
-{
-	if (level < 2) {
-		for (int32_t i = 0; i < PTENUM; i++) {
-			struct pagetable_entry_t *pte =
-				(struct pagetable_entry_t *)&pagetable[i];
-			if (pte->valid and
-			    !(pte->read and pte->write and pte->execute)) {
-				// this pte has child level
-				uint64_t child = PTE2PA(pte);
-				freewalk((pagetable_t)child, level + 1);
-			}
-		}
-	}
-	pages_free(pagetable);
-}
-
-// compeletely free user memory pages, then free page-table pages
-void uvmfree(struct mm_struct *mm) {}
-
-void copy_pagetable() {}
-
-void copy_mm_struct() {}
-
-/**
- * @brief receive a parent process's page table, and copy its page table
- * only into child's address space without physical memory page it
- * refers to (since the COW mechanism is implemented)
- *
- * @param old namely parent process
- * @param new namely child process
- * @param sz
- * @return int64_t
- */
-int64_t uvmcopy(struct mm_struct *mm_new, struct mm_struct *mm_old)
-{
-	struct pagetable_entry_t *pte;
-	uintptr_t va, pa;
-	uint32_t flags;
-
-	while (!list_empty(&mm_new->vm_area_list_head)) {
-		struct list_node_t *next_node =
-			list_next(&mm_new->vm_area_list_head);
-		struct vm_area_struct *vma = element_entry(
-			next_node, struct vm_area_struct, vm_area_list);
-		for (va = vma->vm_start; va < vma->vm_end; va += PGSIZE) {
-			assert((pte = (struct pagetable_entry_t *)walk(
-					mm_old->pagetable, va, 0)) != NULL);
-			assert(pte->valid != 0);
-			pa = PTE2PA(pte);
-			pte->write = 0;
-			flags = PTE_FLAGS(pte);
-			// add mapping to childproc pagetable
-			assert(mappages(mm_new->pagetable, va, PGSIZE,
-					(uintptr_t)pa, flags) != -1);
-			// mem_map[PA2ARRAYINDEX(pa)]++;
-
-			invalidate(va);
-		}
-	}
-	return 0;
-}
-
-static void true_load_segment(struct vm_area_struct *_vm_area, uintptr_t vaddr,
+static void true_load_segment(struct vm_area_struct *vma, uintptr_t vaddr,
 			      char *page_start)
 {
-	uint32_t segoff = PGROUNDDOWN(vaddr) - _vm_area->vm_start;
-	uint32_t pgoff = MAX(segoff, _vm_area->_filesz) - segoff;
+	assert(OFFSETPAGE(vaddr) == 0);
+	uint32_t segoff = vaddr - vma->vm_start;
+	uint32_t pgoff = MAX(segoff, vma->_filesz) - segoff;
 	if (pgoff > PGSIZE)
 		pgoff = PGSIZE;
 
-	if (segoff < _vm_area->_filesz) {
-		ilock(_vm_area->vm_inode);
-		readi(_vm_area->vm_inode, 0, page_start,
-		      _vm_area->vm_pgoff + segoff, pgoff);
-		iunlock(_vm_area->vm_inode);
+	if (segoff < vma->_filesz) {
+		ilock(vma->vm_inode);
+		readi(vma->vm_inode, 0, page_start, vma->vm_pgoff + segoff,
+		      pgoff);
+		iunlock(vma->vm_inode);
 	}
-	if (_vm_area->_filesz != (_vm_area->vm_end - _vm_area->vm_start)) {
+	if (vma->_filesz != (vma->vm_end - vma->vm_start)) {
 		// means that .bss section
 		memset(page_start + pgoff, 0, PGSIZE - pgoff);
 	}
+}
+
+// this function's name comes from Linux v1.0
+void do_no_page(struct mm_struct *mm, struct vm_area_struct *vma,
+		uintptr_t vaddr, uint32_t targetperm)
+{
+	char *page_start = pages_alloc(1);
+	mappages(mm->pagetable, vaddr, PGSIZE, (uintptr_t)page_start,
+		 targetperm);
+	if (vma->vm_inode != NULL)
+		true_load_segment(vma, vaddr, page_start);
+}
+
+// this function's name comes from Linux v1.0
+void do_wp_page(struct pgtable_entry_t *pte, uintptr_t vaddr,
+		uint32_t targetperm)
+{
+	char *physpg_paddr = (char *)PNO2PA(pte->paddr);
+
+	/**
+	 * @brief Only being referenced once indicates that it has not been
+	 * shared, so just change the read and write properties.
+	 */
+	if (pages_undup(physpg_paddr) == 1) {
+		set_var_bit(pte->perm, targetperm);
+		release_pglock(physpg_paddr);
+		goto ret;
+	}
+
+	/**
+	 * @brief If it is referenced multiple times, it is necessary to
+	 * copy the physical page table.
+	 */
+	char *new_page = pages_alloc(1);
+	memcpy(new_page, physpg_paddr, PGSIZE);
+	release_pglock(physpg_paddr);
+	set_var_bit(targetperm, pte->perm);
+	*(pte_t *)pte = PA2PTE(new_page) | targetperm;
+
+ret:
+	invalidate(vaddr);   // need to flush TLB
 }
 
 /**
@@ -406,58 +440,83 @@ int32_t verify_area(struct mm_struct *mm, uintptr_t vaddr, size_t size,
 {
 	uint32_t vm_flags;
 
-	struct vm_area_struct *_vm_area =
-		search_vmareas(mm, vaddr, size, &vm_flags);
+	struct vm_area_struct *vma = search_vmareas(mm, vaddr, size, &vm_flags);
 
 	/**
 	 * @brief If the [vaddr, vaddr+size) area's permission is not the
 	 * superset of targetperm, then trigger segment fault.
 	 */
-	if (_vm_area == NULL or
-	    get_var_bit(targetperm, vm_flags) != targetperm) {
+	if (vma == NULL or get_var_bit(targetperm, vm_flags) != targetperm) {
 		return -1;
 	} else {
-		pte_t *pte = walk(mm->pagetable, vaddr, 1);
-		if (!get_var_bit(*pte, PTE_V)) {
-			size_t npages = div_round_up(
-				(vaddr + size) - PGROUNDDOWN(vaddr), PGSIZE);
-			char *page_start = pages_alloc(npages);
-			mappages(mm->pagetable, vaddr, PGSIZE * npages,
-				 (uintptr_t)page_start, targetperm | PTE_V);
-			if (_vm_area->vm_inode != NULL) {
-				assert(npages == 1);
-				true_load_segment(_vm_area, vaddr, page_start);
+		uintptr_t end_vaddr = vaddr + size;
+		for (uintptr_t start_vaddr = PGROUNDDOWN(vaddr);
+		     start_vaddr < end_vaddr; start_vaddr += PGSIZE) {
+			struct pgtable_entry_t *pte =
+				walk(mm->pagetable, start_vaddr, 1);
+			if (get_var_bit(pte->perm, targetperm) == targetperm)
+				continue;
+
+			// handling of COW mechanism
+			if (pte->valid)
+				do_wp_page(pte, start_vaddr, targetperm);
+			else {
+				/**
+				 * @brief Pages that have not been loaded into
+				 * memory must not have been referenced multiple
+				 * times by the COW mechanism.
+				 */
+				do_no_page(mm, vma, start_vaddr, targetperm);
 			}
-		} else {
-			uvmmap(mm->pagetable, PGROUNDDOWN(vaddr),
-			       PGROUNDDOWN(vaddr) + 1, targetperm);
 		}
 	}
 
-	sfence_vma();	//  need to flush all TLB
 	return 0;
 }
 
-#define SEGFAULT_MSG	 "Segmentation fault"
-#define SEG_FAULT(vaddr) ({ kprintf("%s:%p\n", SEGFAULT_MSG, vaddr); })
-void do_inst_page_fault(struct mm_struct *mm, uintptr_t fault_vaddr)
+#define SEGFAULT_MSG "Segmentation fault"
+#define SEG_FAULT(pid, inst, vaddr) \
+	({ \
+		kprintf("\n\x1b[%dmpid[%d] %s:%p=>%p\x1b[0m\n", RED, pid, \
+			SEGFAULT_MSG, inst, vaddr); \
+	})
+void do_inst_page_fault(uintptr_t fault_vaddr)
 {
-	if (verify_area(mm, fault_vaddr, 4, PTE_X | PTE_R | PTE_U) != 0)
-		SEG_FAULT(fault_vaddr);
+	struct proc_t *p = myproc();
+	if (verify_area(p->mm, fault_vaddr, 4, PTE_X | PTE_R | PTE_U) != 0) {
+		SEG_FAULT(p->pid, p->tf->epc, fault_vaddr);
+		setkill(p);
+	}
 }
 
-// todo: distinguish byte/half word/word/double word
-void do_ld_page_fault(struct mm_struct *mm, uintptr_t fault_vaddr)
+/**
+ * @brief On account of RISCV requiring addresses' alignment of LOAD and STROE
+ * instructions, this function could just regards accessing size as 1.
+ * @param fault_vaddr
+ */
+void do_ld_page_fault(uintptr_t fault_vaddr)
 {
-	if (verify_area(mm, fault_vaddr, 8, PTE_R | PTE_W | PTE_U) != 0)
-		SEG_FAULT(fault_vaddr);
+	struct proc_t *p = myproc();
+	if (verify_area(p->mm, fault_vaddr, 1, PTE_R | PTE_W | PTE_U) != 0) {
+		SEG_FAULT(p->pid, p->tf->epc, fault_vaddr);
+		setkill(p);
+	}
 }
 
-void do_sd_page_fault(struct mm_struct *mm, uintptr_t fault_vaddr)
+/**
+ * @brief On account of RISCV requiring addresses' alignment of LOAD and STROE
+ * instructions, this function could just regards accessing size as 1.
+ * @param fault_vaddr
+ */
+void do_sd_page_fault(uintptr_t fault_vaddr)
 {
-	if (verify_area(mm, fault_vaddr, 8, PTE_R | PTE_W | PTE_U) != 0)
-		SEG_FAULT(fault_vaddr);
+	struct proc_t *p = myproc();
+	if (verify_area(p->mm, fault_vaddr, 1, PTE_R | PTE_W | PTE_U) != 0) {
+		SEG_FAULT(p->pid, p->tf->epc, fault_vaddr);
+		setkill(p);
+	}
 }
+
 
 /* === transmit data between user space and kernel space === */
 
@@ -510,9 +569,7 @@ int32_t copyin_string(pagetable_t pagetable, char *dst, uintptr_t srcva,
 
 	while (got_null == 0 and max > 0) {
 		va0 = PGROUNDDOWN(srcva);
-		pa0 = walkaddr(pagetable, va0);
-		if (pa0 == 0)
-			return -1;
+		assert((pa0 = walkaddr(pagetable, va0)) != 0);
 		n = PGSIZE - (srcva - va0);
 		if (n > max)
 			n = max;

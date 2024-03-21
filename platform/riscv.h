@@ -62,7 +62,7 @@
 #define EXC_INST_ADDR_MISALIGN (0)
 #define EXC_INST_ACCESSFAULT   (1)
 #define EXC_INST_ILLEGAL       (2)
-#define EXC_BREAK	       (3)
+#define EXC_BREAKPOINT	       (3)
 #define EXC_LD_ADDR_MISALIGN   (4)
 #define EXC_LD_ACCESSFAULT     (5)
 #define EXC_SD_ADDR_MISALIGN   (6)
@@ -85,7 +85,7 @@
 #define SSTATUS_SPP  (0x00000100)
 
 
-struct pagetable_entry_t {
+struct pgtable_entry_t {
 	union {
 		struct {
 			uint8_t valid : 1;
@@ -100,11 +100,22 @@ struct pagetable_entry_t {
 		uint8_t perm : 8;
 	};
 
-	uint8_t RSW : 2;
-	uint32_t ppn0 : 9;
-	uint32_t ppn1 : 9;
-	uint32_t ppn2 : 26;
-	uint32_t reserved : 64 - 54;
+	union {
+		struct {
+			uint8_t unrelease : 1;
+			uint8_t RSW : 1;
+			uintptr_t ppn0 : 9;
+			uintptr_t ppn1 : 9;
+			uintptr_t ppn2 : 26;
+		};
+		struct {
+			uint8_t : 1;
+			uint8_t : 1;
+			uintptr_t paddr : 44;
+		};
+	};
+
+	uint32_t reserved : 64 - 55;   // need to always be 0
 } __packed;
 
 
@@ -116,18 +127,12 @@ struct pagetable_entry_t {
 #define SATP_SV39	     (8ll << 60)   // RISCV Sv39 page table scheme
 #define PTENUM		     (PGSIZE / sizeof(pte_t))
 #define MAKE_SATP(pagetable) (SATP_SV39 | (((uint64_t)pagetable) >> PGSHIFT))
-#define w_satp(x)	     ({ asm volatile("csrw satp, %0" : : "r"(x)); })
+#define W_SATP(x)	     ({ asm volatile("csrw satp, %0" : : "r"(x)); })
 #define PA2PTE(pa)	     ((((uint64_t)pa) >> PGSHIFT) << 10)   // pysical addr to pte
-#define PTE2PA(pte) \
-	(((*(uint64_t *)pte) >> 10) << PGSHIFT)	  // pte to pysical addr
+#define PNO2PA(pa)	     (uintptr_t)((pa) << PGSHIFT)
 #define PXSHIFT(level)	     (PGSHIFT + (9 * (level)))
 #define PX(level, va)	     ((((uint64_t)(va)) >> PXSHIFT(level)) & 0x1ff)
-#define PTE_FLAGS(pte)	     ((*(uint64_t *)pte) & 0x3ff)
-#define PAGE_ISVALID(pte)    ((*(uint64_t *)pte) & PTE_V)
-#define PAGE_ISREADABLE(pte) ((*(uint64_t *)pte) & PTE_R)
-#define PAGE_ISWRITABLE(pte) ((*(uint64_t *)pte) & PTE_W)
-#define PAGE_ISEXECABLE(pte) ((*(uint64_t *)pte) & PTE_X)
-#define PAGE_ISUSPACE(pte)   ((*(uint64_t *)pte) & PTE_U)
+#define PTE_FLAGS(pte)	     get_var_bit(*(uint64_t *)pte, 0x3ff)
 
 
 #define cpuid() \

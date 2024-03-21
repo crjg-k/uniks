@@ -1,7 +1,6 @@
 #include "phys.h"
 #include "memlay.h"
 #include "mmu.h"
-#include <sync/spinlock.h>
 #include <uniks/defs.h>
 #include <uniks/kassert.h>
 #include <uniks/kstdlib.h>
@@ -15,7 +14,7 @@ void phymem_init()
 	assert((char *)KERNEL_END_LIMIT >= (char *)end);
 
 	// physical page allocator
-	buddy_system_init(KERNEL_END_LIMIT, PHYSTOP + 1);
+	buddy_system_init(KERNEL_END_LIMIT, PHYSTOP);
 	// kmalloc allocator referenced by slub in Linux
 	kmem_cache_init();
 }
@@ -23,11 +22,8 @@ void phymem_init()
 
 // === buddy system ===
 
-struct physical_page_record_t {
-	int16_t order;
-	uint16_t count;
-} __packed;
-struct physical_page_record_t physical_page_record[PHYMEM_AVAILABLE >> PGSHIFT];
+struct phys_page_record_t physical_page_record[PHYMEM_AVAILABLE >> PGSHIFT];
+#define a sizeof(physical_page_record)
 struct list_node_t orderarray[11];   // 0-10 order
 struct spinlock_t buddy_lock;
 uintptr_t mem_start, mem_end;
@@ -48,12 +44,12 @@ enum order {
 // mount all available blocks of order power to the orderarray
 static void mount_orderlist(uintptr_t current, int32_t order)
 {
-	while (current + (1 << order) * PGSIZE < mem_end) {
+	while (current + (1 << order) * PGSIZE <= mem_end) {
 		list_add_front((struct list_node_t *)current,
 			       &orderarray[order]);
 		current += (1 << order) * PGSIZE;
 	}
-	if (order != ORD_0 and current != mem_end - 1)
+	if (order != ORD_0 and current != mem_end)
 		mount_orderlist(current, order - 1);
 }
 
@@ -86,6 +82,7 @@ static uint64_t clz(uint64_t reg)
 	BUG();
 	return -1;
 }
+
 static int16_t get_power2(uint32_t n)
 {
 	return 63 - clz(n);
@@ -112,6 +109,7 @@ static void do_record(void *ptr, int16_t order)
 	assert(physical_page_record[index].count == 0);
 	physical_page_record[index].count++;
 	physical_page_record[index].order = order;
+	initlock(&physical_page_record[index].lk, "perpg_lock");
 }
 
 void buddy_system_init(uintptr_t start, uintptr_t end)
@@ -157,7 +155,48 @@ out:
 	assert(OFFSETPAGE((uintptr_t)ptr) == 0);
 	release(&buddy_lock);
 	// tracef("buddy system: allocate %d page(s) start @%p,", npages, ptr);
+	assert(ptr != NULL);
 	return ptr;
+}
+
+void *pages_zalloc(size_t npages)
+{
+	void *ptr = pages_alloc(npages);
+	assert(ptr != NULL);
+	memset(ptr, 0, PGSIZE);
+	return ptr;
+}
+
+void *pages_dup(void *ptr)
+{
+	int32_t index = ADDR2ARRAYINDEX(ptr);
+	acquire(&buddy_lock);
+	assert(physical_page_record[index].count >= 1);
+	physical_page_record[index].count++;
+	release(&buddy_lock);
+	return ptr;
+}
+
+// This may be designed specifically for do_wp_page() function in COW scene.
+int32_t pages_undup(void *ptr)
+{
+	int32_t index = ADDR2ARRAYINDEX(ptr), ret;
+	acquire(&buddy_lock);
+	assert(physical_page_record[index].count >= 1);
+	ret = physical_page_record[index].count;
+	if (ret > 1)
+		physical_page_record[index].count--;
+	release(&buddy_lock);
+	acquire(&physical_page_record[index].lk);
+	return ret;
+}
+
+void release_pglock(void *ptr)
+{
+	int32_t index = ADDR2ARRAYINDEX(ptr);
+	assert(holding(&physical_page_record[index].lk));
+	assert(physical_page_record[index].count >= 1);
+	release(&physical_page_record[index].lk);
 }
 
 static void *whois_buddy(void *ptr, int16_t order)
@@ -226,12 +265,14 @@ int16_t slub_size[] = {
 };
 #define SLUB_NODE_START(addr) (PGROUNDDOWN((uintptr_t)(addr)))
 #define SLUBNUM		      (sizeof(slub_size) / sizeof(typeof(slub_size[0])))
+
 struct kmem_cache_t {
 	int32_t obj_size;
 	struct spinlock_t kmem_cache_lock;
 	struct list_node_t fulllist;
 	struct list_node_t partiallist;
 } kmem_cache_array[SLUBNUM];
+
 struct slub_pages_node_t {
 	struct kmem_cache_t *kmem_cache_linked;	  // used for finding back
 	struct list_node_t slub_node_list;
@@ -286,7 +327,7 @@ static int32_t binary_search_ge(const int16_t array[], int32_t array_size,
 // this couldn't allocate more than a page size memory area
 void *kmalloc(size_t size)
 {
-	assert(size >= 0 and size <= slub_size[SLUBNUM - 1]);
+	assert(size > 0 and size <= slub_size[SLUBNUM - 1]);
 	int32_t idx = binary_search_ge(slub_size, SLUBNUM, size);
 	acquire(&kmem_cache_array[idx].kmem_cache_lock);
 	if (list_empty(&kmem_cache_array[idx].partiallist)) {

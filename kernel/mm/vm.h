@@ -46,8 +46,8 @@ struct mm_struct {
 
 	uint32_t stack_maxsize;
 
-	uintptr_t start_stack;	 // start_stack means the high addr of stack
-	uintptr_t mmap_base;	 // base of mmap area
+	uintptr_t start_ustack;	  // means the high addr of user's stack
+	uintptr_t mmap_base;	  // base of mmap area
 	uintptr_t start_brk, brk;
 	uintptr_t start_code, end_code, start_data, end_data;
 };
@@ -67,12 +67,14 @@ void kvminit();
 /* === user vitual addr space related === */
 
 pagetable_t uvmcreate();
-void uvmmap(pagetable_t pagetable, uintptr_t va_start, uintptr_t va_end,
-	    int32_t perm);
-void uvmunmap(pagetable_t pagetable, uintptr_t va_start, uintptr_t va_end,
-	      int32_t perm);
-int32_t init_mm(struct mm_struct *mm);
-void free_mm(struct mm_struct *mm);
+void free_pgtable(pagetable_t pagetable, int32_t layer);
+int64_t uvm_space_copy(struct mm_struct *new_mm, struct mm_struct *old_mm);
+struct mm_struct *new_mm_struct();
+void free_mm_struct(struct mm_struct *mm);
+struct vm_area_struct *new_vmarea_struct(uintptr_t _va_start, uintptr_t _va_end,
+					 uint64_t flags, uint64_t pgoff,
+					 struct m_inode_t *inode,
+					 uint64_t _filesz);
 int32_t add_vm_area(struct mm_struct *mm, uintptr_t va_start, uintptr_t va_end,
 		    uint64_t flags, uint64_t pgoff, struct m_inode_t *vm_inode,
 		    uint64_t _filesz);
@@ -80,14 +82,12 @@ struct vm_area_struct *search_vmareas(struct mm_struct *mm,
 				      uintptr_t target_vaddr, size_t size,
 				      uint32_t *flag_res);
 
-void uvmfree(struct mm_struct *mm);
-int64_t uvmcopy(struct mm_struct *mm_new, struct mm_struct *mm_old);
 
 /* === lazy loading mechanism === */
 
-void do_inst_page_fault(struct mm_struct *mm, uintptr_t fault_vaddr);
-void do_ld_page_fault(struct mm_struct *mm, uintptr_t fault_vaddr);
-void do_sd_page_fault(struct mm_struct *mm, uintptr_t fault_vaddr);
+void do_inst_page_fault(uintptr_t fault_vaddr);
+void do_ld_page_fault(uintptr_t fault_vaddr);
+void do_sd_page_fault(uintptr_t fault_vaddr);
 int32_t verify_area(struct mm_struct *mm, uintptr_t vaddr, size_t size,
 		    int32_t targetflags);
 

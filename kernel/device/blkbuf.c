@@ -24,7 +24,7 @@ void blk_init()
 	INIT_LIST_HEAD(&blk_cache.wait_list);
 
 	for (struct blkbuf_t *bb = blk_cache.blkbuf;
-	     bb < &blk_cache.blkbuf[NBUF]; bb++) {
+	     bb < &blk_cache.blkbuf[NBBUF]; bb++) {
 		bb->b_count = bb->b_dirty = bb->b_hashed = 0;
 		bb->b_data = NULL;
 		INIT_LIST_HEAD(&bb->disk_wait_list);
@@ -172,7 +172,7 @@ void blk_write_over(struct blkbuf_t *bb)
 void blk_sync_all()
 {
 	for (struct blkbuf_t *bb = blk_cache.blkbuf;
-	     bb < &blk_cache.blkbuf[NBUF]; bb++) {
+	     bb < &blk_cache.blkbuf[NBBUF]; bb++) {
 		mutex_acquire(&bb->b_mtx);
 		if (bb->b_dirty) {
 			assert(bb->b_data != NULL);

@@ -34,7 +34,7 @@ __aligned(PGSIZE) char hart_stacks[KSTACKSIZE * MAXNUM_HARTID];
 __noreturn __always_inline void idle_process()
 {
 	struct cpu_t *c = mycpu();
-	c->proc = pcbtable[0];
+	c->proc = FIRST_PROC;
 	interrupt_on();
 	while (1) {
 		scheduler(c);

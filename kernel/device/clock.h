@@ -1,6 +1,7 @@
 #ifndef __KERNEL_DEVICE_CLOCK_H__
 #define __KERNEL_DEVICE_CLOCK_H__
 
+
 #include <sync/spinlock.h>
 #include <uniks/defs.h>
 

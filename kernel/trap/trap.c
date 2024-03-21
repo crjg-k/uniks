@@ -6,6 +6,7 @@
 #include <platform/riscv.h>
 #include <process/proc.h>
 #include <sys/ksyscall.h>
+#include <uniks/defs.h>
 #include <uniks/kassert.h>
 #include <uniks/kstdio.h>
 #include <uniks/log.h>
@@ -13,6 +14,18 @@
 
 extern char kerneltrapvec[], trampoline[], usertrapvec[], userret[];
 uint64_t trampoline_uservec, trampoline_usertrapret;
+char *fault_msg[] = {
+	"Instruction address misaligned",
+	"Instruction access fault",
+	"Illegal instruction",
+	"Breakpoint",
+	"Load address misaligned",
+	"Load access fault",
+	"Store/AMO address misaligned",
+	"Store/AMO access fault",
+	"",
+	"Environment call from Supervisor-mode",
+};
 
 void trap_inithart()
 {
@@ -32,7 +45,7 @@ void trap_init()
 static void interrupt_handler(uint64_t cause)
 {
 	assert(myproc()->magic == UNIKS_MAGIC);
-	cause &= INT32_MAX;   // erase the MSB
+	clear_var_bit(cause, INT32_MIN);   // erase the MSB
 	switch (cause) {
 	case IRQ_S_SOFT:
 		kprintf("Supervisor software interrupt");
@@ -48,14 +61,11 @@ static void interrupt_handler(uint64_t cause)
 		BUG();
 	}
 }
+
 static void exception_handler(uint64_t cause, uint64_t stval, struct proc_t *p)
 {
 	assert(p->magic == UNIKS_MAGIC);
 	switch (cause) {
-	case EXC_INST_ILLEGAL:
-		tracef("illegal instruction, addr: %p", p->tf->epc);
-		p->tf->epc += 4;
-		break;
 	case EXC_U_ECALL:   // system call
 		tracef("process: %d, system call: %d", p->pid, p->tf->a7);
 		/**
@@ -68,19 +78,22 @@ static void exception_handler(uint64_t cause, uint64_t stval, struct proc_t *p)
 	case EXC_INST_PAGEFAULT:
 		tracef("process: %d, instruction page fault, addr: %p\n",
 		       p->pid, p->tf->epc);
-		do_inst_page_fault(p->mm, p->tf->epc);
+		do_inst_page_fault(p->tf->epc);
 		break;
 	case EXC_LD_PAGEFAULT:
-		tracef("process: %d, ld page fault, addr: %p\n", p->pid, stval);
-		do_ld_page_fault(p->mm, stval);
+		tracef("process: %d, ld page fault, addr: %p=>%p\n", p->pid,
+		       p->tf->epc, stval);
+		do_ld_page_fault(stval);
 		break;
 	case EXC_SD_PAGEFAULT:
-		tracef("process: %d, sd page fault, addr: %p\n", p->pid, stval);
-		do_sd_page_fault(p->mm, stval);
+		tracef("process: %d, sd page fault, addr: %p=>%p\n", p->pid,
+		       p->tf->epc, stval);
+		do_sd_page_fault(stval);
 		break;
 	default:
-		kprintf("\n%s(): unexpected scause[%d] pid=%d<=>sepc=%p, stval=%p\n",
-			__func__, cause, p->pid, p->tf->epc, stval);
+		kprintf("\n\x1b[%dmpid[%d] unexpected scause[%d]:%p=>%s\x1b[0m\n",
+			RED, p->pid, cause, p->tf->epc, fault_msg[cause]);
+		setkill(p);
 	}
 }
 
@@ -164,7 +177,6 @@ void usertrap_handler()
 		p->ticks--;
 		if (!p->ticks) {
 			p->ticks = p->priority;
-			release(&pcblock[p->pid]);
 			yield();
 		} else
 			release(&pcblock[p->pid]);

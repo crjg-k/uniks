@@ -9,6 +9,8 @@
 // mutex is namely sleep lock: long-term locks for processes
 struct mutex_t {
 	volatile uint32_t locked;
+
+	struct spinlock_t lk;	      // spinlock protecting below wait_list
 	struct list_node_t waiters;   // waiting queue
 
 	// for debugging:

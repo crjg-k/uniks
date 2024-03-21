@@ -5,6 +5,9 @@
 #include <uniks/defs.h>
 
 
+extern char *fault_msg[];
+
+
 void trap_inithart();
 void trap_init();
 void usertrap_handler();

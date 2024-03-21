@@ -44,19 +44,23 @@ int64_t sys_open()
 	int32_t fd;
 	struct m_inode_t *inode;
 	struct proc_t *p = myproc();
-	char path[MAX_PATH_LEN];
+	char *path = kmalloc(MAX_PATH_LEN);
 
 	uintptr_t uaddr = argufetch(p, 0);
-	if (argstrfetch(uaddr, path, MAX_PATH_LEN) < 0)
-		return -EFAULT;
+	if (argstrfetch(uaddr, path, MAX_PATH_LEN) < 0) {
+		fd = -EFAULT;
+		goto ret;
+	}
 	int32_t flag = argufetch(p, 1);
 
 	// search an idle fdtable entry of current process
 	for (fd = 0; fd < NFD; fd++)
 		if (p->fdtable[fd] == -1)
 			break;
-	if (fd >= NFD)
-		return -EINVAL;
+	if (fd >= NFD) {
+		fd = -EINVAL;
+		goto ret;
+	}
 	p->fdtable[fd] = 1;
 
 	// allocate an idle system fcbtable entry
@@ -67,7 +71,8 @@ int64_t sys_open()
 	if ((inode = namei(path)) == NULL) {
 		file_free(fcb_no);
 		p->fdtable[fd] = 0;
-		return -ENOENT;
+		fd = -ENOENT;
+		goto ret;
 	}
 
 	struct file_t *f = &fcbtable.files[fcb_no];
@@ -77,6 +82,8 @@ int64_t sys_open()
 	f->f_inode = inode;
 	f->f_pos = 0;
 
+ret:
+	kfree(path);
 	return fd;
 }
 

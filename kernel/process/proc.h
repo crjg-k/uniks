@@ -87,7 +87,8 @@ struct proc_t {
 	int32_t parentpid;	 // parent process
 	struct cpu_t *host;	 // which hart is running this process?
 	enum proc_state state;	 // process state
-	int32_t killed;		 // if non-zero, have been killed
+	int8_t killed;		 // if non-zero, have been killed
+	int8_t w4child;		 // if non-zero, wait for a child to exit
 	int32_t exitstate;	 // exit status to be returned to parent's wait
 	uint32_t priority;	 // process priority
 	uint32_t ticks;		 // remainder time slices
@@ -155,11 +156,15 @@ struct sleep_queue_t {
 };
 
 extern struct proc_t *pcbtable[];
+#define FIRST_PROC pcbtable[0]
+#define INIT_PROC  pcbtable[1]
+#define LAST_PROC  pcbtable[NPROC - 1]
 extern struct spinlock_t pcblock[];
 extern struct cpu_t cpus[];
 extern struct sleep_queue_t sleep_queue;
 extern struct pids_queue_t pids_queue;
 
+void freepid(pid_t pid);
 void scheduler(struct cpu_t *c);
 void sched();
 void switch_to(struct context_t *old, struct context_t *new);
@@ -167,12 +172,12 @@ void proc_init();
 void user_init(uint32_t priority);
 void yield();
 void time_wakeup();
+void setkill(struct proc_t *p);
 int32_t killed(struct proc_t *);
-void recycle_exitedproc(pid_t pid);
 struct cpu_t *mycpu();
 struct proc_t *myproc();
 void proc_block(struct list_node_t *wait_list, struct spinlock_t *lk);
-void proc_unblock_all(struct list_node_t *wait_list);
+int32_t proc_unblock_all(struct list_node_t *wait_list);
 int32_t user_basic_pagetable(struct proc_t *p);
 
 
