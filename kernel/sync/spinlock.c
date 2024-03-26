@@ -35,10 +35,10 @@ void push_off()
 void pop_off()
 {
 	struct cpu_t *c = mycpu();
-	assert(!(interrupt_get() & SSTATUS_SIE));
+	assert(!get_var_bit(interrupt_get(), SSTATUS_SIE));
 	assert(c->repeat >= 1);
 	c->repeat--;
-	if (c->repeat == 0 and (c->preintstat & SSTATUS_SIE))
+	if (c->repeat == 0 and get_var_bit(c->preintstat, SSTATUS_SIE))
 		interrupt_on();
 }
 

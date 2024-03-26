@@ -2,6 +2,7 @@
 #define __KERNEL_FS_EXT2FS_H__
 
 
+#include <file/pipe.h>
 #include <sync/mutex.h>
 #include <uniks/defs.h>
 #include <uniks/param.h>
@@ -138,15 +139,16 @@ struct ext2_group_desc_t {
 // I-mode Values
 
 // -- file format --
-#define EXT2_S_IFSOCK	       0xC000 /*socket*/
-#define EXT2_S_IFLNK	       0xA000 /*symbolic link*/
-#define EXT2_S_IFREG	       0x8000 /*regular file*/
-#define EXT2_S_IFBLK	       0x6000 /*block device*/
-#define EXT2_S_IFDIR	       0x4000 /*directory*/
-#define EXT2_S_IFCHR	       0x2000 /*character device*/
-#define EXT2_S_IFIFO	       0x1000 /*fifo*/
+#define EXT2_S_IFSOCK 0xC000 /*socket*/
+#define EXT2_S_IFLNK  0xA000 /*symbolic link*/
+#define EXT2_S_IFREG  0x8000 /*regular file*/
+#define EXT2_S_IFBLK  0x6000 /*block device*/
+#define EXT2_S_IFDIR  0x4000 /*directory*/
+#define EXT2_S_IFCHR  0x2000 /*character device*/
+#define EXT2_S_IFIFO  0x1000 /*fifo*/
 /* Test macros for file types.	*/
-#define __S_ISTYPE(mode, mask) (((mode) & 0xF000) == (mask))
+
+#define __S_ISTYPE(mode, mask) (get_var_bit(mode, 0xf000) == (mask))
 #define S_ISSOCK(mode)	       __S_ISTYPE((mode), EXT2_S_IFSOCK)
 #define S_ISLNK(mode)	       __S_ISTYPE((mode), EXT2_S_IFLNK)
 #define S_ISREG(mode)	       __S_ISTYPE((mode), EXT2_S_IFREG)
@@ -268,7 +270,10 @@ struct m_super_block_t {
 
 // in-memory copy of an inode
 struct m_inode_t {
-	struct ext2_inode_t d_inode_ctnt;
+	union {
+		struct ext2_inode_t d_inode_ctnt;
+		struct pipe_t pipe_node;
+	};
 
 	// protects competitive variables above here
 	struct mutex_t i_mtx;
@@ -317,10 +322,11 @@ int64_t readi(struct m_inode_t *ip, int32_t user_dst, char *dst, uint64_t off,
 	      uint64_t n);
 
 // Paths
-struct m_inode_t *namei(char *path);
+struct m_inode_t *namei(char *path, int32_t copy);
 struct m_inode_t *nameiparent(char *path, char *name);
 
 
 uint32_t bmap(struct m_inode_t *ip, uint32_t blk_no);
+
 
 #endif /* !__KERNEL_FS_EXT2FS_H__ */

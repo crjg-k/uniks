@@ -1,5 +1,4 @@
 #include <stdarg.h>
-#include <udefs.h>
 #include <usyscall.h>
 
 
@@ -25,12 +24,12 @@ static long syscall(long num, ...)
 }
 
 
-int fork()
+pid_t fork()
 {
 	return syscall(SYS_fork);
 }
 
-int getpid()
+pid_t getpid()
 {
 	return syscall(SYS_getpid);
 }
@@ -38,6 +37,11 @@ int getpid()
 int open(const char *pathname, int flags)
 {
 	return syscall(SYS_open, pathname, flags);
+}
+
+int close(int fd)
+{
+	return syscall(SYS_close, fd);
 }
 
 int read(int fd, char *buf, long count)
@@ -55,12 +59,12 @@ int msleep(int msec)
 	return syscall(SYS_msleep, msec);
 }
 
-int waitpid(int pid, int *status)
+pid_t waitpid(pid_t pid, int *status)
 {
 	return syscall(SYS_waitpid, pid, status);
 }
 
-int wait(int *status)
+pid_t wait(int *status)
 {
 	return waitpid(-1, status);
 }
@@ -78,4 +82,19 @@ void _exit(int status)
 int dup(int oldfd)
 {
 	return syscall(SYS_dup, oldfd);
+}
+
+int pipe(int pipefd[2])
+{
+	return syscall(SYS_pipe, pipefd);
+}
+
+int chdir(const char *path)
+{
+	return syscall(SYS_chdir, path);
+}
+
+uintptr_t brk(void *addr)
+{
+	return syscall(SYS_brk, addr);
 }

@@ -6,6 +6,7 @@
 #include <platform/platform.h>
 #include <platform/riscv.h>
 #include <process/proc.h>
+#include <sys/ksyscall.h>
 #include <uniks/defs.h>
 #include <uniks/kassert.h>
 #include <uniks/kstdlib.h>
@@ -146,6 +147,15 @@ pagetable_t uvmcreate()
 	return (pagetable_t)pages_zalloc(1);
 }
 
+void release_phypg(void *phypg)
+{
+	if (pages_undup(phypg) == 1) {
+		release_pglock(phypg);
+		pages_free(phypg);
+	} else
+		release_pglock(phypg);
+}
+
 /**
  * @brief Compeletely free user memory pages, then free page-table pages. Except
  * trapframe page.
@@ -165,7 +175,7 @@ void free_pgtable(pagetable_t pagetable, int32_t layer)
 			if (pte->unrelease)
 				continue;
 			if (pte->valid)	  // this pte has child layer
-				pages_free(child);
+				release_phypg(child);
 		} else
 			BUG();
 	}
@@ -215,16 +225,13 @@ static void copy_pgtable(pagetable_t new_pagetable, pagetable_t old_pagetable,
 int64_t uvm_space_copy(struct mm_struct *new_mm, struct mm_struct *old_mm)
 {
 	// copy mm_struct
+	acquire(&old_mm->mmap_lk);
 	new_mm->map_count = old_mm->map_count;
 	new_mm->stack_maxsize = old_mm->stack_maxsize;
 	new_mm->start_ustack = old_mm->start_ustack;
 	new_mm->mmap_base = old_mm->mmap_base;
 	new_mm->start_brk = old_mm->start_brk;
 	new_mm->brk = old_mm->brk;
-	new_mm->start_code = old_mm->start_code;
-	new_mm->end_code = old_mm->end_code;
-	new_mm->start_data = old_mm->start_data;
-	new_mm->end_data = old_mm->end_data;
 
 	// copy vm_area_struct
 	struct vm_area_struct *old_vma, *new_vma;
@@ -248,6 +255,8 @@ int64_t uvm_space_copy(struct mm_struct *new_mm, struct mm_struct *old_mm)
 	}
 
 	copy_pgtable(new_mm->pagetable, old_mm->pagetable, 0, PTE_W);
+
+	release(&old_mm->mmap_lk);
 
 	return 0;
 }
@@ -275,6 +284,7 @@ void free_mm_struct(struct mm_struct *mm)
 {
 	// free all vm_area structs linked in mm
 	struct vm_area_struct *vma;
+	acquire(&mm->mmap_lk);
 	struct list_node_t *vm_area_node = list_next(&mm->vm_area_list_head);
 	while (vm_area_node != &mm->vm_area_list_head) {
 		vma = element_entry(vm_area_node, struct vm_area_struct,
@@ -283,6 +293,7 @@ void free_mm_struct(struct mm_struct *mm)
 		kfree(vma);
 		vm_area_node = list_next(vm_area_node);
 	}
+	release(&mm->mmap_lk);
 
 	kfree(mm);
 }
@@ -343,9 +354,9 @@ struct vm_area_struct *search_vmareas(struct mm_struct *mm,
 	uint32_t perm = 0;
 	uintptr_t end_vaddr = target_vaddr + size;
 
+	struct vm_area_struct *vma;
 	acquire(&mm->mmap_lk);
 	struct list_node_t *vm_area_node = list_next(&mm->vm_area_list_head);
-	struct vm_area_struct *vma;
 	while (vm_area_node != &mm->vm_area_list_head) {
 		vma = element_entry(vm_area_node, struct vm_area_struct,
 				    vm_area_list);
@@ -356,10 +367,9 @@ struct vm_area_struct *search_vmareas(struct mm_struct *mm,
 		}
 		vm_area_node = list_next(vm_area_node);
 	}
-	release(&mm->mmap_lk);
-
 	if (vm_area_node == &mm->vm_area_list_head)
-		return NULL;
+		vma = NULL;
+	release(&mm->mmap_lk);
 
 	*flag_res = perm;
 	return vma;
@@ -483,7 +493,7 @@ int32_t verify_area(struct mm_struct *mm, uintptr_t vaddr, size_t size,
 void do_inst_page_fault(uintptr_t fault_vaddr)
 {
 	struct proc_t *p = myproc();
-	if (verify_area(p->mm, fault_vaddr, 4, PTE_X | PTE_R | PTE_U) != 0) {
+	if (verify_area(p->mm, fault_vaddr, 4, PTE_X | PTE_R | PTE_U) < 0) {
 		SEG_FAULT(p->pid, p->tf->epc, fault_vaddr);
 		setkill(p);
 	}
@@ -497,7 +507,7 @@ void do_inst_page_fault(uintptr_t fault_vaddr)
 void do_ld_page_fault(uintptr_t fault_vaddr)
 {
 	struct proc_t *p = myproc();
-	if (verify_area(p->mm, fault_vaddr, 1, PTE_R | PTE_W | PTE_U) != 0) {
+	if (verify_area(p->mm, fault_vaddr, 1, PTE_R | PTE_W | PTE_U) < 0) {
 		SEG_FAULT(p->pid, p->tf->epc, fault_vaddr);
 		setkill(p);
 	}
@@ -511,10 +521,42 @@ void do_ld_page_fault(uintptr_t fault_vaddr)
 void do_sd_page_fault(uintptr_t fault_vaddr)
 {
 	struct proc_t *p = myproc();
-	if (verify_area(p->mm, fault_vaddr, 1, PTE_R | PTE_W | PTE_U) != 0) {
+	if (verify_area(p->mm, fault_vaddr, 1, PTE_R | PTE_W | PTE_U) < 0) {
 		SEG_FAULT(p->pid, p->tf->epc, fault_vaddr);
 		setkill(p);
 	}
+}
+
+int64_t sys_brk()
+{
+	struct proc_t *p = myproc();
+	struct mm_struct *mm = p->mm;
+	uintptr_t vaddr = argufetch(p, 0);
+	if (vaddr <= mm->start_brk)
+		goto ret;
+
+	// .text, .data(include .bss), .heap, .stack
+	assert(mm->map_count >= 4);
+
+	// search the heap vm_area_struct
+	struct vm_area_struct *vma;
+	int32_t idx = 0;
+	acquire(&mm->mmap_lk);
+	struct list_node_t *vm_area_node = list_next(&mm->vm_area_list_head);
+	while (1) {
+		if (idx == 2) {
+			vma = element_entry(vm_area_node, struct vm_area_struct,
+					    vm_area_list);
+			break;
+		}
+		vm_area_node = list_next(vm_area_node);
+		idx++;
+	}
+	mm->brk = vma->vm_end = vaddr;
+	release(&mm->mmap_lk);
+
+ret:
+	return mm->brk;
 }
 
 

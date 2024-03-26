@@ -131,7 +131,7 @@ struct pgtable_entry_t {
 #define PA2PTE(pa)	     ((((uint64_t)pa) >> PGSHIFT) << 10)   // pysical addr to pte
 #define PNO2PA(pa)	     (uintptr_t)((pa) << PGSHIFT)
 #define PXSHIFT(level)	     (PGSHIFT + (9 * (level)))
-#define PX(level, va)	     ((((uint64_t)(va)) >> PXSHIFT(level)) & 0x1ff)
+#define PX(level, va)	     get_var_bit(((uint64_t)(va)) >> PXSHIFT(level), 0x1ff)
 #define PTE_FLAGS(pte)	     get_var_bit(*(uint64_t *)pte, 0x3ff)
 
 

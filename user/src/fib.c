@@ -24,8 +24,7 @@ int main(int argc, char *argv[])
 {
 	int n;
 	if (argc < 2) {
-		while (1) {
-			scanf("%d", &n);
+		while (scanf("%d", &n)) {
 			printf("%dth fib:%d\n", n, fib(n));
 		}
 	} else {

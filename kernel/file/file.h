@@ -13,9 +13,9 @@
 
 struct file_t {
 	uint32_t f_count;
-	uint64_t f_pos;	  // offset for an FD_INODE file
-
 	int32_t f_flags;   // access mode(R/W bit)
+
+	uint64_t f_pos;	  // offset for an FD_INODE file
 	struct m_inode_t *f_inode;
 };
 
@@ -33,10 +33,10 @@ extern struct fcbtable_t fcbtable;
 void sys_ftable_init();
 int32_t file_alloc();
 int32_t file_dup(int32_t fcb_no);
-void file_free(int32_t fcb_no);
+void fcbno_free(int32_t fcb_no);
 void file_close(int32_t fcb_no);
-int64_t file_read(struct file_t *f, void *addr, int32_t cnt);
-int64_t file_write(struct file_t *f, void *addr, int32_t cnt);
+int64_t file_read(struct file_t *f, void *addr, size_t cnt);
+int64_t file_write(struct file_t *f, void *addr, size_t cnt);
 
 
 #endif /* !__KERNEL_FILE_FILE_H__ */

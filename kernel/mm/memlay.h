@@ -3,11 +3,13 @@
 
 
 #include "mmu.h"
+#include <uniks/param.h>
+
 
 #define KSTACKPAGE     (4)   // number of pages in kernel stack
 #define KSTACKSIZE     (KSTACKPAGE * PGSIZE)   // sizeof kernel stack
 #define PHYMEMSIZE_MiB 128
-#define PHYMEMSIZE     (PHYMEMSIZE_MiB * 1024 * 1024)
+#define PHYMEMSIZE     (PHYMEMSIZE_MiB * KiB * KiB)
 #define RAMSTART       (0x80000000)
 #define PHYSTOP	       (RAMSTART + PHYMEMSIZE)	 // 128MiB RAM main memory
 #define MAXVA	       (1LL << (39 - 1))

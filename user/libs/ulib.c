@@ -40,8 +40,22 @@ int atoi(const char *str)
 		}
 		str++;
 	}
-	if (*str == '\0')
-		return (int)ret;
-	else
-		return (int)ret;
+
+	return (int)ret;
+}
+
+uintptr_t last_brk = 0;
+void *sbrk(uintptr_t inc)
+{
+	if (!last_brk)
+		last_brk = brk(NULL);
+
+	uintptr_t p = last_brk;
+
+	last_brk = brk((void *)(p + inc));
+
+	if (last_brk < p + inc)
+		return NULL;
+
+	return (void *)p;
 }

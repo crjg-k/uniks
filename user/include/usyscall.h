@@ -51,9 +51,12 @@
 
 #if (__ASSEMBLER__ == 0)
 
+#include <udefs.h>
+
 // system call
 int fork();
 int open(const char *pathname, int flags);
+int close(int fd);
 int read(int fd, char *buf, long count);
 int write(int fd, char *buf, long count);
 int getpid();
@@ -63,6 +66,9 @@ int waitpid(int pid, int *status);
 int execve(const char *path, char *argv[], char *envp[]);
 void _exit(int status);
 int dup(int oldfd);
+int pipe(int pipefd[2]);
+int chdir(const char* path);
+uintptr_t brk(void *addr);
 
 #endif
 

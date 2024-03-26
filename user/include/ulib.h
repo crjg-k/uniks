@@ -9,6 +9,7 @@
 // basic C enviroment
 void _start(int argc, char *argv[], char *envp[]);
 int atoi(const char *str);
+void *sbrk(uintptr_t inc);
 
 
 #endif /* !__USER_INCLUDE_ULIB_H__ */

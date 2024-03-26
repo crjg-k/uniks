@@ -1,5 +1,6 @@
 #include "file.h"
 #include "kfcntl.h"
+#include "pipe.h"
 #include <device/blk_dev.h>
 #include <device/device.h>
 #include <process/proc.h>
@@ -53,7 +54,7 @@ int32_t file_dup(int32_t fcb_no)
 }
 
 // Free a file structure entry
-void file_free(int32_t fcb_no)
+void fcbno_free(int32_t fcb_no)
 {
 	acquire(&fcbtable.lock);
 	queue_push_int32type(&fcbtable.qm, fcb_no);
@@ -67,7 +68,8 @@ void file_close(int32_t fcb_no)
 	struct file_t *f = &fcbtable.files[fcb_no];
 
 	acquire(&fcbtable.lock);
-	struct m_inode_t *tmp_inode = f->f_inode;
+	struct m_inode_t *inode = f->f_inode;
+	int32_t flag = f->f_flags;
 	assert(f->f_count >= 1);
 	if (--f->f_count > 0) {
 		release(&fcbtable.lock);
@@ -75,17 +77,23 @@ void file_close(int32_t fcb_no)
 	}
 	release(&fcbtable.lock);
 
-	if (S_ISCHR(tmp_inode->d_inode_ctnt.i_mode) or
-	    S_ISBLK(tmp_inode->d_inode_ctnt.i_mode) or
-	    S_ISREG(tmp_inode->d_inode_ctnt.i_mode) or
-	    S_ISDIR(tmp_inode->d_inode_ctnt.i_mode)) {
-		iput(tmp_inode);
+	if (S_ISCHR(inode->d_inode_ctnt.i_mode) or
+	    S_ISBLK(inode->d_inode_ctnt.i_mode) or
+	    S_ISREG(inode->d_inode_ctnt.i_mode) or
+	    S_ISDIR(inode->d_inode_ctnt.i_mode)) {
+		iput(inode);
+	} else if (S_ISFIFO(inode->d_inode_ctnt.i_mode)) {
+		mutex_acquire(&inode->i_mtx);
+		pipeclose(&inode->pipe_node, WRITEABLE(flag));
+		inode->i_count--;
+		mutex_release(&inode->i_mtx);
 	}
-	file_free(fcb_no);
+	
+	fcbno_free(fcb_no);
 }
 
 // Read from file f. Addr is a user virtual address.
-int64_t file_read(struct file_t *f, void *addr, int32_t cnt)
+int64_t file_read(struct file_t *f, void *addr, size_t cnt)
 {
 	int64_t res = -EINVAL;
 	if (!READABLE(f->f_flags))
@@ -100,6 +108,7 @@ int64_t file_read(struct file_t *f, void *addr, int32_t cnt)
 
 	// if PIPE
 	if (S_ISFIFO(inode->d_inode_ctnt.i_mode)) {
+		res = piperead(&inode->pipe_node, addr, cnt);
 		goto ret;
 	}
 
@@ -127,7 +136,7 @@ ret:
 }
 
 // Write to file f. Addr is a user virtual address.
-int64_t file_write(struct file_t *f, void *addr, int32_t cnt)
+int64_t file_write(struct file_t *f, void *addr, size_t cnt)
 {
 	int64_t res = -EINVAL;
 	if (!WRITEABLE(f->f_flags))
@@ -143,6 +152,7 @@ int64_t file_write(struct file_t *f, void *addr, int32_t cnt)
 
 	// if PIPE
 	if (S_ISFIFO(inode->d_inode_ctnt.i_mode)) {
+		res = pipewrite(&inode->pipe_node, addr, cnt);
 		goto ret;
 	}
 

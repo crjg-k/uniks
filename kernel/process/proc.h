@@ -83,7 +83,8 @@ enum proc_state {
 
 struct proc_t {
 	// this->lock must be held when using these below:
-	pid_t pid;		 // process ID
+	pid_t pid;   // process ID
+	// wait_lock must be held when using this:
 	int32_t parentpid;	 // parent process
 	struct cpu_t *host;	 // which hart is running this process?
 	enum proc_state state;	 // process state
@@ -95,6 +96,10 @@ struct proc_t {
 	uint32_t jiffies;	 // global time slice when last execution
 	struct list_node_t block_list;	 // block list of this process
 	struct list_node_t wait_list;	 // who wait for this process to exit
+
+	// wait_lock must be held when using this:
+	struct list_node_t child_list;
+	struct list_node_t parentp;
 
 	struct m_inode_t *cwd;	 // Current directory
 	int16_t fdtable[NFD];	 // fd table pointing to the index of fcbtable
@@ -160,6 +165,7 @@ extern struct proc_t *pcbtable[];
 #define INIT_PROC  pcbtable[1]
 #define LAST_PROC  pcbtable[NPROC - 1]
 extern struct spinlock_t pcblock[];
+extern struct spinlock_t wait_lock;
 extern struct cpu_t cpus[];
 extern struct sleep_queue_t sleep_queue;
 extern struct pids_queue_t pids_queue;

@@ -84,7 +84,7 @@ void do_uart_interrupt(void *uartptr)
 // read one input char from UART. return EOF if none is waiting
 __always_inline char uart_getchar()
 {
-	if (UART_READREG(LSR) & LSR_RX_READY) {
+	if (get_var_bit(UART_READREG(LSR), LSR_RX_READY)) {
 		// input data is ready
 		return UART_READREG(RHR);
 	} else {

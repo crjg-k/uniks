@@ -14,7 +14,7 @@ __noreturn void bootshell(char *argv[], char *envp[])
 
 	while (1) {
 		if ((pid = fork()) < 0) {
-			printf("Fork failed %d in initrc\n", pid);
+			printf("%s: Fork failed %d in initrc\n", argv[0], pid);
 			continue;
 		}
 		if (pid == 0) {
@@ -30,9 +30,10 @@ __noreturn void bootshell(char *argv[], char *envp[])
 			 * exits, or if a parentless process exits.
 			 */
 			wpid = wait(&status);
-			printf("%d: wpid[%d] exit\n", i++, wpid, status);
 			if (wpid == pid) {
 				// the shell exited; restart it
+				printf("%s: %d, wpid[%d] exit %d\n", argv[0],
+				       i++, wpid, status);
 				break;
 			} else if (wpid < 0) {
 				printf("%s: wait() returned an error\n",
@@ -40,7 +41,8 @@ __noreturn void bootshell(char *argv[], char *envp[])
 				_exit(-2);
 			} else {
 				// it was a parentless process; do nothing
-				printf("zombie process[%d] exit\n", wpid);
+				printf("%s: zombie process[%d] exit %d\n",
+				       argv[0], wpid, status);
 			}
 		}
 	}

@@ -18,6 +18,11 @@
 #endif
 
 
+typedef unsigned long long size_t;
+typedef unsigned long long uintptr_t;
+typedef int pid_t;
+
+
 #define __always_inline inline __attribute__((always_inline))
 #define __noinline	__attribute__((noinline))
 #define __noreturn	__attribute__((noreturn))

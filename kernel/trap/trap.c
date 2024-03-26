@@ -34,12 +34,8 @@ void trap_inithart()
 
 void trap_init()
 {
-	// note: the 2nd operand should change according to if using OpenSBI
-	trampoline_uservec =
-		TRAMPOLINE + (usertrapvec - KERNEL_BASE_ADDR) % PGSIZE;
-	// note: the 2nd operand should change according to if using OpenSBI
-	trampoline_usertrapret =
-		TRAMPOLINE + OFFSETPAGE((uint64_t)(userret - KERNEL_BASE_ADDR));
+	trampoline_uservec = TRAMPOLINE + OFFSETPAGE(usertrapvec - trampoline);
+	trampoline_usertrapret = TRAMPOLINE + OFFSETPAGE(userret - trampoline);
 }
 
 static void interrupt_handler(uint64_t cause)
@@ -147,7 +143,7 @@ void usertrapret()
 void usertrap_handler()
 {
 	// assert that this trap is from U mode
-	assert((read_csr(sstatus) & SSTATUS_SPP) == 0);
+	assert(get_var_bit(read_csr(sstatus), SSTATUS_SPP) == 0);
 
 	/**
 	 * @brief now in kernel, so the traps are supposed to be tackled with
@@ -176,6 +172,7 @@ void usertrap_handler()
 		p->jiffies = atomic_load(&ticks);
 		p->ticks--;
 		if (!p->ticks) {
+			assert(p->state == TASK_RUNNING);
 			p->ticks = p->priority;
 			yield();
 		} else
@@ -192,7 +189,7 @@ void usertrap_handler()
 void kerneltrap_handler()
 {
 	// assert that from S mode
-	assert((read_csr(sstatus) & SSTATUS_SPP) != 0);
+	assert(get_var_bit(read_csr(sstatus), SSTATUS_SPP) != 0);
 
 	int64_t cause = read_csr(scause);
 	// assume that in kernel space, no exception will occur

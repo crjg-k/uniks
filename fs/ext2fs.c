@@ -55,7 +55,8 @@ void inode_table_init()
 	for (int32_t i = 0; i < NINODE; i++) {
 		mutex_init(&inode_table.m_inodes[i].i_mtx, "inode");
 		inode_table.m_inodes[i].i_count =
-			inode_table.m_inodes[i].i_dirty = 0;
+			inode_table.m_inodes[i].i_dirty =
+				inode_table.m_inodes[i].i_dev = 0;
 	}
 }
 
@@ -67,7 +68,7 @@ int64_t search_free_bit(char *start, int64_t size)
 	};
 	int64_t idx = 0;
 	for (int64_t i = 0; i < size; i++, idx += 8) {
-		for (int j = 0; j < sizeof(mask); j++) {
+		for (int64_t j = 0; j < sizeof(mask); j++) {
 			if (get_var_bit(~start[i], mask[j]))
 				return idx + j;
 		}
@@ -392,7 +393,7 @@ uint32_t bmap(struct m_inode_t *ip, uint32_t blk_no)
 		} else
 			blk_release(bb);
 		blk_no %= divisor;
-		divisor /= 1024;
+		divisor /= EXT2_IND_PER_BLK;
 	}
 
 	return baddr;
@@ -561,7 +562,7 @@ static char *skipelem(char *path, char *name)
  * @param name
  * @return struct m_inode_t*
  */
-static struct m_inode_t *namex(char *path, int nameiparent, char *name)
+static struct m_inode_t *namex(char *path, int32_t nameiparent, char *name)
 {
 	struct m_inode_t *ip, *next;
 
@@ -594,10 +595,14 @@ static struct m_inode_t *namex(char *path, int nameiparent, char *name)
 	return ip;
 }
 
-struct m_inode_t *namei(char *path)
+struct m_inode_t *namei(char *path, int32_t copy)
 {
 	char name[EXT2_NAME_LEN + 1];
-	return namex(path, 0, name);
+	struct m_inode_t *ip = namex(path, 0, name);
+	if (copy)
+		strcpy(path, name);
+
+	return ip;
 }
 
 struct m_inode_t *nameiparent(char *path, char *name)

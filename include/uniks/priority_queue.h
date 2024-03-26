@@ -27,8 +27,6 @@ int32_t priority_queue_empty(struct priority_queue_meta_t *pq);
 
 int32_t priority_queue_full(struct priority_queue_meta_t *pq);
 
-int32_t less_than_pair_t(struct pair_t *o1, struct pair_t *o2);
-
 void priority_queue_push(struct priority_queue_meta_t *pq, void *push_data);
 
 /**
@@ -40,5 +38,6 @@ void priority_queue_push(struct priority_queue_meta_t *pq, void *push_data);
 struct pair_t priority_queue_top(struct priority_queue_meta_t *pq);
 
 void priority_queue_pop(struct priority_queue_meta_t *pq);
+
 
 #endif /* !__PRIORITY_QUEUE_H__ */

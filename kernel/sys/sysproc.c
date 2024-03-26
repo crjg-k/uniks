@@ -27,7 +27,7 @@ int64_t sys_fork()
 
 int64_t sys_execve()
 {
-	int32_t res = -EFAULT;
+	int64_t res = -EFAULT;
 	struct proc_t *p = myproc();
 	char *path = kmalloc(MAX_PATH_LEN);
 
@@ -37,10 +37,10 @@ int64_t sys_execve()
 
 	char **argv = (char **)argufetch(p, 1),
 	     **envp = (char **)argufetch(p, 2);
-	res = do_execve(p, path, argv, envp);
+	if ((res = do_execve(p, path, argv, envp)) < 0)
+		kfree(path);
 
 ret:
-	kfree(path);
 	return res;
 }
 
@@ -53,12 +53,12 @@ int64_t sys_msleep()
 		target_ticks = 1;
 
 	acquire(&sleep_queue.sleep_lock);
+	acquire(&pcblock[p->pid]);
 	// push process into priority_queue which record the time to wakeup
 	struct pair_t temppair = {target_ticks + ticks, p->pid};
 	priority_queue_push(&sleep_queue.pqm, &temppair);
 	release(&sleep_queue.sleep_lock);
 
-	acquire(&pcblock[p->pid]);
 	p->state = TASK_BLOCK;
 	sched();
 	release(&pcblock[p->pid]);
@@ -68,6 +68,7 @@ int64_t sys_msleep()
 
 int64_t sys_waitpid()
 {
+	int32_t havekids;
 	struct proc_t *p = myproc(), *target_p;
 	pid_t target_pid = argufetch(p, 0);
 	assert(p != FIRST_PROC);
@@ -77,42 +78,44 @@ int64_t sys_waitpid()
 
 	if (target_pid == -1) {
 		// means that wait for any childproc to exit
-		int32_t i;
-		struct proc_t *pp;
 repeat:
-		for (i = 1; i < NPROC; i++) {
-			if (i == p->pid)
-				continue;
-			acquire(&pcblock[i]);
-			if ((pp = pcbtable[i]) == NULL) {
-				release(&pcblock[i]);
-				continue;
-			}
-			if (pp->parentpid == p->pid and
-			    pp->state == TASK_ZOMBIE) {
+		havekids = 0;
+		acquire(&wait_lock);
+		struct list_node_t *childn = list_next(&p->child_list);
+		while (childn != &p->child_list) {
+			havekids = 1;
+			struct proc_t *childp =
+				element_entry(childn, struct proc_t, parentp);
+			acquire(&pcblock[childp->pid]);
+			assert(childp->parentpid == p->pid);
+			if (childp->state == TASK_ZOMBIE) {
+				target_pid = childp->pid;
+				target_p = pcbtable[target_pid];
+				list_del(childn);
 				break;
 			}
-			release(&pcblock[i]);
+			release(&pcblock[childp->pid]);
+			childn = list_next(childn);
 		}
-		if (i != NPROC) {   // found one exited childproc
-			// hint: There might be no concurrent bugs
-			p->w4child = 0;
-
-			target_pid = pp->pid;
-			target_p = pcbtable[target_pid];
-		} else {
+		// No point waiting if we don't have any children.
+		if (havekids == 0 or killed(p)) {
+			release(&wait_lock);
+			return -1;
+		}
+		if (target_pid == -1) {
+			release(&wait_lock);
 			acquire(&pcblock[p->pid]);
 			p->w4child = 1;
 			p->state = TASK_BLOCK;
 			sched();
+			p->w4child = 0;
 			release(&pcblock[p->pid]);
 			goto repeat;
 		}
 	} else if (target_pid > 0) {
 		// means that wait for the specified childproc to exit
-		target_p = pcbtable[target_pid];
 		acquire(&pcblock[target_pid]);
-		if (target_p == NULL) {
+		if ((target_p = pcbtable[target_pid]) == NULL) {
 			release(&pcblock[target_pid]);
 			return -1;
 		}
@@ -123,13 +126,15 @@ repeat:
 			 */
 			proc_block(&target_p->wait_list, &pcblock[target_pid]);
 		}
+		acquire(&wait_lock);
 	} else
 		BUG();
 
 	assert(target_p->state == TASK_ZOMBIE);
 	uint64_t len = sizeof(target_p->exitstate);
 	if (status_vaddr != 0) {
-		verify_area(p->mm, status_vaddr, len, PTE_W | PTE_U);
+		if (verify_area(p->mm, status_vaddr, len, PTE_W | PTE_U) < 0)
+			goto ret;
 		assert(copyout(p->mm->pagetable, (void *)status_vaddr,
 			       (void *)&(target_p->exitstate), len) != -1);
 	}
@@ -137,8 +142,10 @@ repeat:
 	freepid(target_p->pid);
 	pages_free(target_p->tf);
 	pcbtable[target_pid] = NULL;
-	release(&pcblock[target_pid]);
 
+ret:
+	release(&wait_lock);
+	release(&pcblock[target_pid]);
 	return target_pid;
 }
 

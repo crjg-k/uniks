@@ -1,6 +1,7 @@
 #include "proc.h"
 #include <device/clock.h>
 #include <file/file.h>
+#include <fs/ext2fs.h>
 #include <loader/elfloader.h>
 #include <mm/memlay.h>
 #include <mm/phys.h>
@@ -36,6 +37,12 @@ struct proc_t idlepcb = {
 	.magic = UNIKS_MAGIC,
 };
 struct spinlock_t pcblock[NPROC];
+/**
+ * @brief Helps ensure that wakeups of wait()ing parents are not lost. Helps
+ * obey the memory model when using p->parent. Must be acquired before any
+ * p->lock.
+ */
+struct spinlock_t wait_lock;
 struct cpu_t cpus[MAXNUM_HARTID];
 
 struct pids_queue_t pids_queue;
@@ -128,6 +135,7 @@ static void freeproc(struct proc_t *p)
 	if (p->mm->pagetable)
 		free_pgtable(p->mm->pagetable, 0);
 	free_mm_struct(p->mm);
+	kfree(p->name);
 }
 
 // a fork child's 1st scheduling by scheduler() will swtch to forkret
@@ -146,7 +154,7 @@ void forkret()
 		 */
 		first = 0;
 		ext2fs_init(VIRTIO_IRQ);
-		myproc()->cwd = namei("/");
+		myproc()->cwd = namei("/", 0);
 	}
 
 	usertrapret();
@@ -202,6 +210,8 @@ struct proc_t *allocproc()
 
 	INIT_LIST_HEAD(&p->block_list);
 	INIT_LIST_HEAD(&p->wait_list);
+	INIT_LIST_HEAD(&p->child_list);
+	INIT_LIST_HEAD(&p->parentp);
 
 	return p;
 
@@ -226,6 +236,7 @@ void proc_init()
 	FIRST_PROC = &idlepcb;
 
 	initlock(&sleep_queue.sleep_lock, "sleeplock");
+	initlock(&wait_lock, "waitlock");
 	priority_queue_init(&sleep_queue.pqm, NPROC,
 			    &sleep_queue.sleep_queue_array);
 }
@@ -317,7 +328,7 @@ void sched()
 	assert(holding(&pcblock[p->pid]));
 	assert(mycpu()->repeat == 1);
 	assert(p->state != TASK_RUNNING);
-	assert(!(interrupt_get() & SSTATUS_SIE));
+	assert(!get_var_bit(interrupt_get(), SSTATUS_SIE));
 
 	preintstat = mycpu()->preintstat;
 	switch_to(&p->ctxt, &mycpu()->ctxt);
@@ -472,6 +483,7 @@ void user_init(uint32_t priority)
 	p->tf->epc = INITSTART;
 }
 
+
 /* === process relative syscall === */
 
 int64_t do_fork()
@@ -494,12 +506,18 @@ int64_t do_fork()
 		childproc->fdtable[i] = file_dup(parentproc->fdtable[i]);
 	childproc->cwd = idup(parentproc->cwd);
 
+	acquire(&wait_lock);
 	childproc->parentpid = parentproc->pid;
-	childproc->state = TASK_READY;
+	list_add_front(&childproc->parentp, &parentproc->child_list);
+	release(&wait_lock);
 
+	childproc->state = TASK_READY;
 	childproc->jiffies = parentproc->jiffies;
 	childproc->ticks = parentproc->ticks;
 	childproc->priority = parentproc->priority;
+
+	childproc->name = kmalloc(EXT2_NAME_LEN);
+	strcpy(childproc->name, parentproc->name);
 
 	release(&pcblock[childproc->pid]);
 	assert(parentproc->magic == UNIKS_MAGIC);
@@ -508,27 +526,25 @@ int64_t do_fork()
 	return childproc->pid;
 }
 
-// Pass p's abandoned children to init.
+// Pass p's abandoned children to INIT_PROC. Caller must hold wait_lock.
 void reparent(struct proc_t *p)
 {
-	int32_t i = 1;
-	for (struct proc_t *pp; i < NPROC; i++) {
-		if (i == p->pid)
-			continue;
-		acquire(&pcblock[i]);
-		if ((pp = pcbtable[i]) == NULL) {
-			release(&pcblock[i]);
-			continue;
-		}
-		if (pp->parentpid == p->pid) {
-			pp->parentpid = INIT_PROC->pid;
-			release(&pcblock[i]);
+	while (!list_empty(&p->child_list)) {
+		struct list_node_t *childn = list_next_then_del(&p->child_list);
+		struct proc_t *childp =
+			element_entry(childn, struct proc_t, parentp);
+		assert(childp->parentpid == p->pid);
 
-			acquire(&pcblock[INIT_PROC->pid]);
+		acquire(&pcblock[INIT_PROC->pid]);
+		acquire(&pcblock[childp->pid]);
+		list_add_front(childn, &INIT_PROC->child_list);
+		childp->parentpid = INIT_PROC->pid;
+		release(&pcblock[childp->pid]);
+		if (INIT_PROC->w4child == 1) {
+			assert(INIT_PROC->state = TASK_BLOCK);
 			INIT_PROC->state = TASK_READY;
-			release(&pcblock[INIT_PROC->pid]);
-		} else
-			release(&pcblock[i]);
+		}
+		release(&pcblock[INIT_PROC->pid]);
 	}
 }
 
@@ -546,6 +562,10 @@ void do_exit(int32_t status)
 	assert(p != FIRST_PROC);
 	assert(p != INIT_PROC);
 
+	acquire(&wait_lock);
+	// Give any childproc to INIT_PROC.
+	reparent(p);
+
 	acquire(&pcblock[p->pid]);
 	p->exitstate = status;
 	p->state = TASK_ZOMBIE;
@@ -557,9 +577,6 @@ void do_exit(int32_t status)
 	 */
 	freeproc(p);
 
-	// Give any childproc to init.
-	reparent(p);
-
 	/**
 	 * @brief Unblock all the processes which are waiting for
 	 * myproc() to exit.
@@ -569,23 +586,19 @@ void do_exit(int32_t status)
 		/**
 		 * @brief Means that no other process is waiting for the process
 		 * to exit through waitpid(). So Next, it is necessary to check
-		 * whether there is another process is waiting through wait().
+		 * whether the parent process is waiting through wait().
 		 */
-		int32_t i = 1;
-		for (struct proc_t *pp; i < NPROC; i++) {
-			if (i == p->pid)
-				continue;
-			acquire(&pcblock[i]);
-			if ((pp = pcbtable[i]) == NULL) {
-				release(&pcblock[i]);
-				continue;
-			}
-			if (p->parentpid == pp->pid and pp->w4child == 1)
-				pp->state = TASK_READY;
-			release(&pcblock[i]);
+		struct proc_t *parentp = pcbtable[p->parentpid];
+		acquire(&pcblock[parentp->pid]);
+		assert(p->parentpid == parentp->pid);
+		if (parentp->w4child == 1) {
+			assert(parentp->state = TASK_BLOCK);
+			parentp->state = TASK_READY;
 		}
+		release(&pcblock[parentp->pid]);
 	}
 
+	release(&wait_lock);
 	// Jump into the scheduler, never to return.
 	sched();
 	BUG();

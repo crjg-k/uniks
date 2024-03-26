@@ -76,6 +76,7 @@ extern int64_t sys_unlink();
 extern int64_t sys_link();
 extern int64_t sys_mkdir();
 extern int64_t sys_close();
+extern int64_t sys_brk();
 
 static int64_t (*syscalls[])() = {
 	[SYS_fork] sys_fork,	   [SYS_execve] sys_execve,
@@ -83,7 +84,8 @@ static int64_t (*syscalls[])() = {
 	[SYS_getpid] sys_getpid,   [SYS_exit] sys_exit,
 	[SYS_waitpid] sys_waitpid, [SYS_read] sys_read,
 	[SYS_open] sys_open,	   [SYS_dup] sys_dup,
-	[SYS_close] sys_close,
+	[SYS_close] sys_close,	   [SYS_pipe] sys_pipe,
+	[SYS_brk] sys_brk,
 };
 
 #define NUM_SYSCALLS ((sizeof(syscalls)) / (sizeof(syscalls[0])))

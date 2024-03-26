@@ -85,3 +85,11 @@ int memcmp(const void *v1, const void *v2, unsigned long n)
 	}
 	return 0;
 }
+
+char *strchr(const char *s, char c)
+{
+	for (; *s; s++)
+		if (*s == c)
+			return (char *)s;
+	return 0;
+}

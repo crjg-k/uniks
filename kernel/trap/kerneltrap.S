@@ -11,7 +11,6 @@
 .extern kerneltrap_handler
 
 .section .text
-.align 4
 kerneltrapvec:
 	# note: only save caller save regs
 	# make room to save registers

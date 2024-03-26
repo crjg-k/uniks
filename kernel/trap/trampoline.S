@@ -9,7 +9,7 @@
 .extern usertrap_handler
 
 .section .text
-.align 4
+.p2align PGSHIFT
 trampoline:
 usertrapvec:
 	# note: when trap from user space, the virtual addr of this section start at 0x3ffffff000 while label usertrapvec locate at 0x3ffffff4f0

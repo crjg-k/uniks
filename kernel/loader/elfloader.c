@@ -75,8 +75,14 @@ uint64_t load_elf(struct mm_struct *mm, struct m_inode_t *inode)
 				goto ret;
 		}
 	}
-	res = elf_header.e_entry;
 
+	// set user's heap segment
+	mm->start_brk = mm->brk =
+		PGROUNDUP(prgm_header.p_vaddr + prgm_header.p_memsz);
+	add_vm_area(mm, mm->start_brk, mm->brk, PTE_R | PTE_W | PTE_U, 0, NULL,
+		    0);
+
+	res = elf_header.e_entry;
 ret:
 	iunlock(inode);
 	return res;

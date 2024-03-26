@@ -310,7 +310,7 @@ void do_virtio_disk_interrupt(void *ptr)
 	 * have nothing to do in the next interrupt, which is harmless.
 	 */
 	*VIRTIO_DISK_R(VIRTIO_MMIO_INTERRUPT_ACK) =
-		*VIRTIO_DISK_R(VIRTIO_MMIO_INTERRUPT_STATUS) & 0x3;
+		get_var_bit(*VIRTIO_DISK_R(VIRTIO_MMIO_INTERRUPT_STATUS), 0x3);
 
 	__sync_synchronize();
 

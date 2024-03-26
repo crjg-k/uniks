@@ -8,25 +8,20 @@ while {1} {
 	spawn make
 
 	expect {
-		-re {hart ([0-9]) start} {
+		": wpid" {
 			incr cnt1
 			exp_continue
 		}
-		"==============" {
-			incr cnt2
-			exp_continue
-		}
-		eof {}
+		"Assertion failed: ptr != NULL" {}
 	}
 
 	# send Ctrl+A then x
 	send "\001"
 	send "x"
- 
-	puts "Total count: $cnt1, $cnt2"
 
-    if {[expr {$cnt1 * 5}] != [expr {$cnt2 * 2}]} {
-        puts "Ratio is not equal to 2.5, exiting loop."
-        break
-    }
+	puts "\nTotal count: $cnt1\n"
+
+	sleep 1
+
+	set cnt1 0
 }

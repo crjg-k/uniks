@@ -18,5 +18,7 @@ void *memset(void *s, char c, unsigned long n);
 void *memcpy(void *dst, const void *src, unsigned long n);
 int memcmp(const void *v1, const void *v2, unsigned long n);
 
+char *strchr(const char *s, char c);
+
 
 #endif /* !__USER_INCLUDE_USTRING_H__ */

@@ -45,6 +45,7 @@ ret:
 void map_user_stack(struct proc_t *p, int32_t page_num, uintptr_t ustack_pa)
 {
 	int32_t perm = PTE_W | PTE_R | PTE_U;
+	p->mm->start_ustack = USER_STACK_TOP;
 	mappages(p->mm->pagetable, USER_STACK_TOP - PGSIZE * page_num,
 		 PGSIZE * page_num, ustack_pa, perm);
 	add_vm_area(p->mm, USER_STACK_TOP - PGSIZE * p->mm->stack_maxsize,
@@ -56,7 +57,7 @@ int64_t do_execve(struct proc_t *p, char *path, char *argv[], char *envp[])
 	int64_t res = -EINVAL;
 	uint64_t entry;
 
-	struct m_inode_t *inode = namei(path);
+	struct m_inode_t *inode = namei(path, 1);
 	if (inode == NULL)
 		goto ret3;
 
@@ -144,6 +145,7 @@ int64_t do_execve(struct proc_t *p, char *path, char *argv[], char *envp[])
 					 argv_len, envp_len) == 0);
 		res = argc - 1;
 		p->tf->epc = entry;
+		p->name = path;
 	}
 
 ret2:

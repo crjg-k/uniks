@@ -356,11 +356,14 @@ static int empty()
 
 char getchar()
 {
+	int cnt;
 	if (empty()) {
 		if (ibuffer.front == BUFSIZE)
 			ibuffer.front = ibuffer.tail = 0;
-		int cnt = read(STDIN_FILENO, ibuffer.buf + ibuffer.tail,
-			       BUFSIZE - ibuffer.tail);
+		cnt = read(STDIN_FILENO, ibuffer.buf + ibuffer.tail,
+			   BUFSIZE - ibuffer.tail);
+		if (!cnt)
+			return '\0';
 		ibuffer.tail += cnt;
 	}
 	return ibuffer.buf[ibuffer.front++];
@@ -376,6 +379,8 @@ static int getstr(char *s)
 	int state = 0, i = 0;
 	while (1) {
 		char ch = getchar();
+		if (ch == '\0')
+			break;
 		if (state == 0) {
 			if (ch != ' ' and ch != '\n') {
 				state = 1;
@@ -396,11 +401,14 @@ int getline(char *s, int n)
 	int state = 0, i = 0;
 	while (i < n) {
 		char ch = getchar();
+		if (ch == '\0')
+			break;
 		if (state == 0) {
-			if (ch != '\n') {
+			s[i++] = ch;
+			if (ch != '\n')
 				state = 1;
-				s[i++] = ch;
-			}
+			else
+				break;
 		} else if (state == 1) {
 			s[i++] = ch;
 			if (ch == '\n')
@@ -425,11 +433,15 @@ static char matchchar(int radix, char ch)
 		return -1;
 }
 
-static int getnum(int radix)
+static int getnum(int radix, int *over)
 {
 	int state = 0, sum = 0;
 	while (1) {
 		char ch = getchar();
+		if (ch == '\0') {
+			*over = 1;
+			break;
+		}
 		if (state == 0) {
 			if (ch != ' ' and ch != '\n') {
 				state = 1;
@@ -451,9 +463,9 @@ handle:
 
 static int vscanf(const char *fmt, va_list ap)
 {
-	int cnt = 0, state = 0;
-	char *chp;
-	int *intp;
+	int cnt = 0, state = 0, over = 0;
+	char *chp, tmpch;
+	int *intp, tmpint;
 
 	while (*fmt) {
 		if (state == 0) {
@@ -461,43 +473,64 @@ static int vscanf(const char *fmt, va_list ap)
 				;
 			state = '%';
 		} else if (state == '%') {
-			++cnt;
 			switch (*fmt) {
 			case 'c':
-				chp = va_arg(ap, char *);
 				while (1) {
-					*chp = getchar();
-					if (*chp != ' ' and *chp != '\n')
+					if ((tmpch = getchar()) == '\0')
+						break;
+					if (tmpch != ' ' and tmpch != '\n')
 						break;
 				}
+				if (tmpch == '\0')
+					goto ret;
+				chp = va_arg(ap, char *);
+				*chp = tmpch;
+				++cnt;
 				break;
 			case 's':
 				chp = va_arg(ap, char *);
-				getstr(chp);
+				if (getstr(chp) == 0)
+					goto ret;
+				++cnt;
 				break;
 			case 'b':
+				tmpint = getnum(2, &over);
+				if (over)
+					goto ret;
 				intp = va_arg(ap, int *);
-				*intp = getnum(2);
+				*intp = tmpint;
+				++cnt;
 				break;
 			case 'o':
+				tmpint = getnum(8, &over);
+				if (over)
+					goto ret;
 				intp = va_arg(ap, int *);
-				*intp = getnum(8);
+				*intp = tmpint;
+				++cnt;
 				break;
 			case 'd':
+				tmpint = getnum(10, &over);
+				if (over)
+					goto ret;
 				intp = va_arg(ap, int *);
-				*intp = getnum(10);
+				*intp = tmpint;
+				++cnt;
 				break;
 			case 'x':
+				tmpint = getnum(16, &over);
+				if (over)
+					goto ret;
 				intp = va_arg(ap, int *);
-				*intp = getnum(16);
-				break;
-			default:
-				--cnt;
+				*intp = tmpint;
+				++cnt;
 			}
 			++fmt;
 			state = 0;
 		}
 	}
+
+ret:
 	return cnt;
 }
 

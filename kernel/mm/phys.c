@@ -23,7 +23,6 @@ void phymem_init()
 // === buddy system ===
 
 struct phys_page_record_t physical_page_record[PHYMEM_AVAILABLE >> PGSHIFT];
-#define a sizeof(physical_page_record)
 struct list_node_t orderarray[11];   // 0-10 order
 struct spinlock_t buddy_lock;
 uintptr_t mem_start, mem_end;
@@ -124,7 +123,7 @@ void buddy_system_init(uintptr_t start, uintptr_t end)
 
 void *pages_alloc(size_t npages)
 {
-	assert(npages > 0 and npages <= 1024);
+	assert(npages > 0 and npages <= (1 << ORD_10));
 	void *ptr = NULL;
 	int16_t order = get_power2(npages);
 
@@ -170,10 +169,10 @@ void *pages_zalloc(size_t npages)
 void *pages_dup(void *ptr)
 {
 	int32_t index = ADDR2ARRAYINDEX(ptr);
-	acquire(&buddy_lock);
+	acquire(&physical_page_record[index].lk);
 	assert(physical_page_record[index].count >= 1);
 	physical_page_record[index].count++;
-	release(&buddy_lock);
+	release(&physical_page_record[index].lk);
 	return ptr;
 }
 
@@ -181,13 +180,11 @@ void *pages_dup(void *ptr)
 int32_t pages_undup(void *ptr)
 {
 	int32_t index = ADDR2ARRAYINDEX(ptr), ret;
-	acquire(&buddy_lock);
+	acquire(&physical_page_record[index].lk);
 	assert(physical_page_record[index].count >= 1);
 	ret = physical_page_record[index].count;
 	if (ret > 1)
 		physical_page_record[index].count--;
-	release(&buddy_lock);
-	acquire(&physical_page_record[index].lk);
 	return ret;
 }
 

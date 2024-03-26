@@ -49,7 +49,7 @@ struct mm_struct {
 	uintptr_t start_ustack;	  // means the high addr of user's stack
 	uintptr_t mmap_base;	  // base of mmap area
 	uintptr_t start_brk, brk;
-	uintptr_t start_code, end_code, start_data, end_data;
+	// uintptr_t start_code, end_code, start_data, end_data;
 };
 
 extern char trampoline[];
@@ -99,6 +99,8 @@ int32_t copyin_string(pagetable_t pagetable, char *dst, uintptr_t srcva,
 int32_t copyout(pagetable_t pagetable, void *dstva, void *src, uint64_t len);
 int32_t either_copyin(int32_t user_src, void *dst, void *src, uint64_t len);
 int32_t either_copyout(int32_t user_dst, void *dst, void *src, uint64_t len);
+
+int64_t sys_brk();
 
 
 #endif /* ! __KERNEL_MM_VM_H__*/
