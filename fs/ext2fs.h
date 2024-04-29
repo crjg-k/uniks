@@ -2,6 +2,7 @@
 #define __KERNEL_FS_EXT2FS_H__
 
 
+#include <file/kstat.h>
 #include <file/pipe.h>
 #include <sync/mutex.h>
 #include <uniks/defs.h>
@@ -139,15 +140,14 @@ struct ext2_group_desc_t {
 // I-mode Values
 
 // -- file format --
-#define EXT2_S_IFSOCK 0xC000 /*socket*/
-#define EXT2_S_IFLNK  0xA000 /*symbolic link*/
-#define EXT2_S_IFREG  0x8000 /*regular file*/
-#define EXT2_S_IFBLK  0x6000 /*block device*/
-#define EXT2_S_IFDIR  0x4000 /*directory*/
-#define EXT2_S_IFCHR  0x2000 /*character device*/
-#define EXT2_S_IFIFO  0x1000 /*fifo*/
+#define EXT2_S_IFSOCK	       0xC000 /* socket */
+#define EXT2_S_IFLNK	       0xA000 /* symbolic link */
+#define EXT2_S_IFREG	       0x8000 /* regular file */
+#define EXT2_S_IFBLK	       0x6000 /* block device */
+#define EXT2_S_IFDIR	       0x4000 /* directory */
+#define EXT2_S_IFCHR	       0x2000 /* character device */
+#define EXT2_S_IFIFO	       0x1000 /* fifo */
 /* Test macros for file types.	*/
-
 #define __S_ISTYPE(mode, mask) (get_var_bit(mode, 0xf000) == (mask))
 #define S_ISSOCK(mode)	       __S_ISTYPE((mode), EXT2_S_IFSOCK)
 #define S_ISLNK(mode)	       __S_ISTYPE((mode), EXT2_S_IFLNK)
@@ -158,24 +158,30 @@ struct ext2_group_desc_t {
 #define S_ISFIFO(mode)	       __S_ISTYPE((mode), EXT2_S_IFIFO)
 
 // -- process execution user/group override --
-#define EXT2_S_ISUID 0x0800 /*Set process User ID*/
-#define EXT2_S_ISGID 0x0400 /*Set process Group ID*/
-#define EXT2_S_ISVTX 0x0200 /*sticky bit*/
+#define EXT2_S_ISUID 0x0800 /* Set process User ID */
+#define EXT2_S_ISGID 0x0400 /* Set process Group ID */
+#define EXT2_S_ISVTX 0x0200 /* sticky bit */
 
 // -- access rights --
-#define EXT2_S_IRUSR  0x0100 /*user read*/
-#define EXT2_S_IWUSR  0x0080 /*user write*/
-#define EXT2_S_IXUSR  0x0040 /*user execute*/
-#define EXT2_S_IRGRP  0x0020 /*group read*/
-#define EXT2_S_IWGRP  0x0010 /*group write*/
-#define EXT2_S_IXGRP  0x0008 /*group execute*/
-#define EXT2_S_IROTH  0x0004 /*others read*/
-#define EXT2_S_IWOTH  0x0002 /*others write*/
-#define EXT2_S_IXOTH  0x0001 /*others execute*/
+#define EXT2_S_IRUSR  0400		  /* user read */
+#define EXT2_S_IWUSR  0200		  /* user write */
+#define EXT2_S_IXUSR  0100		  /* user execute */
+#define EXT2_S_IRGRP  (EXT2_S_IRUSR >> 3) /* group read */
+#define EXT2_S_IWGRP  (EXT2_S_IWUSR >> 3) /* group write */
+#define EXT2_S_IXGRP  (EXT2_S_IXUSR >> 3) /* group execute */
+#define EXT2_S_IROTH  (EXT2_S_IRGRP >> 3) /* others read */
+#define EXT2_S_IWOTH  (EXT2_S_IWGRP >> 3) /* others write */
+#define EXT2_S_IXOTH  (EXT2_S_IXGRP >> 3) /* others execute */
 /* Test macros for file permission.	*/
 #define S_IRUSR(mode) get_var_bit(mode, EXT2_S_IRUSR) /* Read by owner. */
 #define S_IWUSR(mode) get_var_bit(mode, EXT2_S_IWUSR) /* Write by owner. */
 #define S_IXUSR(mode) get_var_bit(mode, EXT2_S_IXUSR) /* Execute by owner. */
+#define S_IRGRP(mode) get_var_bit(mode, EXT2_S_IRGRP) /* Read by group. */
+#define S_IWGRP(mode) get_var_bit(mode, EXT2_S_IWGRP) /* Write by group. */
+#define S_IXGRP(mode) get_var_bit(mode, EXT2_S_IXGRP) /* Execute by group. */
+#define S_IROTH(mode) get_var_bit(mode, EXT2_S_IROTH) /* Read by others. */
+#define S_IWOTH(mode) get_var_bit(mode, EXT2_S_IWOTH) /* Write by others. */
+#define S_IXOTH(mode) get_var_bit(mode, EXT2_S_IXOTH) /* Execute by others. */
 
 // -- multi-level index meta data --
 #define EXT2_NDIR_BLOCKS 12		       /* number of direct blocks */
@@ -223,14 +229,14 @@ struct ext2_inode_t {
 } __packed;
 
 // File_type: this value must match the type defined in the related inode entry
-#define EXT2_FT_UNKNOWN	 0 /*Unknown File Type*/
-#define EXT2_FT_REG_FILE 1 /*Regular File*/
-#define EXT2_FT_DIR	 2 /*Directory File*/
-#define EXT2_FT_CHRDEV	 3 /*Character Device*/
-#define EXT2_FT_BLKDEV	 4 /*Block Device*/
-#define EXT2_FT_FIFO	 5 /* Buffer File*/
-#define EXT2_FT_SOCK	 6 /*Socket File*/
-#define EXT2_FT_SYMLINK	 7 /* Symbolic Lin*/
+#define EXT2_FT_UNKNOWN	 0 /* Unknown File Type */
+#define EXT2_FT_REG_FILE 1 /* Regular File */
+#define EXT2_FT_DIR	 2 /* Directory File */
+#define EXT2_FT_CHRDEV	 3 /* Character Device */
+#define EXT2_FT_BLKDEV	 4 /* Block Device */
+#define EXT2_FT_FIFO	 5 /*  Buffer File */
+#define EXT2_FT_SOCK	 6 /* Socket File */
+#define EXT2_FT_SYMLINK	 7 /*  Symbolic Lin */
 
 // Structure of a directory entry
 struct ext2_dir_entry_t {
@@ -318,8 +324,9 @@ void iupdate(struct m_inode_t *ip);
 
 // Inode content
 void itruncate(struct m_inode_t *ip);
+void stati(struct m_inode_t *ip, struct stat_t *st);
 int64_t readi(struct m_inode_t *ip, int32_t user_dst, char *dst, uint64_t off,
-	      uint64_t n);
+	      size_t n);
 
 // Paths
 struct m_inode_t *namei(char *path, int32_t copy);

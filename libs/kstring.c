@@ -85,3 +85,37 @@ int32_t memcmp(const void *v1, const void *v2, size_t n)
 	}
 	return 0;
 }
+
+int32_t is_separator(char c, const char *tok)
+{
+	for (; *tok; tok++) {
+		if (c == *tok)
+			return 1;
+	}
+	return 0;
+}
+
+// Get the first delimiter
+char *strsep(const char *str, const char *tok)
+{
+	char *ptr = (char *)str;
+	while (1) {
+		if (is_separator(*ptr, tok))
+			return ptr;
+		if (*ptr++ == '\0')
+			return NULL;
+	}
+}
+
+// Get the last delimiter
+char *strrsep(const char *str, const char *tok)
+{
+	char *last = NULL;
+	char *ptr = (char *)str;
+	while (1) {
+		if (is_separator(*ptr, tok))
+			last = ptr;
+		if (*ptr++ == '\0')
+			return last;
+	}
+}

@@ -26,15 +26,17 @@ int32_t copyout_argv_envp(struct proc_t *p, char *argv[], char *envp[],
 		*(ustack++) = (uintptr_t)sp;
 		sp += len;
 	}
+	*(ustack++) = 0;
 
 	// Push envp[].
 	for (envc = 0; envp[envc]; envc++) {
 		uint32_t len = envp_len[envc];
 		if (copyout(p->mm->pagetable, sp, envp[envc], len) < 0)
 			goto ret;
-		ustack[1 + envc] = (uintptr_t)sp;
+		*(ustack++) = (uintptr_t)sp;
 		sp += len;
 	}
+	*ustack = 0;
 
 	return 0;
 
@@ -65,7 +67,7 @@ int64_t do_execve(struct proc_t *p, char *path, char *argv[], char *envp[])
 
 	char **tmp_envp, **tmp_argv;
 	uint16_t *envp_len, *argv_len;
-	if ((entry = load_elf(new_mm, inode)) < 0) {
+	if ((entry = load_elf(new_mm, inode)) == -1) {
 		// load ELF failed then free new vm_area_list
 		free_mm_struct(new_mm);
 		goto ret3;

@@ -71,9 +71,6 @@ int64_t pipewrite(struct pipe_t *pi, void *addr, size_t n)
 			proc_block(&pi->write_wait, &pi->lk);
 		} else {
 			char ch;
-			if (verify_area(p->mm, (uintptr_t)addr + i, 1,
-					PTE_R | PTE_U) < 0)
-				break;
 			assert(copyin(p->mm->pagetable, &ch, addr + i, 1) !=
 			       -1);
 			queue_push_chartype(&pi->pipe, ch);
@@ -105,9 +102,6 @@ int64_t piperead(struct pipe_t *pi, void *addr, size_t n)
 			break;
 		char ch = *(char *)queue_front_chartype(&pi->pipe);
 		queue_front_pop(&pi->pipe);
-		if (verify_area(p->mm, (uintptr_t)addr + i, 1, PTE_W | PTE_U) <
-		    0)
-			break;
 		assert(copyout(p->mm->pagetable, addr + i, &ch, 1) != -1);
 	}
 	proc_unblock_all(&pi->write_wait);   // piperead-unblock

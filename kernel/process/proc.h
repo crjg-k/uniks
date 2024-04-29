@@ -85,7 +85,7 @@ struct proc_t {
 	// this->lock must be held when using these below:
 	pid_t pid;   // process ID
 	// wait_lock must be held when using this:
-	int32_t parentpid;	 // parent process
+	pid_t parentpid;	 // parent process
 	struct cpu_t *host;	 // which hart is running this process?
 	enum proc_state state;	 // process state
 	int8_t killed;		 // if non-zero, have been killed
@@ -101,8 +101,9 @@ struct proc_t {
 	struct list_node_t child_list;
 	struct list_node_t parentp;
 
-	struct m_inode_t *cwd;	 // Current directory
-	int16_t fdtable[NFD];	 // fd table pointing to the index of fcbtable
+	char *cwd;
+	struct m_inode_t *icwd;	  // Current directory
+	int16_t fdtable[NFD];	  // fd table pointing to the index of fcbtable
 
 	/* this mm_struct describe the virtual addr space mapping state */
 	struct mm_struct *mm;	// porocto the mm_struct of this process

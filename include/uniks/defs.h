@@ -54,4 +54,7 @@ enum {
 #define get_high_32bit(var)	({ (var) >> 32; })
 
 
+#define SECTORSIZE 512
+
+
 #endif /* !__DEFS_H__ */

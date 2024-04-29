@@ -15,25 +15,36 @@ extern int64_t do_execve(struct proc_t *p, char *path, char *argv[],
 			 char *envp[]);
 
 
+// `pid_t getpid(void);`
 int64_t sys_getpid()
 {
 	return myproc()->pid;
 }
 
+// `pid_t getppid(void);`
+int64_t sys_getppid()
+{
+	return myproc()->parentpid;
+}
+
+// `pid_t fork(void);`
 int64_t sys_fork()
 {
 	return do_fork();
 }
 
+// `int execve(const char *pathname, char *const argv[], char *const envp[]);`
 int64_t sys_execve()
 {
 	int64_t res = -EFAULT;
 	struct proc_t *p = myproc();
-	char *path = kmalloc(MAX_PATH_LEN);
+	char *path = kmalloc(PATH_MAX);
 
 	uintptr_t uaddr = argufetch(p, 0);
-	if (argstrfetch(uaddr, path, MAX_PATH_LEN) < 0)
+	if (argstrfetch(uaddr, path, PATH_MAX) < 0) {
+		kfree(path);
 		goto ret;
+	}
 
 	char **argv = (char **)argufetch(p, 1),
 	     **envp = (char **)argufetch(p, 2);
@@ -44,6 +55,7 @@ ret:
 	return res;
 }
 
+// `int msleep(size_t ms);`
 int64_t sys_msleep()
 {
 	struct proc_t *p = myproc();
@@ -66,7 +78,8 @@ int64_t sys_msleep()
 	return 0;
 }
 
-int64_t sys_waitpid()
+// `pid_t wait4(pid_t pid, int *wstatus);`
+int64_t sys_wait4()
 {
 	int32_t havekids;
 	struct proc_t *p = myproc(), *target_p;
@@ -133,7 +146,8 @@ repeat:
 	assert(target_p->state == TASK_ZOMBIE);
 	uint64_t len = sizeof(target_p->exitstate);
 	if (status_vaddr != 0) {
-		if (verify_area(p->mm, status_vaddr, len, PTE_W | PTE_U) < 0)
+		if (verify_area(p->mm, status_vaddr, len,
+				PTE_R | PTE_W | PTE_U) < 0)
 			goto ret;
 		assert(copyout(p->mm->pagetable, (void *)status_vaddr,
 			       (void *)&(target_p->exitstate), len) != -1);
@@ -150,6 +164,7 @@ ret:
 }
 
 // will never return since process had exited
+// `void exit(int status);`
 void sys_exit()
 {
 	do_exit(argufetch(myproc(), 0));

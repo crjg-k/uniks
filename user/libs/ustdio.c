@@ -26,7 +26,6 @@ void ustdioinit()
 #define LEFT	0x10
 #define SPECIAL 0x20
 #define SMALL	0x40
-#define DOUBLE	0x80
 
 #define is_digit(c) ((c) >= '0' and (c) <= '9')
 
@@ -41,7 +40,7 @@ static int skip_atoi(const char **s)
 	return i;
 }
 
-static char *number(char *str, unsigned int *num, int base, int size,
+static char *number(char *str, unsigned long num, int base, int size,
 		    int precision, int flags)
 {
 	char pad, sign, tmp[36];
@@ -51,27 +50,20 @@ static char *number(char *str, unsigned int *num, int base, int size,
 
 	if (flags & SMALL)
 		digits = "0123456789abcdefghijklmnopqrstuvwxyz";
-
 	if (flags & LEFT)
 		flags &= ~ZEROPAD;
-
 	if (base < 2 or base > 36)
 		return 0;
 
 	pad = (flags & ZEROPAD) ? '0' : ' ';
-
-	if (flags & DOUBLE and (*(double *)(num)) < 0) {
+	if ((flags & SIGN) and num < 0) {
 		sign = '-';
-		*(double *)(num) = -(*(double *)(num));
-	} else if (flags & SIGN and !(flags & DOUBLE) and ((int)(*num)) < 0) {
-		sign = '-';
-		(*num) = -(int)(*num);
+		num = -num;
 	} else
 		sign = (flags & PLUS) ? '+' : ((flags & SPACE) ? ' ' : 0);
 
 	if (sign)
 		size--;
-
 	if (flags & SPECIAL) {
 		if (base == 16)
 			size -= 2;
@@ -81,41 +73,23 @@ static char *number(char *str, unsigned int *num, int base, int size,
 
 	i = 0;
 
-	if (flags & DOUBLE) {
-		unsigned int ival = (unsigned int)(*(double *)num);
-		unsigned int fval =
-			(unsigned int)(((*(double *)num) - ival) * 1000000);
-		do {
-			index = (fval) % base;
-			(fval) /= base;
-			tmp[i++] = digits[index];
-		} while (fval);
-		tmp[i++] = '.';
-
-		do {
-			index = (ival) % base;
-			(ival) /= base;
-			tmp[i++] = digits[index];
-		} while (ival);
-	} else if ((*num) == 0) {
+	if (num == 0) {
 		tmp[i++] = '0';
 	} else {
-		while ((*num) != 0) {
-			index = (*num) % base;
-			(*num) /= base;
+		while (num != 0) {
+			index = num % base;
+			num /= base;
 			tmp[i++] = digits[index];
 		}
 	}
 
 	if (i > precision)
 		precision = i;
-
 	size -= precision;
 
 	if (!(flags & (ZEROPAD + LEFT)))
 		while (size-- > 0)
 			*str++ = ' ';
-
 	if (sign)
 		*str++ = sign;
 
@@ -127,6 +101,7 @@ static char *number(char *str, unsigned int *num, int base, int size,
 			*str++ = digits[33];
 		}
 	}
+
 	if (!(flags & LEFT))
 		while (size-- > 0)
 			*str++ = pad;
@@ -150,7 +125,7 @@ static int vsprintf(char *buf, const char *fmt, va_list args)
 	int *ip;
 
 	int flags, field_width, precision, qualifier;
-	unsigned int num;
+	unsigned long num;
 
 	for (str = buf; str - buf < BUFSIZE and *fmt; ++fmt) {
 		if (*fmt != '%') {
@@ -235,23 +210,25 @@ repeat:
 			break;
 		case 'o':
 			num = va_arg(args, unsigned long);
-			str = number(str, &num, 8, field_width, precision,
+			str = number(str, num, 8, field_width, precision,
 				     flags);
 			break;
 		case 'p':
+			flags |= SPECIAL;
+			flags |= SMALL;
 			if (field_width == -1) {
-				field_width = 8;
+				field_width = 16;
 				flags |= ZEROPAD;
 			}
-			num = va_arg(args, unsigned long);
-			str = number(str, &num, 16, field_width, precision,
+			num = (unsigned long)va_arg(args, void *);
+			str = number(str, num, 16, field_width, precision,
 				     flags);
 			break;
 		case 'x':
 			flags |= SMALL;
 		case 'X':
 			num = va_arg(args, unsigned long);
-			str = number(str, &num, 16, field_width, precision,
+			str = number(str, num, 16, field_width, precision,
 				     flags);
 			break;
 		case 'd':
@@ -259,32 +236,24 @@ repeat:
 			flags |= SIGN;
 		case 'u':
 			num = va_arg(args, unsigned long);
-			str = number(str, &num, 10, field_width, precision,
+			str = number(str, num, 10, field_width, precision,
 				     flags);
 			break;
 		case 'n':
 			ip = va_arg(args, int *);
 			*ip = (str - buf);
 			break;
-		case 'f':
-			flags |= SIGN;
-			flags |= DOUBLE;
-			double dnum = va_arg(args, double);
-			str = number(str, (unsigned int *)&dnum, 10,
-				     field_width, precision, flags);
-			break;
 		case 'b':   // binary
 			num = va_arg(args, unsigned long);
-			str = number(str, &num, 2, field_width, precision,
+			str = number(str, num, 2, field_width, precision,
 				     flags);
 			break;
 		case 'm':   // mac address
-			flags |= SMALL | ZEROPAD;
+			flags |= (SMALL | ZEROPAD);
 			ptr = va_arg(args, char *);
-			for (unsigned long t = 0; t < 6; t++, ptr++) {
-				int num = *ptr;
-				str = number(str, &num, 16, 2, precision,
-					     flags);
+			for (int t = 0; t < 6; t++, ptr++) {
+				num = *ptr;
+				str = number(str, num, 16, 2, precision, flags);
 				*str = ':';
 				str++;
 			}
@@ -293,9 +262,9 @@ repeat:
 		case 'r':   // ip address
 			flags |= SMALL;
 			ptr = va_arg(args, char *);
-			for (unsigned long t = 0; t < 4; t++, ptr++) {
-				int num = *ptr;
-				str = number(str, &num, 10, field_width,
+			for (int t = 0; t < 4; t++, ptr++) {
+				num = *ptr;
+				str = number(str, num, 10, field_width,
 					     precision, flags);
 				*str = '.';
 				str++;
@@ -313,15 +282,31 @@ repeat:
 		}
 	}
 
+	*str = '\0';
+
 	return str - buf;
 }
 
 int sprintf(char *buf, const char *fmt, ...)
 {
+	int n;
 	va_list args;
 	va_start(args, fmt);
-	int n = vsprintf(buf, fmt, args);
+	n = vsprintf(buf, fmt, args);
 	va_end(args);
+
+	return n;
+}
+
+int fprintf(int fd, const char *fmt, ...)
+{
+	int n;
+	va_list args;
+	va_start(args, fmt);
+	n = vsprintf(output_buf, fmt, args);
+	va_end(args);
+
+	write(fd, output_buf, n);
 	return n;
 }
 

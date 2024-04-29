@@ -3,6 +3,7 @@
 #include "pipe.h"
 #include <device/blk_dev.h>
 #include <device/device.h>
+#include <fs/ext2fs.h>
 #include <process/proc.h>
 #include <sync/spinlock.h>
 #include <uniks/errno.h>
@@ -88,7 +89,7 @@ void file_close(int32_t fcb_no)
 		inode->i_count--;
 		mutex_release(&inode->i_mtx);
 	}
-	
+
 	fcbno_free(fcb_no);
 }
 
@@ -98,8 +99,8 @@ int64_t file_read(struct file_t *f, void *addr, size_t cnt)
 	int64_t res = -EINVAL;
 	if (!READABLE(f->f_flags))
 		goto ret;
-	if (verify_area(myproc()->mm, (uintptr_t)addr, cnt, PTE_W | PTE_U) <
-	    0) {
+	if (verify_area(myproc()->mm, (uintptr_t)addr, cnt,
+			PTE_R | PTE_W | PTE_U) < 0) {
 		res = -EFAULT;
 		goto ret;
 	}

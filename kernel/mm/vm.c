@@ -507,7 +507,7 @@ void do_inst_page_fault(uintptr_t fault_vaddr)
 void do_ld_page_fault(uintptr_t fault_vaddr)
 {
 	struct proc_t *p = myproc();
-	if (verify_area(p->mm, fault_vaddr, 1, PTE_R | PTE_W | PTE_U) < 0) {
+	if (verify_area(p->mm, fault_vaddr, 1, PTE_R | PTE_U) < 0) {
 		SEG_FAULT(p->pid, p->tf->epc, fault_vaddr);
 		setkill(p);
 	}
@@ -527,6 +527,7 @@ void do_sd_page_fault(uintptr_t fault_vaddr)
 	}
 }
 
+// `int brk(void *addr);`
 int64_t sys_brk()
 {
 	struct proc_t *p = myproc();

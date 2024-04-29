@@ -3,6 +3,7 @@
 #include <device/virtio_disk.h>
 #include <mm/vm.h>
 #include <process/proc.h>
+#include <uniks/defs.h>
 #include <uniks/kassert.h>
 #include <uniks/kstdlib.h>
 #include <uniks/kstring.h>
@@ -443,6 +444,23 @@ void itruncate(struct m_inode_t *ip)
 	iupdate(ip);
 }
 
+void stati(struct m_inode_t *ip, struct stat_t *st)
+{
+	st->st_dev = ip->i_dev;
+	st->st_ino = ip->i_no;
+	st->st_mode = ip->d_inode_ctnt.i_mode;
+	st->st_nlink = ip->d_inode_ctnt.i_links_count;
+	st->st_uid = ip->d_inode_ctnt.i_uid;
+	st->st_gid = ip->d_inode_ctnt.i_gid;
+	st->st_rdev = ip->d_inode_ctnt.i_block[0];
+	st->st_size = ip->d_inode_ctnt.i_size;
+	st->st_blksize = BLKSIZE;
+	st->st_blocks = div_round_up(st->st_size, SECTORSIZE);
+	st->st_atime = ip->d_inode_ctnt.i_atime;
+	st->st_mtime = ip->d_inode_ctnt.i_mtime;
+	st->st_ctime = ip->d_inode_ctnt.i_ctime;
+}
+
 /**
  * @brief Read data from inode. Caller must hold ip->lock. If user_dst==1, then
  * dst is a user virtual address; otherwise, dst is a kernel address.
@@ -569,11 +587,9 @@ static struct m_inode_t *namex(char *path, int32_t nameiparent, char *name)
 	if (*path == '/')
 		ip = iget(m_sb.sb_dev, EXT2_ROOT_INO, 0);
 	else
-		ip = idup(myproc()->cwd);
+		ip = idup(myproc()->icwd);
 
 	while ((path = skipelem(path, name)) != NULL) {
-		if (strncmp(name, ".", 1) == 0)
-			continue;
 		ilock(ip);
 		assert(S_ISDIR(ip->d_inode_ctnt.i_mode));
 		if (nameiparent and *path == '\0') {

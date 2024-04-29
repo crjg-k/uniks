@@ -10,6 +10,8 @@
 
 
 int64_t div_round_up(int64_t fisrt, int64_t second);
+uintptr_t alignaddr_up(uintptr_t addr, size_t alignment);
+uintptr_t alignaddr_down(uintptr_t addr, size_t alignment);
 
 
 #endif /* !__KSTDLIB_H__ */

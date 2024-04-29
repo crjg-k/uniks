@@ -30,15 +30,18 @@ argv:
 	.dword .LC2
 	.dword 0
 
-# char *envp[]={"HOME=/root", "PATH=/bin", NULL};
+# char *envp[]={"PATH=/bin", "HOME=/root", "SHELL=/bin/ksh", NULL};
 .LC3:
-	.string "HOME=/root"
-.LC4:
 	.string "PATH=/bin"
+.LC4:
+	.string "HOME=/root"
+.LC5:
+	.string "SHELL=/bin/ksh"
 .p2align 3			// 8-byte alignment of pointer variables under 64 bit
 envp:
 	.dword .LC3
 	.dword .LC4
+	.dword .LC5
 	.dword 0
 
 .section .text

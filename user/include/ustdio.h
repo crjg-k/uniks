@@ -13,6 +13,7 @@ void ustdioinit();
 
 // === output ===
 int sprintf(char *buf, const char *fmt, ...);
+int fprintf(int fd, const char *fmt, ...);
 int printf(const char *fmt, ...);
 
 // === input ===

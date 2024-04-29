@@ -55,37 +55,43 @@ int32_t argstrfetch(uintptr_t vaddr, char *buf, int32_t max)
 
 
 // execute system call actually
+
 extern int64_t sys_fork();
 extern int64_t sys_exit();
-extern int64_t sys_waitpid();
+extern int64_t sys_wait4();
 extern int64_t sys_pipe();
 extern int64_t sys_read();
 extern int64_t sys_kill();
 extern int64_t sys_execve();
+extern int64_t sys_stat();
 extern int64_t sys_fstat();
+extern int64_t sys_lstat();
 extern int64_t sys_chdir();
 extern int64_t sys_dup();
 extern int64_t sys_getpid();
-extern int64_t sys_sbrk();
+extern int64_t sys_getppid();
 extern int64_t sys_msleep();
-extern int64_t sys_uptime();
 extern int64_t sys_open();
 extern int64_t sys_write();
-extern int64_t sys_mknod();
 extern int64_t sys_unlink();
 extern int64_t sys_link();
 extern int64_t sys_mkdir();
 extern int64_t sys_close();
 extern int64_t sys_brk();
+extern int64_t sys_getcwd();
+extern int64_t sys_getdents();
 
 static int64_t (*syscalls[])() = {
-	[SYS_fork] sys_fork,	   [SYS_execve] sys_execve,
-	[SYS_write] sys_write,	   [SYS_msleep] sys_msleep,
-	[SYS_getpid] sys_getpid,   [SYS_exit] sys_exit,
-	[SYS_waitpid] sys_waitpid, [SYS_read] sys_read,
-	[SYS_open] sys_open,	   [SYS_dup] sys_dup,
-	[SYS_close] sys_close,	   [SYS_pipe] sys_pipe,
-	[SYS_brk] sys_brk,
+	[SYS_fork] sys_fork,	 [SYS_execve] sys_execve,
+	[SYS_write] sys_write,	 [SYS_msleep] sys_msleep,
+	[SYS_getpid] sys_getpid, [SYS_exit] sys_exit,
+	[SYS_wait4] sys_wait4,	 [SYS_read] sys_read,
+	[SYS_open] sys_open,	 [SYS_dup] sys_dup,
+	[SYS_close] sys_close,	 [SYS_pipe] sys_pipe,
+	[SYS_fstat] sys_fstat,	 [SYS_getdents] sys_getdents,
+	[SYS_chdir] sys_chdir,	 [SYS_brk] sys_brk,
+	[SYS_getcwd] sys_getcwd, [SYS_stat] sys_stat,
+	[SYS_lstat] sys_lstat,	 [SYS_getppid] sys_getppid,
 };
 
 #define NUM_SYSCALLS ((sizeof(syscalls)) / (sizeof(syscalls[0])))

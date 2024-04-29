@@ -41,7 +41,7 @@ void trap_init()
 static void interrupt_handler(uint64_t cause)
 {
 	assert(myproc()->magic == UNIKS_MAGIC);
-	clear_var_bit(cause, INT32_MIN);   // erase the MSB
+	clear_var_bit(cause, INT64_MIN);   // erase the MSB
 	switch (cause) {
 	case IRQ_S_SOFT:
 		kprintf("Supervisor software interrupt");

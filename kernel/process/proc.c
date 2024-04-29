@@ -13,6 +13,7 @@
 #include <uniks/kassert.h>
 #include <uniks/kstring.h>
 #include <uniks/log.h>
+#include <uniks/param.h>
 
 
 struct proc_t *pcbtable[NPROC] = {NULL};
@@ -29,6 +30,7 @@ struct proc_t idlepcb = {
 	.block_list = {},
 	.wait_list = {},
 	.cwd = NULL,
+	.icwd = NULL,
 	.fdtable = {0},
 	.mm = NULL,
 	.ctxt = {},
@@ -129,8 +131,8 @@ static void freeproc(struct proc_t *p)
 		}
 	}
 
-	iput(p->cwd);
-	p->cwd = NULL;
+	iput(p->icwd);
+	kfree(p->cwd);
 
 	if (p->mm->pagetable)
 		free_pgtable(p->mm->pagetable, 0);
@@ -143,8 +145,10 @@ void forkret()
 {
 	static int32_t first = 1;
 
+	struct proc_t *p = myproc();
+
 	// Still holding p->lock from scheduler.
-	release(&pcblock[myproc()->pid]);
+	release(&pcblock[p->pid]);
 
 	if (first) {
 		/**
@@ -154,7 +158,9 @@ void forkret()
 		 */
 		first = 0;
 		ext2fs_init(VIRTIO_IRQ);
-		myproc()->cwd = namei("/", 0);
+		p->icwd = namei(ROOTPATH, 0);
+		p->cwd = kmalloc(PATH_MAX);
+		strcpy(p->cwd, ROOTPATH);
 	}
 
 	usertrapret();
@@ -448,13 +454,14 @@ int32_t killed(struct proc_t *p)
  * Command: `hexdump -ve '4/4 "0x%08x, " "\n"' ./user/bin/initcode`
  */
 uint32_t initcode[] = {
-	0x00b00893, 0x00000517, 0x02c50513, 0x00000597, 0x04458593, 0x00000617,
-	0x07c60613, 0x00000073, 0x00100893, 0xfff00513, 0x00000073, 0x00000000,
+	0x03b00893, 0x00000517, 0x02c50513, 0x00000597, 0x04458593, 0x00000617,
+	0x08c60613, 0x00000073, 0x03c00893, 0xfff00513, 0x00000073, 0x00000000,
 	0x6e69622f, 0x696e692f, 0x00637274, 0x6c6c6568, 0x6e75006f, 0x00736b69,
 	0x6c726f77, 0x00000064, 0x00001030, 0x00000000, 0x0000103c, 0x00000000,
 	0x00001042, 0x00000000, 0x00001048, 0x00000000, 0x00000000, 0x00000000,
-	0x454d4f48, 0x6f722f3d, 0x5000746f, 0x3d485441, 0x6e69622f, 0x00000000,
-	0x00001078, 0x00000000, 0x00001083, 0x00000000, 0x00000000, 0x00000000,
+	0x48544150, 0x69622f3d, 0x4f48006e, 0x2f3d454d, 0x746f6f72, 0x45485300,
+	0x2f3d4c4c, 0x2f6e6962, 0x0068736b, 0x00000000, 0x00001078, 0x00000000,
+	0x00001082, 0x00000000, 0x0000108d, 0x00000000, 0x00000000, 0x00000000,
 };
 
 void user_init(uint32_t priority)
@@ -489,9 +496,8 @@ void user_init(uint32_t priority)
 int64_t do_fork()
 {
 	struct proc_t *parentproc = myproc(), *childproc = NULL;
-	if ((childproc = allocproc()) == NULL) {
+	if ((childproc = allocproc()) == NULL)
 		return -1;
-	}
 
 	// copy user memory from parent to child with COW mechanism
 	uvm_space_copy(childproc->mm, parentproc->mm);
@@ -504,7 +510,9 @@ int64_t do_fork()
 	// increment reference counts on open file descriptors
 	for (int32_t i = 0; i < NFD; i++)
 		childproc->fdtable[i] = file_dup(parentproc->fdtable[i]);
-	childproc->cwd = idup(parentproc->cwd);
+	childproc->icwd = idup(parentproc->icwd);
+	childproc->cwd = kmalloc(PATH_MAX);
+	strcpy(childproc->cwd, parentproc->cwd);
 
 	acquire(&wait_lock);
 	childproc->parentpid = parentproc->pid;

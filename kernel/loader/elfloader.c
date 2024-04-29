@@ -54,7 +54,7 @@ static int32_t pre_load_segment(struct mm_struct *mm, struct m_inode_t *inode,
 
 uint64_t load_elf(struct mm_struct *mm, struct m_inode_t *inode)
 {
-	int32_t res = 0;
+	int32_t res = -1;
 	struct Elf64_Ehdr_t elf_header;
 
 	ilock(inode);

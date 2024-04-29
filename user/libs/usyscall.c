@@ -34,6 +34,11 @@ pid_t getpid()
 	return syscall(SYS_getpid);
 }
 
+pid_t getppid()
+{
+	return syscall(SYS_getppid);
+}
+
 int open(const char *pathname, int flags)
 {
 	return syscall(SYS_open, pathname, flags);
@@ -44,12 +49,12 @@ int close(int fd)
 	return syscall(SYS_close, fd);
 }
 
-int read(int fd, char *buf, long count)
+int read(int fd, char *buf, size_t count)
 {
 	return syscall(SYS_read, fd, buf, count);
 }
 
-int write(int fd, char *buf, long count)
+int write(int fd, const char *buf, size_t count)
 {
 	return syscall(SYS_write, fd, buf, count);
 }
@@ -61,7 +66,7 @@ int msleep(int msec)
 
 pid_t waitpid(pid_t pid, int *status)
 {
-	return syscall(SYS_waitpid, pid, status);
+	return syscall(SYS_wait4, pid, status);
 }
 
 pid_t wait(int *status)
@@ -97,4 +102,29 @@ int chdir(const char *path)
 uintptr_t brk(void *addr)
 {
 	return syscall(SYS_brk, addr);
+}
+
+long getdents(int fd, struct dirent *dirp, size_t count)
+{
+	return syscall(SYS_getdents, fd, dirp, count);
+}
+
+int stat(const char *pathname, struct stat *statbuf)
+{
+	return syscall(SYS_stat, pathname, statbuf);
+}
+
+int fstat(int fd, struct stat *statbuf)
+{
+	return syscall(SYS_fstat, fd, statbuf);
+}
+
+int lstat(const char *pathname, struct stat *statbuf)
+{
+	return syscall(SYS_lstat, pathname, statbuf);
+}
+
+char *getcwd(char *buf, size_t size)
+{
+	return (char *)syscall(SYS_getcwd, buf, size);
 }

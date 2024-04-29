@@ -23,7 +23,6 @@
 #define MMIO_DISK_DEVICE_ID (2)
 #define MMIO_VENDOR_ID	    (0x554d4551)
 
-#define SECTORSIZE 512
 
 
 /**

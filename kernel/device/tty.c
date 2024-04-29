@@ -35,11 +35,25 @@ void tty_init()
  */
 void copy_to_cooked(struct tty_struct_t *tty)
 {
-	char ch;
+	char ch = '\0';
 
 	acquire(&tty->secondary_q.tty_queue_lock);
 	while ((device_read(tty->uart_associated, 0, &ch, 1)) != 0) {
-		ch = (ch == '\r') ? '\n' : ch;
+		if (ch == '\t')
+			continue;
+		if (ch == '\r')
+			ch = '\n';
+
+		// echo mode
+		{
+			if (ch == BACKSPACE) {
+				if (!queue_empty(&tty->secondary_q.qm))
+					device_write(tty->uart_associated, 0,
+						     "\b \b", 3);
+			} else if (ch != EOT)
+				device_write(tty->uart_associated, 0, &ch, 1);
+		}
+
 		if (ch == BACKSPACE) {
 			if (!queue_empty(&tty->secondary_q.qm)) {
 				queue_back_pop(&tty->secondary_q.qm);
@@ -51,15 +65,6 @@ void copy_to_cooked(struct tty_struct_t *tty)
 			}
 			assert(!queue_full(&tty->secondary_q.qm));
 			queue_push_chartype(&tty->secondary_q.qm, ch);
-		}
-
-		// echo mode
-		{
-			if (ch == BACKSPACE)
-				device_write(tty->uart_associated, 0, "\b \b",
-					     3);
-			else if (ch != EOT)
-				device_write(tty->uart_associated, 0, &ch, 1);
 		}
 	}
 	if (ch == '\n' or ch == EOT)

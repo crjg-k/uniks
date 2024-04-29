@@ -11,7 +11,6 @@
 
 
 #define BACKSPACE ('\x7f')
-#define LINE_MAXN (1024)
 
 
 struct tty_queue_t {

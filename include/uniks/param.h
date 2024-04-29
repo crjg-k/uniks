@@ -5,7 +5,7 @@
 #define UNIKS_MAGIC (0x19890604)
 
 
-// platform  configurable parameters
+// platform configurable parameters
 #define PLATFORM_QEMU	  (1)
 #define PLATFORM_DEVBOARD (1)
 // CPU information
@@ -27,7 +27,8 @@
 #define NFD		 (64)	  // number of fds of each process
 #define NINODE		 (512)	  // max number of active inodes
 #define NFILE		 (256)	  // max number of opening files in system
-#define MAX_PATH_LEN	 (1024)
+#define PATH_MAX	 (1024)
+#define ROOTPATH	 "/"
 // device module configurable parameters
 #define NDEVICE		 (64)	// max major device number, according to platform's PLIC
 #define DEV_NAME_LEN	 (8)	 // max length of dev name
@@ -37,6 +38,7 @@
 #define UART_TX_BUF_SIZE (1024)
 // tty device configurable parameters
 #define TTY_BUF_SIZE	 (1024)	  // ttys' read and write buffer size are equaled
+#define LINE_MAXN	 (1024)
 
 
 #endif /* !__PARAM_H__ */

@@ -18,5 +18,9 @@ void *memset(void *s, char c, size_t n);
 void *memcpy(void *dst, const void *src, size_t n);
 int32_t memcmp(const void *v1, const void *v2, size_t n);
 
+int32_t is_separator(char c, const char *tok);
+char *strsep(const char *str, const char *tok);
+char *strrsep(const char *str, const char *tok);
+
 
 #endif /* !__LIBS_KSTRING_H__ */

@@ -1,5 +1,6 @@
 #include <udefs.h>
 #include <ufcntl.h>
+#include <ulimits.h>
 #include <umalloc.h>
 #include <ustdio.h>
 #include <ustring.h>
@@ -7,15 +8,16 @@
 
 
 // Parsed command representation
-#define EXEC  1
-#define REDIR 2
-#define PIPE  3
-#define LIST  4
-#define BACK  5
+enum cmdtype {
+	EXEC = 1,
+	REDIR,
+	PIPE,
+	LIST,
+	BACK,
+};
 
-#define MAXARGS	   64
-#define CMDBUFSIZE 512
-char cmdbuf[CMDBUFSIZE];
+char cmdbuf[LINE_MAX], envpath[LINE_MAX], *cmd_start, *envpath_end = NULL;
+char **_envp;
 
 struct cmd {
 	int type;
@@ -53,128 +55,14 @@ struct backcmd {
 	struct cmd *cmd;
 };
 
-int fork1(void);   // Fork but panics on failure.
-void panic(char *);
-struct cmd *parsecmd(char *);
-void runcmd(struct cmd *);
-
-// Execute cmd.  Never returns.
-void runcmd(struct cmd *cmd)
+void panic(char *s)
 {
-	int p[2];
-	struct backcmd *bcmd;
-	struct execcmd *ecmd;
-	struct listcmd *lcmd;
-	struct pipecmd *pcmd;
-	struct redircmd *rcmd;
-
-	if (cmd == 0)
-		_exit(1);
-
-	switch (cmd->type) {
-	default:
-		panic("runcmd");
-
-	case EXEC:
-		ecmd = (struct execcmd *)cmd;
-		if (ecmd->argv[0] == 0)
-			_exit(1);
-		char *_envp[] = {NULL};
-		execve(ecmd->argv[0], ecmd->argv, _envp);
-		printf("exec %s failed\n", ecmd->argv[0]);
-		break;
-
-	case REDIR:
-		rcmd = (struct redircmd *)cmd;
-		close(rcmd->fd);
-		if (open(rcmd->file, rcmd->mode) < 0) {
-			printf("open %s failed\n", rcmd->file);
-			_exit(1);
-		}
-		runcmd(rcmd->cmd);
-		break;
-
-	case LIST:
-		lcmd = (struct listcmd *)cmd;
-		if (fork1() == 0)
-			runcmd(lcmd->left);
-		wait(NULL);
-		runcmd(lcmd->right);
-		break;
-
-	case PIPE:
-		pcmd = (struct pipecmd *)cmd;
-		if (pipe(p) < 0)
-			panic("pipe");
-		if (fork1() == 0) {
-			close(1);
-			dup(p[1]);
-			close(p[0]);
-			close(p[1]);
-			runcmd(pcmd->left);
-		}
-		if (fork1() == 0) {
-			close(0);
-			dup(p[0]);
-			close(p[0]);
-			close(p[1]);
-			runcmd(pcmd->right);
-		}
-		close(p[0]);
-		close(p[1]);
-		wait(NULL);
-		wait(NULL);
-		break;
-
-	case BACK:
-		bcmd = (struct backcmd *)cmd;
-		if (fork1() == 0)
-			runcmd(bcmd->cmd);
-		break;
-	}
-	_exit(0);
-}
-
-int getcmd(char *buf, int nbuf)
-{
-	write(2, "\x1b[34m[root@uniks ~]# \x1b[0m", 25);
-	int len = getline(buf, nbuf);
-	if (buf[0] == '\0')   // EOF
-		return -1;
-	buf[len - 1] = '\0';   // get rid of '\n'
-	return 0;
-}
-
-int main(int argc, char *argv[], char *envp[])
-{
-	// Read and run input commands.
-	while (getcmd(cmdbuf, CMDBUFSIZE) >= 0) {
-		if (strncmp(cmdbuf, "cd ", 3) == 0) {
-			// Chdir must be called by the parent, not the child.
-			cmdbuf[strlen(cmdbuf) - 1] = 0;	  // chop '\n'
-			if (chdir(cmdbuf + 3) < 0)
-				printf("cannot cd %s\n", cmdbuf + 3);
-			continue;
-		} else if (strcmp(cmdbuf, "clear") == 0) {
-			printf("\33[H\33[2J\33[3J");
-			continue;
-		} else if (strcmp(cmdbuf, "exit") == 0)
-			_exit(0);
-
-		if (fork1() == 0)
-			runcmd(parsecmd(cmdbuf));
-		wait(NULL);
-	}
+	fprintf(STDERR_FILENO, "ksh: \e[31m%s\e[0m\n", s);
 	_exit(-1);
 }
 
-void panic(char *s)
-{
-	printf("\x1b[31m%s\x1b[0m\n", s);
-	_exit(1);
-}
-
-int fork1(void)
+// Fork but panics on failure.
+int fork1()
 {
 	int pid;
 
@@ -184,8 +72,9 @@ int fork1(void)
 	return pid;
 }
 
+
 // PAGEBREAK!
-//  Constructors
+// Constructors
 
 struct cmd *execcmd(void)
 {
@@ -247,25 +136,26 @@ struct cmd *backcmd(struct cmd *subcmd)
 	cmd->cmd = subcmd;
 	return (struct cmd *)cmd;
 }
+
+
 // PAGEBREAK!
-//  Parsing
+// Parsing
 
 char whitespace[] = " \t\r\n\v";
 char symbols[] = "<|>&;()";
 
 int gettoken(char **ps, char *es, char **q, char **eq)
 {
-	char *s;
-	int ret;
+	char *s = *ps;
+	int ret, state = 0;
 
-	s = *ps;
 	while (s < es and strchr(whitespace, *s))
 		s++;
 	if (q)
 		*q = s;
 	ret = *s;
 	switch (*s) {
-	case 0:
+	case '\0':
 		break;
 	case '|':
 	case '(':
@@ -283,12 +173,31 @@ int gettoken(char **ps, char *es, char **q, char **eq)
 		}
 		break;
 	default:
+		/**
+		 * @brief Introduce state machine here to identify tokens
+		 * surrounded by "".
+		 */
 		ret = 'a';
-		while (s < es and !strchr(whitespace, *s) and
-		       !strchr(symbols, *s))
-			s++;
+		while (s < es) {
+			if (state == 0) {
+				if (strchr(whitespace, *s) or
+				    strchr(symbols, *s))
+					break;
+				if (*s == '"')
+					state = 1;
+			} else if (state == 1) {
+				ret = 'b';
+				if (*s == '"')
+					state = 0;
+			} else
+				panic("BUG");
+			++s;
+		}
 		break;
 	}
+	if (state == 1)
+		panic("syntax error - missing '\"'");
+
 	if (eq)
 		*eq = s;
 
@@ -300,35 +209,32 @@ int gettoken(char **ps, char *es, char **q, char **eq)
 
 int peek(char **ps, char *es, char *toks)
 {
-	char *s;
-
-	s = *ps;
+	char *s = *ps;
 	while (s < es and strchr(whitespace, *s))
 		s++;
 	*ps = s;
 	return *s and strchr(toks, *s);
 }
 
-struct cmd *parseline(char **, char *);
-struct cmd *parsepipe(char **, char *);
-struct cmd *parseexec(char **, char *);
-struct cmd *nulterminate(struct cmd *);
-
-struct cmd *parsecmd(char *s)
+void handle_quotmark(char **q, char **eq)
 {
-	char *es;
-	struct cmd *cmd;
-
-	es = s + strlen(s);
-	cmd = parseline(&s, es);
-	peek(&s, es, "");
-	if (s != es) {
-		printf("leftovers: %s\n", s);
-		panic("syntax");
+	if (q == NULL or eq == NULL)
+		panic("BUG");
+	char *buf = malloc(MAXARGLEN), *dst = buf;
+	unsigned int n = 0;
+	while (*q < *eq) {
+		if (**q == '\"') {
+			(*q)++;
+			continue;
+		}
+		*dst++ = *(*q)++;
+		n++;
 	}
-	nulterminate(cmd);
-	return cmd;
+	*q = buf;
+	*eq = *q + n;
 }
+
+struct cmd *parsepipe(char **, char *);
 
 struct cmd *parseline(char **ps, char *es)
 {
@@ -336,38 +242,30 @@ struct cmd *parseline(char **ps, char *es)
 
 	cmd = parsepipe(ps, es);
 	while (peek(ps, es, "&")) {
-		gettoken(ps, es, 0, 0);
+		gettoken(ps, es, NULL, NULL);
 		cmd = backcmd(cmd);
 	}
 	if (peek(ps, es, ";")) {
-		gettoken(ps, es, 0, 0);
+		gettoken(ps, es, NULL, NULL);
 		cmd = listcmd(cmd, parseline(ps, es));
-	}
-	return cmd;
-}
-
-struct cmd *parsepipe(char **ps, char *es)
-{
-	struct cmd *cmd;
-
-	cmd = parseexec(ps, es);
-	if (peek(ps, es, "|")) {
-		gettoken(ps, es, 0, 0);
-		cmd = pipecmd(cmd, parsepipe(ps, es));
 	}
 	return cmd;
 }
 
 struct cmd *parseredirs(struct cmd *cmd, char **ps, char *es)
 {
-	int tok;
+	int tok1, tok2;
 	char *q, *eq;
 
 	while (peek(ps, es, "<>")) {
-		tok = gettoken(ps, es, 0, 0);
-		if (gettoken(ps, es, &q, &eq) != 'a')
+		tok1 = gettoken(ps, es, NULL, NULL);
+		tok2 = gettoken(ps, es, &q, &eq);
+		if (tok2 != 'a' and tok2 != 'b')
 			panic("missing file for redirection");
-		switch (tok) {
+		if (tok2 == 'b')
+			handle_quotmark(&q, &eq);
+
+		switch (tok1) {
 		case '<':
 			cmd = redircmd(cmd, q, eq, O_RDONLY, 0);
 			break;
@@ -389,11 +287,11 @@ struct cmd *parseblock(char **ps, char *es)
 
 	if (!peek(ps, es, "("))
 		panic("parseblock");
-	gettoken(ps, es, 0, 0);
+	gettoken(ps, es, NULL, NULL);
 	cmd = parseline(ps, es);
 	if (!peek(ps, es, ")"))
-		panic("syntax - missing )");
-	gettoken(ps, es, 0, 0);
+		panic("syntax error - missing ')'");
+	gettoken(ps, es, NULL, NULL);
 	cmd = parseredirs(cmd, ps, es);
 	return cmd;
 }
@@ -416,8 +314,11 @@ struct cmd *parseexec(char **ps, char *es)
 	while (!peek(ps, es, "|)&;")) {
 		if ((tok = gettoken(ps, es, &q, &eq)) == 0)
 			break;
-		if (tok != 'a')
-			panic("syntax");
+		if (tok != 'a' and tok != 'b')
+			panic("syntax error");
+		if (tok == 'b')
+			handle_quotmark(&q, &eq);
+
 		cmd->argv[argc] = q;
 		cmd->eargv[argc] = eq;
 		argc++;
@@ -425,9 +326,21 @@ struct cmd *parseexec(char **ps, char *es)
 			panic("too many args");
 		ret = parseredirs(ret, ps, es);
 	}
-	cmd->argv[argc] = 0;
-	cmd->eargv[argc] = 0;
+	cmd->argv[argc] = NULL;
+	cmd->eargv[argc] = NULL;
 	return ret;
+}
+
+struct cmd *parsepipe(char **ps, char *es)
+{
+	struct cmd *cmd;
+
+	cmd = parseexec(ps, es);
+	if (peek(ps, es, "|")) {
+		gettoken(ps, es, NULL, NULL);
+		cmd = pipecmd(cmd, parsepipe(ps, es));
+	}
+	return cmd;
 }
 
 // NUL-terminate all the counted strings.
@@ -440,8 +353,8 @@ struct cmd *nulterminate(struct cmd *cmd)
 	struct pipecmd *pcmd;
 	struct redircmd *rcmd;
 
-	if (cmd == 0)
-		return 0;
+	if (cmd == NULL)
+		return NULL;
 
 	switch (cmd->type) {
 	case EXEC:
@@ -474,4 +387,185 @@ struct cmd *nulterminate(struct cmd *cmd)
 		break;
 	}
 	return cmd;
+}
+
+struct cmd *parsecmd(char *s)
+{
+	char *es;
+	struct cmd *cmd;
+
+	es = s + strlen(s);
+	cmd = parseline(&s, es);
+	peek(&s, es, "");
+	if (s != es) {
+		fprintf(STDERR_FILENO, "ksh: Leftovers: '%s'\n", s);
+		panic("syntax error");
+	}
+	nulterminate(cmd);
+	return cmd;
+}
+
+// Execute cmd. Never returns.
+void runcmd(struct cmd *cmd)
+{
+	int p[2];
+	struct backcmd *bcmd;
+	struct execcmd *ecmd;
+	struct listcmd *lcmd;
+	struct pipecmd *pcmd;
+	struct redircmd *rcmd;
+
+	if (cmd == NULL)
+		_exit(-1);
+
+	switch (cmd->type) {
+	default:
+		panic("runcmd");
+
+	case EXEC:
+		ecmd = (struct execcmd *)cmd;
+		if (ecmd->argv[0] == NULL)
+			_exit(-1);
+		execve(ecmd->argv[0], ecmd->argv, _envp);
+
+		/**
+		 * @brief It means that execve() failed with original path, try
+		 * again with the path where the environment variable is
+		 * located.
+		 */
+		if (ecmd->argv[0][0] != '.' and ecmd->argv[0][0] != '/' and
+		    envpath_end) {
+			strcpy(envpath_end, ecmd->argv[0]);
+			execve(envpath, ecmd->argv, _envp);
+		}
+		fprintf(STDERR_FILENO, "ksh: Execve '%s' failed\n",
+			ecmd->argv[0]);
+		break;
+
+	case REDIR:
+		rcmd = (struct redircmd *)cmd;
+		close(rcmd->fd);
+		if (open(rcmd->file, rcmd->mode) < 0) {
+			fprintf(STDERR_FILENO,
+				"ksh: Cannot access '%s': No such file or directory\n",
+				rcmd->file);
+			_exit(-1);
+		}
+		runcmd(rcmd->cmd);
+		break;
+
+	case LIST:
+		lcmd = (struct listcmd *)cmd;
+		if (fork1() == 0)
+			runcmd(lcmd->left);
+		wait(NULL);
+		runcmd(lcmd->right);
+		break;
+
+	case PIPE:
+		pcmd = (struct pipecmd *)cmd;
+		if (pipe(p) < 0)
+			panic("pipe");
+		if (fork1() == 0) {
+			close(1);
+			dup(p[1]);
+			close(p[0]);
+			close(p[1]);
+			runcmd(pcmd->left);
+		}
+		if (fork1() == 0) {
+			close(0);
+			dup(p[0]);
+			close(p[0]);
+			close(p[1]);
+			runcmd(pcmd->right);
+		}
+		close(p[0]);
+		close(p[1]);
+		wait(NULL);
+		wait(NULL);
+		break;
+
+	case BACK:
+		bcmd = (struct backcmd *)cmd;
+		if (fork1() == 0)
+			runcmd(bcmd->cmd);
+		break;
+	}
+	_exit(0);
+}
+
+int trim(char *cmd, int len)
+{
+	cmd_start = cmd;
+	while (strchr(whitespace, *cmd_start))
+		++cmd_start;
+	while (strchr(whitespace, cmd[len - 1]))
+		--len;
+	cmd[len] = '\0';
+	return len;
+}
+
+char cwd[PATH_MAX];
+int getcmd(char *buf, int nbuf)
+{
+	printf("\e[35m[root@uniks %s]# \e[0m", getcwd(cwd, PATH_MAX));
+	int len = getline(buf, nbuf);
+	if (buf[0] == '\0')   // EOF
+		return -1;
+	return trim(cmdbuf, len);
+}
+
+void set_envpath()
+{
+	for (int i = 0; _envp[i]; i++) {
+		if (strncmp(_envp[i], "PATH=", 5) == 0) {
+			strcpy(envpath, _envp[i] + 5);
+			envpath_end = envpath + strlen(envpath);
+			*envpath_end++ = '/';
+		}
+	}
+}
+
+int main(int argc, char *argv[], char *envp[])
+{
+	_envp = envp;
+	set_envpath();
+	int len;
+
+	// Read and run input commands.
+	while ((len = getcmd(cmdbuf, LINE_MAX)) >= 0) {
+		if (!len)
+			continue;
+		if (strcmp(cmd_start, "cd") == 0) {
+			if (chdir("/root") < 0)
+				fprintf(STDERR_FILENO,
+					"ksh: Cannot cd '/root'\n");
+			continue;
+		} else if (strncmp(cmd_start, "cd ", 3) == 0) {
+			// Chdir must be called by the parent, not the child.
+			trim(cmd_start + 3, len - 3);
+			if (chdir(cmd_start) < 0)
+				fprintf(STDERR_FILENO, "ksh: Cannot cd '%s'\n",
+					cmd_start);
+			continue;
+		} else if (strncmp(cmd_start, "clear", 5) == 0) {
+			printf("\33[H\33[2J\33[3J");
+			continue;
+		} else if (strncmp(cmd_start, "exit", 4) == 0)
+			_exit(0);
+
+		/**
+		 * @brief This is a pretty clever way to do lexical parsing in
+		 * the child process after fork(). We could using malloc() to
+		 * dynamically allocate memory without free() and there is no
+		 * need to worry about memory leakage issues, because when the
+		 * child process finishes executing, the OS will recycle all
+		 * the virtual address space of the process when exiting!
+		 */
+		if (fork1() == 0)
+			runcmd(parsecmd(cmd_start));
+		wait(NULL);
+	}
+	_exit(-1);
 }
