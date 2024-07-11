@@ -119,20 +119,25 @@ struct pgtable_entry_t {
 } __packed;
 
 
-#define PTE_V		     (1 << 0)
-#define PTE_R		     (1 << 1)
-#define PTE_W		     (1 << 2)
-#define PTE_X		     (1 << 3)
-#define PTE_U		     (1 << 4)
-#define SATP_SV39	     (8ll << 60)   // RISCV Sv39 page table scheme
-#define PTENUM		     (PGSIZE / sizeof(pte_t))
-#define MAKE_SATP(pagetable) (SATP_SV39 | (((uint64_t)pagetable) >> PGSHIFT))
-#define W_SATP(x)	     ({ asm volatile("csrw satp, %0" : : "r"(x)); })
-#define PA2PTE(pa)	     ((((uint64_t)pa) >> PGSHIFT) << 10)   // pysical addr to pte
-#define PNO2PA(pa)	     (uintptr_t)((pa) << PGSHIFT)
-#define PXSHIFT(level)	     (PGSHIFT + (9 * (level)))
-#define PX(level, va)	     get_var_bit(((uint64_t)(va)) >> PXSHIFT(level), 0x1ff)
-#define PTE_FLAGS(pte)	     get_var_bit(*(uint64_t *)pte, 0x3ff)
+#define PTE_V	  (1 << 0)
+#define PTE_R	  (1 << 1)
+#define PTE_W	  (1 << 2)
+#define PTE_X	  (1 << 3)
+#define PTE_U	  (1 << 4)
+#define PTE_G	  (1 << 5)
+#define PTE_A	  (1 << 6)
+#define PTE_D	  (1 << 7)
+#define SATP_SV39 (8ll << 60)	// RISCV Sv39 page table scheme
+#define PTENUM	  (PGSIZE / sizeof(pte_t))
+#define MAKE_SATP(pagetable, ASID) \
+	(SATP_SV39 | (((uint64_t)pagetable) >> PGSHIFT) | \
+	 (get_var_bit(ASID, 0xffffll) << 44))
+#define W_SATP(x)      ({ asm volatile("csrw satp, %0" : : "r"(x)); })
+#define PA2PTE(pa)     ((((uint64_t)pa) >> PGSHIFT) << 10)   // pysical addr to pte
+#define PNO2PA(pa)     (uintptr_t)((pa) << PGSHIFT)
+#define PXSHIFT(level) (PGSHIFT + (9 * (level)))
+#define PX(level, va)  get_var_bit(((uint64_t)(va)) >> PXSHIFT(level), 0x1ff)
+#define PTE_FLAGS(pte) get_var_bit(*(uint64_t *)pte, 0x3ff)
 
 
 #define cpuid() \

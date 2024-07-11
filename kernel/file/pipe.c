@@ -8,6 +8,9 @@
 struct m_inode_t *pipealloc()
 {
 	struct m_inode_t *ip;
+	char *pipe_pg = pages_alloc(1);
+	if (pipe_pg == NULL)
+		return NULL;
 
 	acquire(&inode_table.lock);
 	while (1) {
@@ -31,7 +34,7 @@ found:
 	initlock(&pi->lk, "pipelk");
 	INIT_LIST_HEAD(&pi->read_wait);
 	INIT_LIST_HEAD(&pi->write_wait);
-	char *pipe_pg = pages_alloc(1);
+
 	queue_init(&pi->pipe, PGSIZE, pipe_pg);
 
 	return ip;

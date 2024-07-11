@@ -80,7 +80,7 @@ static void rmold_then_insert_newhash(struct blkbuf_t *bb, dev_t dev,
 }
 
 /**
- * @brief Look through buffer for block on device dev. Make sure that return a
+ * @brief Look through buffer for block on device `dev`. Make sure that return a
  * buffered block with mutex-lock holding, and also the buffer of a disk's block
  * is unique in global.
  * @param dev
@@ -96,7 +96,7 @@ struct blkbuf_t *getblk(dev_t dev, uint32_t blkno)
 	if ((bb = find_buffer_inhash(dev, blkno)) != NULL) {
 		if (bb->b_count++ == 0)
 			list_del(&bb->free_node);
-		goto over;
+		goto ret;
 	}
 
 	/**
@@ -109,11 +109,13 @@ struct blkbuf_t *getblk(dev_t dev, uint32_t blkno)
 	bb->b_blkno = blkno;
 	bb->b_count++;
 	if (bb->b_data == NULL) {
-		bb->b_data = pages_alloc(1);
-		assert(bb->b_data != NULL);
+		if ((bb->b_data = pages_alloc(1)) == NULL) {
+			release(&blk_cache.lock);
+			return NULL;
+		}
 	}
 
-over:
+ret:
 	release(&blk_cache.lock);
 	mutex_acquire(&bb->b_mtx);
 	return bb;   // return with mutex-lock holding
@@ -139,7 +141,8 @@ void blk_release(struct blkbuf_t *bb)
 struct blkbuf_t *blk_read(dev_t dev, uint32_t blockno)
 {
 	struct blkbuf_t *bb = getblk(dev, blockno);
-	assert(bb != NULL);
+	if (bb == NULL)
+		goto ret;
 
 	if (bb->b_dirty) {
 		// write-back strategy
@@ -158,6 +161,8 @@ struct blkbuf_t *blk_read(dev_t dev, uint32_t blockno)
 
 	// indicate that disk operation failed
 	blk_release(bb);
+
+ret:
 	return NULL;
 }
 

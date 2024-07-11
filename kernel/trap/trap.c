@@ -64,6 +64,8 @@ static void exception_handler(uint64_t cause, uint64_t stval, struct proc_t *p)
 	switch (cause) {
 	case EXC_U_ECALL:   // system call
 		tracef("process: %d, system call: %d", p->pid, p->tf->a7);
+		if (killed(p))
+			do_exit(-1);
 		/**
 		 * @note: this inc must lay before syscall() since that the fork
 		 * syscall need the right instruction address
@@ -89,7 +91,7 @@ static void exception_handler(uint64_t cause, uint64_t stval, struct proc_t *p)
 	default:
 		kprintf("\n\x1b[%dmpid[%d] unexpected scause[%d]:%p=>%s\x1b[0m\n",
 			RED, p->pid, cause, p->tf->epc, fault_msg[cause]);
-		setkill(p);
+		setkilled(p);
 	}
 }
 
@@ -130,7 +132,7 @@ void usertrapret()
 	write_csr(sepc, p->tf->epc);
 
 	// tell trampoline.S the user page table to switch to.
-	uint64_t satp = MAKE_SATP(p->mm->pagetable);
+	uint64_t satp = MAKE_SATP(p->mm->pagetable, p->pid);
 
 	// jmp to userret in trampoline.S
 	((void (*)(uint64_t))trampoline_usertrapret)(satp);
@@ -166,6 +168,9 @@ void usertrap_handler()
 		interrupt_handler(cause);
 	else
 		exception_handler(cause, stval, p);
+
+	if (killed(p))
+		do_exit(-1);
 
 	{
 		acquire(&pcblock[p->pid]);

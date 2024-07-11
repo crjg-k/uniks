@@ -8,7 +8,6 @@
 #include <uniks/list.h>
 
 
-// todo: add block list waiting for free
 void phymem_init()
 {
 	assert((char *)KERNEL_END_LIMIT >= (char *)end);
@@ -23,7 +22,7 @@ void phymem_init()
 // === buddy system ===
 
 struct phys_page_record_t physical_page_record[PHYMEM_AVAILABLE >> PGSHIFT];
-struct list_node_t orderarray[11];   // 0-10 order
+struct list_node_t orderarray[11];   // 0~10 order
 struct spinlock_t buddy_lock;
 uintptr_t mem_start, mem_end;
 enum order {
@@ -52,39 +51,19 @@ static void mount_orderlist(uintptr_t current, int32_t order)
 		mount_orderlist(current, order - 1);
 }
 
-// in RISCV, I don't know whether there are any instructions similar to CLZ
-static uint64_t clz(uint64_t reg)
-{
-	if (reg <= 1)
-		return 63;
-	if (reg <= 2)
-		return 62;
-	if (reg <= 4)
-		return 61;
-	if (reg <= 8)
-		return 60;
-	if (reg <= 16)
-		return 59;
-	if (reg <= 32)
-		return 58;
-	if (reg <= 64)
-		return 57;
-	if (reg <= 128)
-		return 56;
-	if (reg <= 256)
-		return 55;
-	if (reg <= 512)
-		return 54;
-	if (reg <= 1024)
-		return 53;
-
-	BUG();
-	return -1;
-}
-
+/**
+ * @brief Returns the minimum power after aligning `n` up to the power of 2.
+ * @param n
+ * @return int16_t
+ */
 static int16_t get_power2(uint32_t n)
 {
-	return 63 - clz(n);
+	for (int32_t i = 0; i <= 1024; i++) {
+		if (n <= (1 << i))
+			return i;
+	}
+
+	BUG();
 }
 
 // always allocate the left side after the split
@@ -161,8 +140,8 @@ out:
 void *pages_zalloc(size_t npages)
 {
 	void *ptr = pages_alloc(npages);
-	assert(ptr != NULL);
-	memset(ptr, 0, PGSIZE);
+	if (ptr != NULL)
+		memset(ptr, 0, PGSIZE);
 	return ptr;
 }
 
@@ -201,9 +180,9 @@ static void *whois_buddy(void *ptr, int16_t order)
 	/**
 	 * who is the buddy?
 	 * if ptr % pow(2, k + 1) == 0:
-	 *  the buddy is ptr + pow(2, k)
+	 *   the buddy is ptr + pow(2, k)
 	 * else if ptr % pow(2, k + 1) == pow(2, k):
-	 *  the buddy is ptr - pow(2, k)
+	 *   the buddy is ptr - pow(2, k)
 	 * else BUG()
 	 */
 	if (((((uintptr_t)ptr - mem_start) >> PGSHIFT) &
@@ -212,10 +191,8 @@ static void *whois_buddy(void *ptr, int16_t order)
 	else if (((((uintptr_t)ptr - mem_start) >> PGSHIFT) &
 		  ((1 << (order + 1)) - 1)) == (1 << order))
 		return ptr - ((1 << order) << PGSHIFT);
-	else {
+	else
 		BUG();
-		return NULL;
-	}
 }
 
 // free npages and merge it if possible
@@ -289,7 +266,8 @@ void kmem_cache_init()
 static struct slub_pages_node_t *new_slub_pages_node(int32_t idx)
 {
 	struct slub_pages_node_t *slub_pages_node = pages_alloc(1);
-	assert(slub_pages_node != NULL);
+	if (slub_pages_node == NULL)
+		goto ret;
 	INIT_LIST_HEAD(&slub_pages_node->slub_node_list);
 	INIT_LIST_HEAD(&slub_pages_node->obj_freelist);
 	slub_pages_node->kmem_cache_linked = &kmem_cache_array[idx];
@@ -301,6 +279,8 @@ static struct slub_pages_node_t *new_slub_pages_node(int32_t idx)
 			       &slub_pages_node->obj_freelist);
 		node += kmem_cache_array[idx].obj_size;
 	}
+
+ret:
 	return slub_pages_node;
 }
 
@@ -326,10 +306,14 @@ void *kmalloc(size_t size)
 {
 	assert(size > 0 and size <= slub_size[SLUBNUM - 1]);
 	int32_t idx = binary_search_ge(slub_size, SLUBNUM, size);
+
+	void *ptr = NULL;
 	acquire(&kmem_cache_array[idx].kmem_cache_lock);
 	if (list_empty(&kmem_cache_array[idx].partiallist)) {
 		struct slub_pages_node_t *slub_pages_node =
 			new_slub_pages_node(idx);
+		if (slub_pages_node == NULL)   // todo: add wait-list
+			goto ret;
 		list_add_front(
 			&slub_pages_node->slub_node_list,
 			&slub_pages_node->kmem_cache_linked->partiallist);
@@ -339,13 +323,15 @@ void *kmalloc(size_t size)
 		element_entry(list_next(&kmem_cache_array[idx].partiallist),
 			      struct slub_pages_node_t, slub_node_list);
 	assert(!list_empty(&slub_pages_node->obj_freelist));
-	void *ptr = list_next_then_del(&slub_pages_node->obj_freelist);
+	ptr = list_next_then_del(&slub_pages_node->obj_freelist);
 	if (list_empty(&slub_pages_node->obj_freelist)) {
 		// remove from partial list and add to full list
 		list_del(&slub_pages_node->slub_node_list);
 		list_add_front(&slub_pages_node->slub_node_list,
 			       &slub_pages_node->kmem_cache_linked->fulllist);
 	}
+
+ret:
 	release(&kmem_cache_array[idx].kmem_cache_lock);
 	return ptr;
 }

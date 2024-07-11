@@ -17,7 +17,11 @@
 		1; \
 	})
 
-#define BUG() ({ panic("BUG! /%s()", __func__); })
+#define BUG() \
+	({ \
+		panic("BUG! /%s()", __func__); \
+		__builtin_unreachable(); \
+	})
 
 
 #define assert(_Expression) \

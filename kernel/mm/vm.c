@@ -22,7 +22,7 @@ void kvmenablehart()
 {
 	// wait for any previous writes to the page table memory to finish.
 	sfence_vma();
-	W_SATP(MAKE_SATP(kernel_pagetable));
+	W_SATP(MAKE_SATP(kernel_pagetable, 0));
 	// flush stale entries from the TLB.
 	sfence_vma();
 }
@@ -97,6 +97,8 @@ int32_t mappages(pagetable_t pagetable, uintptr_t va, size_t size, uintptr_t pa,
 		 * refer to a physical memory
 		 */
 		assert(pte->valid == 0);
+		if (va >= TRAMPOLINE)
+			set_var_bit(perm, PTE_G);
 		*(pte_t *)pte = PA2PTE(pa) | perm | PTE_V;
 		if (va >= TRAPFRAME)
 			pte->unrelease = 1;
@@ -110,6 +112,7 @@ static pagetable_t kvmmake()
 {
 	pagetable_t kpgtbl;
 	kpgtbl = (pagetable_t)pages_zalloc(1);
+	assert(kpgtbl != NULL);
 	// uart registers
 	assert(mappages(kpgtbl, UART0, PGSIZE, UART0, PTE_R | PTE_W) != -1);
 	// virtio mmio disk interface
@@ -181,8 +184,9 @@ void free_pgtable(pagetable_t pagetable, int32_t layer)
 	}
 }
 
-static void copy_pgtable(pagetable_t new_pagetable, pagetable_t old_pagetable,
-			 int32_t layer, uint32_t perm)
+static int64_t copy_pgtable(pagetable_t new_pagetable,
+			    pagetable_t old_pagetable, int32_t layer,
+			    uint32_t perm)
 {
 	assert(layer <= 2);
 
@@ -200,11 +204,14 @@ static void copy_pgtable(pagetable_t new_pagetable, pagetable_t old_pagetable,
 			if (new_pte->valid)
 				new_child = (void *)PNO2PA(new_pte->paddr);
 			else {
-				new_child = pages_zalloc(1);
+				if ((new_child = pages_zalloc(1)) == NULL)
+					return -1;
 				new_pagetable[i] =
 					PA2PTE(new_child) | PTE_FLAGS(old_pte);
 			}
-			copy_pgtable(new_child, old_child, layer + 1, perm);
+			if (copy_pgtable(new_child, old_child, layer + 1,
+					 perm) < 0)
+				return -1;
 		} else if (old_pte->valid and layer == 2) {
 			// this old_pte maps to a physical page
 			clear_var_bit(old_pte->perm, perm);
@@ -212,6 +219,8 @@ static void copy_pgtable(pagetable_t new_pagetable, pagetable_t old_pagetable,
 			pages_dup(old_child);
 		}
 	}
+
+	return 0;
 }
 
 /**
@@ -397,19 +406,22 @@ static void true_load_segment(struct vm_area_struct *vma, uintptr_t vaddr,
 }
 
 // this function's name comes from Linux v1.0
-void do_no_page(struct mm_struct *mm, struct vm_area_struct *vma,
-		uintptr_t vaddr, uint32_t targetperm)
+int64_t do_no_page(struct mm_struct *mm, struct vm_area_struct *vma,
+		   uintptr_t vaddr, uint32_t targetperm)
 {
 	char *page_start = pages_alloc(1);
+	if (page_start == NULL)
+		return -1;
 	mappages(mm->pagetable, vaddr, PGSIZE, (uintptr_t)page_start,
 		 targetperm);
 	if (vma->vm_inode != NULL)
 		true_load_segment(vma, vaddr, page_start);
+	return 0;
 }
 
 // this function's name comes from Linux v1.0
-void do_wp_page(struct pgtable_entry_t *pte, uintptr_t vaddr,
-		uint32_t targetperm)
+int64_t do_wp_page(struct pgtable_entry_t *pte, uintptr_t vaddr,
+		   uint32_t targetperm)
 {
 	char *physpg_paddr = (char *)PNO2PA(pte->paddr);
 
@@ -428,13 +440,18 @@ void do_wp_page(struct pgtable_entry_t *pte, uintptr_t vaddr,
 	 * copy the physical page table.
 	 */
 	char *new_page = pages_alloc(1);
+	if (new_page == NULL) {
+		release_pglock(physpg_paddr);
+		return -1;
+	}
 	memcpy(new_page, physpg_paddr, PGSIZE);
 	release_pglock(physpg_paddr);
 	set_var_bit(targetperm, pte->perm);
 	*(pte_t *)pte = PA2PTE(new_page) | targetperm;
 
 ret:
-	invalidate(vaddr);   // need to flush TLB
+	invalidate(vaddr);   // Don't forget to flush TLB
+	return 0;
 }
 
 /**
@@ -443,12 +460,12 @@ ret:
  * @param p
  * @param vaddr
  * @param size
- * @return int32_t: -1 if segment fault
+ * @return int32_t: -1 if segment fault; -2 if out of memory
  */
 int32_t verify_area(struct mm_struct *mm, uintptr_t vaddr, size_t size,
 		    int32_t targetperm)
 {
-	uint32_t vm_flags;
+	uint32_t vm_flags, res;
 
 	struct vm_area_struct *vma = search_vmareas(mm, vaddr, size, &vm_flags);
 
@@ -462,22 +479,28 @@ int32_t verify_area(struct mm_struct *mm, uintptr_t vaddr, size_t size,
 		uintptr_t end_vaddr = vaddr + size;
 		for (uintptr_t start_vaddr = PGROUNDDOWN(vaddr);
 		     start_vaddr < end_vaddr; start_vaddr += PGSIZE) {
+			res = 0;
 			struct pgtable_entry_t *pte =
 				walk(mm->pagetable, start_vaddr, 1);
+			if (pte == NULL)
+				return -2;
 			if (get_var_bit(pte->perm, targetperm) == targetperm)
 				continue;
 
 			// handling of COW mechanism
 			if (pte->valid)
-				do_wp_page(pte, start_vaddr, targetperm);
+				res = do_wp_page(pte, start_vaddr, targetperm);
 			else {
 				/**
 				 * @brief Pages that have not been loaded into
 				 * memory must not have been referenced multiple
 				 * times by the COW mechanism.
 				 */
-				do_no_page(mm, vma, start_vaddr, targetperm);
+				res = do_no_page(mm, vma, start_vaddr,
+						 targetperm);
 			}
+			if (res < 0)
+				return -2;
 		}
 	}
 
@@ -490,12 +513,19 @@ int32_t verify_area(struct mm_struct *mm, uintptr_t vaddr, size_t size,
 		kprintf("\n\x1b[%dmpid[%d] %s:%p=>%p\x1b[0m\n", RED, pid, \
 			SEGFAULT_MSG, inst, vaddr); \
 	})
+#define OOM_MSG	    "Out of memory"
+#define OOM_FAULT() ({ kprintf("\n\x1b[%dm%s\x1b[0m\n", RED, OOM_MSG); })
 void do_inst_page_fault(uintptr_t fault_vaddr)
 {
+	int64_t res;
 	struct proc_t *p = myproc();
-	if (verify_area(p->mm, fault_vaddr, 4, PTE_X | PTE_R | PTE_U) < 0) {
+	if ((res = verify_area(p->mm, fault_vaddr, 4, PTE_X | PTE_R | PTE_U)) ==
+	    -1) {
 		SEG_FAULT(p->pid, p->tf->epc, fault_vaddr);
-		setkill(p);
+		setkilled(p);
+	} else if (res == -2) {
+		OOM_FAULT();
+		setkilled(p);
 	}
 }
 
@@ -506,10 +536,14 @@ void do_inst_page_fault(uintptr_t fault_vaddr)
  */
 void do_ld_page_fault(uintptr_t fault_vaddr)
 {
+	int64_t res;
 	struct proc_t *p = myproc();
-	if (verify_area(p->mm, fault_vaddr, 1, PTE_R | PTE_U) < 0) {
+	if ((res = verify_area(p->mm, fault_vaddr, 1, PTE_R | PTE_U)) == -1) {
 		SEG_FAULT(p->pid, p->tf->epc, fault_vaddr);
-		setkill(p);
+		setkilled(p);
+	} else if (res == -2) {
+		OOM_FAULT();
+		setkilled(p);
 	}
 }
 
@@ -520,10 +554,15 @@ void do_ld_page_fault(uintptr_t fault_vaddr)
  */
 void do_sd_page_fault(uintptr_t fault_vaddr)
 {
+	int64_t res;
 	struct proc_t *p = myproc();
-	if (verify_area(p->mm, fault_vaddr, 1, PTE_R | PTE_W | PTE_U) < 0) {
+	if ((res = verify_area(p->mm, fault_vaddr, 1, PTE_R | PTE_W | PTE_U)) ==
+	    -1) {
 		SEG_FAULT(p->pid, p->tf->epc, fault_vaddr);
-		setkill(p);
+		setkilled(p);
+	} else if (res == -2) {
+		OOM_FAULT();
+		setkilled(p);
 	}
 }
 
@@ -579,8 +618,7 @@ int32_t copyin(pagetable_t pagetable, void *dst, void *srcva, uint64_t len)
 
 	while (len > 0) {
 		va0 = PGROUNDDOWN(src_vaddr);
-		pa0 = walkaddr(pagetable, va0);
-		if (pa0 == 0)
+		if ((pa0 = walkaddr(pagetable, va0)) == 0)
 			return -1;
 		n = PGSIZE - (src_vaddr - va0);
 		if (n > len)
@@ -612,7 +650,8 @@ int32_t copyin_string(pagetable_t pagetable, char *dst, uintptr_t srcva,
 
 	while (got_null == 0 and max > 0) {
 		va0 = PGROUNDDOWN(srcva);
-		assert((pa0 = walkaddr(pagetable, va0)) != 0);
+		if ((pa0 = walkaddr(pagetable, va0)) == 0)
+			return -1;
 		n = PGSIZE - (srcva - va0);
 		if (n > max)
 			n = max;
@@ -652,8 +691,7 @@ int32_t copyout(pagetable_t pagetable, void *dstva, void *src, uint64_t len)
 
 	while (len > 0) {
 		va0 = PGROUNDDOWN(dst_vaddr);
-		pa0 = walkaddr(pagetable, va0);
-		if (pa0 == 0)
+		if ((pa0 = walkaddr(pagetable, va0)) == 0)
 			return -1;
 		n = PGSIZE - (dst_vaddr - va0);
 		if (n > len)

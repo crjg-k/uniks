@@ -64,6 +64,8 @@ int64_t do_execve(struct proc_t *p, char *path, char *argv[], char *envp[])
 		goto ret3;
 
 	struct mm_struct *new_mm = new_mm_struct();
+	if (new_mm == NULL)
+		goto ret3;
 
 	char **tmp_envp, **tmp_argv;
 	uint16_t *envp_len, *argv_len;
@@ -84,7 +86,7 @@ int64_t do_execve(struct proc_t *p, char *path, char *argv[], char *envp[])
 			if (verify_area(p->mm, (uintptr_t)(envp + envc),
 					sizeof(uintptr_t), PTE_R | PTE_U) < 0) {
 				res = -EFAULT;
-				goto ret1;
+				goto ret2;
 			}
 			assert(copyin(p->mm->pagetable, &tmp_envp[envc],
 				      envp + envc, sizeof(uintptr_t)) != -1);
@@ -94,7 +96,7 @@ int64_t do_execve(struct proc_t *p, char *path, char *argv[], char *envp[])
 			// fetch string by vaddr copyed into tmp_envp[envc]
 			if ((len = argstrfetch((uintptr_t)tmp_envp[envc],
 					       envp_va, MAXARGLEN)) < 0)
-				goto ret1;
+				goto ret2;
 			tmp_envp[envc] = envp_va;
 			envp_len[envc] = len + 1;
 			totalen += envp_len[envc];
@@ -110,7 +112,7 @@ int64_t do_execve(struct proc_t *p, char *path, char *argv[], char *envp[])
 			if (verify_area(p->mm, (uintptr_t)(argv + argc),
 					sizeof(uintptr_t), PTE_R | PTE_U) < 0) {
 				res = -EFAULT;
-				goto ret2;
+				goto ret1;
 			}
 			assert(copyin(p->mm->pagetable, &tmp_argv[argc],
 				      argv + argc, sizeof(uintptr_t)) != -1);
@@ -120,7 +122,7 @@ int64_t do_execve(struct proc_t *p, char *path, char *argv[], char *envp[])
 			// fetch string by vaddr copyed into tmp_argv[argc]
 			if ((len = argstrfetch((uintptr_t)tmp_argv[argc],
 					       argv_va, MAXARGLEN)) < 0)
-				goto ret2;
+				goto ret1;
 			tmp_argv[argc] = argv_va;
 			argv_len[argc] = len + 1;
 			totalen += argv_len[argc];
@@ -131,6 +133,10 @@ int64_t do_execve(struct proc_t *p, char *path, char *argv[], char *envp[])
 
 		totalen = div_round_up(totalen, PGSIZE);   // page number
 		uintptr_t *ustack = pages_alloc(totalen);
+		if (ustack == NULL) {
+			res = -ENOMEM;
+			goto ret1;
+		}
 		p->tf->sp = p->tf->a1 = USER_STACK_TOP - PGSIZE * totalen;
 		p->tf->a2 = p->tf->a1 + argc * sizeof(uintptr_t);
 		char *sp =
@@ -150,11 +156,11 @@ int64_t do_execve(struct proc_t *p, char *path, char *argv[], char *envp[])
 		p->name = path;
 	}
 
-ret2:
+ret1:
 	kfree(argv_len);
 	for (int32_t i = 0; tmp_argv[i]; i++)
 		kfree(tmp_argv[i]);
-ret1:
+ret2:
 	kfree(envp_len);
 	for (int32_t i = 0; tmp_envp[i]; i++)
 		kfree(tmp_envp[i]);

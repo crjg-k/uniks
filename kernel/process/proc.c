@@ -159,7 +159,7 @@ void forkret()
 		first = 0;
 		ext2fs_init(VIRTIO_IRQ);
 		p->icwd = namei(ROOTPATH, 0);
-		p->cwd = kmalloc(PATH_MAX);
+		assert((p->cwd = kmalloc(PATH_MAX)) != NULL);
 		strcpy(p->cwd, ROOTPATH);
 	}
 
@@ -190,7 +190,10 @@ struct proc_t *allocproc()
 	struct proc_t *p = pcbtable[newpid] =
 		(struct proc_t *)((uintptr_t)tf + sizeof(struct trapframe_t));
 	p->pid = newpid;
-	p->mm = new_mm_struct();
+	if ((p->mm = new_mm_struct()) == NULL) {
+		pages_free(tf);
+		goto err;
+	}
 	tf->ra = 0;
 	p->tf = tf;
 
@@ -416,7 +419,7 @@ void time_wakeup()
 	acquire(&sleep_queue.sleep_lock);
 	while (!priority_queue_empty(&sleep_queue.pqm)) {
 		struct pair_t temppair = priority_queue_top(&sleep_queue.pqm);
-		if (ticks < temppair.key)
+		if (atomic_load(&ticks) < temppair.key)
 			break;
 		struct proc_t *p = pcbtable[temppair.value];
 
@@ -431,7 +434,7 @@ void time_wakeup()
 	release(&sleep_queue.sleep_lock);
 }
 
-void setkill(struct proc_t *p)
+void setkilled(struct proc_t *p)
 {
 	acquire(&pcblock[p->pid]);
 	p->killed = 1;

@@ -5,8 +5,14 @@
 #include <uniks/defs.h>
 
 
-#define MAX(a, b) (a < b ? b : a)
-#define MIN(a, b) (a < b ? a : b)
+#define MAX(a, b) ((a) < (b) ? (b) : (a))
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define SWAP(a, b, type) \
+	({ \
+		type temp = a; \
+		a = b; \
+		b = temp; \
+	})
 
 
 int64_t div_round_up(int64_t fisrt, int64_t second);

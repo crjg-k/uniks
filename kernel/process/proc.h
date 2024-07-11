@@ -179,7 +179,7 @@ void proc_init();
 void user_init(uint32_t priority);
 void yield();
 void time_wakeup();
-void setkill(struct proc_t *p);
+void setkilled(struct proc_t *p);
 int32_t killed(struct proc_t *);
 struct cpu_t *mycpu();
 struct proc_t *myproc();

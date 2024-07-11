@@ -119,7 +119,7 @@ int64_t file_read(struct file_t *f, void *addr, size_t cnt)
 		res = device_read(inode->d_inode_ctnt.i_block[0], 1, addr, cnt);
 	}
 	// else if block DEVICE
-	if (S_ISBLK(inode->d_inode_ctnt.i_mode)) {
+	else if (S_ISBLK(inode->d_inode_ctnt.i_mode)) {
 		res = blkdev_read(inode->d_inode_ctnt.i_block[0], addr,
 				  f->f_pos, cnt);
 		f->f_pos += res;
@@ -164,7 +164,7 @@ int64_t file_write(struct file_t *f, void *addr, size_t cnt)
 				   cnt);
 	}
 	// else if block DEVICE
-	if (S_ISBLK(inode->d_inode_ctnt.i_mode)) {
+	else if (S_ISBLK(inode->d_inode_ctnt.i_mode)) {
 		res = blkdev_write(inode->d_inode_ctnt.i_block[0], addr,
 				   f->f_pos, cnt);
 		f->f_pos += res;

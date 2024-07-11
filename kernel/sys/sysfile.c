@@ -42,12 +42,13 @@ int64_t sys_write()
 	return file_write(f, buf, cnt);
 }
 
-#define sys_file_fd_common(fd) \
+// Search an idle fdtable entry of current process.
+#define sys_file_fd_common(fd, ret) \
 	for (fd = 0; fd < NFD; fd++) \
 		if (p->fdtable[fd] == -1) \
 			break; \
 	if (fd >= NFD) { \
-		fd = -EINVAL; \
+		fd = -EMFILE; \
 		goto ret; \
 	}
 
@@ -58,22 +59,21 @@ int64_t sys_open()
 	struct m_inode_t *inode;
 	struct proc_t *p = myproc();
 
+	sys_file_fd_common(fd, ret2);
+
 	char *path = kmalloc(PATH_MAX);
 
 	uintptr_t uaddr = argufetch(p, 0);
 	if (argstrfetch(uaddr, path, PATH_MAX) < 0) {
 		fd = -EFAULT;
-		goto ret;
+		goto ret1;
 	}
 
 	// if return value<0, release file structure and return errno
 	if ((inode = namei(path, 0)) == NULL) {
 		fd = -ENOENT;
-		goto ret;
+		goto ret1;
 	}
-
-	// search an idle fdtable entry of current process
-	sys_file_fd_common(fd);
 
 	// allocate an idle system fcbtable entry
 	int32_t fcb_no;
@@ -85,8 +85,9 @@ int64_t sys_open()
 	f->f_inode = inode;
 	f->f_pos = 0;
 
-ret:
+ret1:
 	kfree(path);
+ret2:
 	return fd;
 }
 
@@ -110,7 +111,7 @@ int64_t sys_close()
 	return do_close(fd);
 }
 
-// do dup fd, called by sys_dup2() and sys_dup() both
+// Do fd dupping which will be called by `sys_dup2()` and `sys_dup()` both.
 static int32_t do_dupfd(uint32_t fd, uint32_t arg)
 {
 	struct proc_t *p = myproc();
@@ -151,7 +152,7 @@ int64_t sys_dup2()
 	return do_dupfd(oldfd, newfd);
 }
 
-// copy oldfd to a new fd which is sure that newfd is the min idle fd
+// Copy oldfd to a new fd which is sure that newfd is the min idle fd.
 // `int dup(int oldfd);`
 int64_t sys_dup()
 {
@@ -163,20 +164,26 @@ int64_t sys_dup()
 int64_t sys_pipe()
 {
 	int32_t fd1, fd2, res = -EFAULT;
+	int32_t fcb_no1, fcb_no2;
+
 	struct proc_t *p = myproc();
+
+	sys_file_fd_common(fd1, ret2);
+	p->fdtable[fd1] = fcb_no1 = file_alloc();
+	sys_file_fd_common(fd2, ret1);
+	p->fdtable[fd2] = fcb_no2 = file_alloc();
+
 	uintptr_t pipefd = argufetch(myproc(), 0);
 	if (verify_area(p->mm, pipefd, 2 * sizeof(fd1), PTE_R | PTE_W | PTE_U) <
 	    0) {
-		goto ret;
+		goto ret3;
 	}
 
-	int32_t fcb_no1, fcb_no2;
-	sys_file_fd_common(fd1);
-	p->fdtable[fd1] = fcb_no1 = file_alloc();
-	sys_file_fd_common(fd2);
-	p->fdtable[fd2] = fcb_no2 = file_alloc();
-
 	struct m_inode_t *inode = pipealloc();
+	if (inode == NULL) {
+		res = -ENOMEM;
+		goto ret3;
+	}
 
 	struct file_t *f1 = &fcbtable.files[fcb_no1],
 		      *f2 = &fcbtable.files[fcb_no2];
@@ -192,7 +199,15 @@ int64_t sys_pipe()
 	assert(copyout(p->mm->pagetable, (void *)pipefd + sizeof(fd1),
 		       (void *)&fd2, sizeof(fd2)) != -1);
 	res = 0;
-ret:
+	goto ret3;
+
+ret1:
+	p->fdtable[fd1] = -1;
+	fd1 = fd2;
+	fcbno_free(fcb_no1);
+ret2:
+	res = fd1;
+ret3:
 	return res;
 }
 

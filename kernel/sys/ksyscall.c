@@ -92,6 +92,7 @@ static int64_t (*syscalls[])() = {
 	[SYS_chdir] sys_chdir,	 [SYS_brk] sys_brk,
 	[SYS_getcwd] sys_getcwd, [SYS_stat] sys_stat,
 	[SYS_lstat] sys_lstat,	 [SYS_getppid] sys_getppid,
+	[SYS_kill] sys_kill,
 };
 
 #define NUM_SYSCALLS ((sizeof(syscalls)) / (sizeof(syscalls[0])))

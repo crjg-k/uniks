@@ -96,10 +96,15 @@ int64_t tty_read(void *ttyptr, int32_t user_dst, void *buf, size_t cnt)
 	int64_t n = 0;
 	char buffer[LINE_MAXN], ch;
 	struct tty_struct_t *tty = ttyptr;
+	struct proc_t *p = myproc();
 
 	acquire(&tty->secondary_q.tty_queue_lock);
 	while (n < cnt) {
 		while (queue_empty(&tty->secondary_q.qm)) {
+			if (killed(p)) {
+				release(&tty->secondary_q.tty_queue_lock);
+				return -1;
+			}
 			proc_block(&tty->secondary_q.wait_list,
 				   &tty->secondary_q.tty_queue_lock);
 		}

@@ -20,7 +20,7 @@ struct ext2_group_desc_t *group_descs =
 static void readsb(dev_t dev, struct ext2_super_block_t *sb)
 {
 	struct blkbuf_t *bb = blk_read(dev, EXT2_SB_BLKNO);
-	// the SUPER BLOCK start at offset 1024 of disk
+	// the SUPER BLOCK starts at 1024B offset of disk
 	memcpy(sb, bb->b_data + 1024, sizeof(*sb));
 	blk_release(bb);
 }
@@ -53,6 +53,7 @@ void ext2fs_init(dev_t dev)
 void inode_table_init()
 {
 	initlock(&inode_table.lock, "inode_table");
+	INIT_LIST_HEAD(&inode_table.wait_list);
 	for (int32_t i = 0; i < NINODE; i++) {
 		mutex_init(&inode_table.m_inodes[i].i_mtx, "inode");
 		inode_table.m_inodes[i].i_count =
@@ -137,11 +138,11 @@ static void bfree(dev_t dev, uint32_t blk_no)
 // Inodes
 
 /**
- * @brief Find the inode with number inum on device dev and return the in-memory
- * copy. Does not lock the inode and does not read it from disk.
+ * @brief Find the inode with number `i_no` on device `dev` and return the
+ * in-memory copy. Does not lock the inode and does not read it from disk.
  * @param dev
  * @param i_no start from 1 but not 0 (according to ext2fs manual)
- * @param clean
+ * @param clean is it a new block that doesn't need to read content from disk?
  * @return struct m_inode_t*
  */
 static struct m_inode_t *iget(uint32_t dev, uint32_t i_no, int32_t clean)
@@ -180,10 +181,9 @@ static struct m_inode_t *iget(uint32_t dev, uint32_t i_no, int32_t clean)
 }
 
 /**
- * @brief Allocate an inode on device dev (marked in inode bitmap). Mark it as
+ * @brief Allocate an inode on device `dev` (marked in inode bitmap). Mark it as
  * allocated by modifying the inode bitmap. Returns an unlocked but allocated
  * and referenced inode, or NULL if there is no free inode.
- *
  * @param dev
  * @return struct m_inode_t*
  */
@@ -207,7 +207,7 @@ struct m_inode_t *ialloc(dev_t dev)
 	return NULL;
 }
 
-// Free a inode in inode table
+// Free an inode in inode table
 static void ifree(dev_t dev, uint32_t i_no)
 {
 	uint32_t g_idx = i_no / m_sb.d_sb_ctnt.s_inodes_per_group;
@@ -219,8 +219,8 @@ static void ifree(dev_t dev, uint32_t i_no)
 }
 
 /**
- * @brief Increment reference count for ip. Returns ip to enable ip = idup(ip1)
- * idiom.
+ * @brief Increment reference count for `ip`. Returns `ip` to enable `ip =
+ * idup(ip1)` idiom.
  * @param ip
  * @return struct m_inode_t*
  */
@@ -300,6 +300,7 @@ void iput(struct m_inode_t *ip)
 		mutex_release(&ip->i_mtx);
 
 		acquire(&inode_table.lock);
+		proc_unblock_all(&inode_table.wait_list);
 	}
 
 	ip->i_count--;
@@ -315,8 +316,8 @@ void iunlockput(struct m_inode_t *ip)
 
 /**
  * @brief Copy a modified in-memory inode to disk block. Must be called after
- * every change to an ip->xxx field that lives on corresponding disk block.
- * Caller must hold ip->lock.
+ * every change to an `ip->xxx` field that lives on corresponding disk block.
+ * Caller must hold `ip->lock`.
  * @param ip
  */
 void iupdate(struct m_inode_t *ip)
@@ -336,7 +337,7 @@ void iupdate(struct m_inode_t *ip)
 // Inode content
 
 /**
- * @brief Return the disk block address of the nth block in inode ip. If there
+ * @brief Return the disk block address of the nth block in inode `ip`. If there
  * is no such block, bmap allocates one. returns 0 if out of disk space.
  * @param ip
  * @param blk_no
@@ -406,7 +407,7 @@ static void recursively_release(int32_t layer, struct m_inode_t *ip,
 	struct blkbuf_t *bb = blk_read(ip->i_dev, blk_no);
 	uint32_t *index = (uint32_t *)bb->b_data;
 	for (int32_t i = 0; i < EXT2_IND_PER_BLK; i++) {
-		// hint: don't support file hole now
+		// hint: DO NOT support file hole now
 		if (index[i] == 0)   // DFS pruning
 			break;
 		if (layer != 0)
@@ -421,7 +422,7 @@ static void recursively_release(int32_t layer, struct m_inode_t *ip,
 	blk_release(bb);
 }
 
-// Truncate inode (discard contents). Caller must hold ip->lock.
+// Truncate inode (discard contents). Caller must hold `ip->lock`.
 void itruncate(struct m_inode_t *ip)
 {
 	for (int32_t i = 0; i < EXT2_NDIR_BLOCKS; i++) {
@@ -462,8 +463,8 @@ void stati(struct m_inode_t *ip, struct stat_t *st)
 }
 
 /**
- * @brief Read data from inode. Caller must hold ip->lock. If user_dst==1, then
- * dst is a user virtual address; otherwise, dst is a kernel address.
+ * @brief Read data from inode. Caller must hold `ip->lock`. If `user_dst==1`,
+ * then `dst` is a user virtual address; otherwise, `dst` is a kernel address.
  * @param ip
  * @param user_dst
  * @param dst
@@ -500,8 +501,8 @@ int64_t readi(struct m_inode_t *ip, int32_t user_dst, char *dst, uint64_t off,
 // Directories
 
 /**
- * @brief Look for a directory entry in a directory. If found, set *poff to byte
- * offset of entry.
+ * @brief Look for a directory entry in a directory. If found, set `*poff` to
+ * byte offset of entry.
  * @param ip
  * @param name
  * @param poff
@@ -534,17 +535,17 @@ struct m_inode_t *dirlookup(struct m_inode_t *ip, char *name, uint64_t *poff)
 
 // Paths
 
-// Copy the next path element from path into name.
+// Copy the next path element from `path` into `name`.
 // Return a pointer to the element following the copied one.
 // The returned path has no leading slashes,
-// so the caller can check *path=='\0' to see if the name is the last one.
+// so the caller can check `*path=='\0'` to see if the name is the last one.
 // If no name to remove, return 0.
 //
 // Examples:
-//   skipelem("a/bb/c", name) = "bb/c", setting name = "a"
-//   skipelem("///a//bb", name) = "bb", setting name = "a"
-//   skipelem("a", name) = "", setting name = "a"
-//   skipelem("", name) = skipelem("////", name) = NULL
+//   `skipelem("a/bb/c", name) = "bb/c", setting name = "a"`
+//   `skipelem("///a//bb", name) = "bb", setting name = "a"`
+//   `skipelem("a", name) = "", setting name = "a"`
+//   `skipelem("", name) = skipelem("////", name) = NULL`
 //
 static char *skipelem(char *path, char *name)
 {
@@ -572,9 +573,9 @@ static char *skipelem(char *path, char *name)
 }
 
 /**
- * @brief Look up and return the inode for a path name. If parent != 0, return
- * the inode for the parent and copy the final path element into name, which
- * must have room for EXT2_NAME_LEN bytes.
+ * @brief Look up and return the inode for a path name. If `nameiparent != 0`,
+ * return the inode for the parent and copy the final path element into `name`,
+ * which must have room for EXT2_NAME_LEN bytes.
  * @param path
  * @param nameiparent
  * @param name

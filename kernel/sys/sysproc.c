@@ -67,7 +67,7 @@ int64_t sys_msleep()
 	acquire(&sleep_queue.sleep_lock);
 	acquire(&pcblock[p->pid]);
 	// push process into priority_queue which record the time to wakeup
-	struct pair_t temppair = {target_ticks + ticks, p->pid};
+	struct pair_t temppair = {target_ticks + atomic_load(&ticks), p->pid};
 	priority_queue_push(&sleep_queue.pqm, &temppair);
 	release(&sleep_queue.sleep_lock);
 
@@ -168,4 +168,25 @@ ret:
 void sys_exit()
 {
 	do_exit(argufetch(myproc(), 0));
+}
+
+int64_t sys_kill()
+{
+	struct proc_t *p = myproc();
+	pid_t target_pid = argufetch(p, 0);
+
+	if (pcbtable[target_pid] != NULL) {
+		acquire(&sleep_queue.sleep_lock);
+		acquire(&pcblock[target_pid]);
+		priority_queue_pop_v(&sleep_queue.pqm, target_pid);
+		release(&sleep_queue.sleep_lock);
+
+		p->killed = 1;
+		if (p->state == TASK_BLOCK)
+			p->state = TASK_READY;
+		release(&pcblock[target_pid]);
+		return 0;
+	}
+
+	return -1;
 }
