@@ -27,15 +27,13 @@ char *strcpy(char *dst, const char *src)
 
 char *strncpy(char *dst, const char *src, size_t len)
 {
-	char *p = dst;
-	while (len > 0) {
-		if ((*p = *src) != 0)
-			src++;
-		else
-			return dst;
-		p++, len--;
-	}
-	*(--p) = '\0';
+	size_t i;
+
+	for (i = 0; i < len and src[i] != '\0'; i++)
+		dst[i] = src[i];
+	for (; i < len; i++)
+		dst[i] = '\0';
+
 	return dst;
 }
 

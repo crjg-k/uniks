@@ -1,9 +1,11 @@
 #include "ext2fs.h"
 #include <device/blkbuf.h>
+#include <device/device.h>
 #include <device/virtio_disk.h>
 #include <mm/vm.h>
 #include <process/proc.h>
 #include <uniks/defs.h>
+#include <uniks/errno.h>
 #include <uniks/kassert.h>
 #include <uniks/kstdlib.h>
 #include <uniks/kstring.h>
@@ -29,10 +31,26 @@ static void readsb(dev_t dev, struct ext2_super_block_t *sb)
 static void readgdt(dev_t dev, char *gd)
 {
 	struct blkbuf_t *bb;
-	for (int32_t i = 0; i < EXT2_GRPDESC_BLKNUM; i++) {
+	for (int64_t i = 0; i < EXT2_GRPDESC_BLKNUM; i++) {
 		bb = blk_read(dev, EXT2_SB_BLKNO + 1 + i);
 		memcpy(gd + i * BLKSIZE, bb->b_data, BLKSIZE);
 		blk_release(bb);
+	}
+}
+
+void sync_sb_and_gdt()
+{
+	// === sync SUPER BLOCK ===
+	struct blkbuf_t *bb = blk_read(m_sb.sb_dev, EXT2_SB_BLKNO);
+	// the SUPER BLOCK starts at 1024B offset of disk
+	memcpy(bb->b_data + 1024, &m_sb.d_sb_ctnt, sizeof(&m_sb.d_sb_ctnt));
+	blk_write_over(bb);
+
+	// === sync GDT ===
+	for (int64_t i = 0; i < EXT2_GRPDESC_BLKNUM; i++) {
+		bb = blk_read(m_sb.sb_dev, EXT2_SB_BLKNO + 1 + i);
+		memcpy(bb->b_data, group_descs_table + i * BLKSIZE, BLKSIZE);
+		blk_write_over(bb);
 	}
 }
 
@@ -54,7 +72,7 @@ void inode_table_init()
 {
 	initlock(&inode_table.lock, "inode_table");
 	INIT_LIST_HEAD(&inode_table.wait_list);
-	for (int32_t i = 0; i < NINODE; i++) {
+	for (int64_t i = 0; i < NINODE; i++) {
 		mutex_init(&inode_table.m_inodes[i].i_mtx, "inode");
 		inode_table.m_inodes[i].i_count =
 			inode_table.m_inodes[i].i_dirty =
@@ -106,7 +124,7 @@ static int64_t balloc(dev_t dev, uint32_t grp_no)
 		blk_release(bb);
 	}
 
-	for (uint32_t g_idx = 0; g_idx < EXT2_GRP_NUM; g_idx++) {
+	for (int64_t g_idx = 0; g_idx < EXT2_GRP_NUM; g_idx++) {
 		if (g_idx == grp_no)
 			continue;
 		bb = blk_read(dev, group_descs[g_idx].bg_block_bitmap);
@@ -156,8 +174,7 @@ static struct m_inode_t *iget(uint32_t dev, uint32_t i_no, int32_t clean)
 		// Is the inode already in the table?
 		for (ip = inode_table.m_inodes;
 		     ip < &inode_table.m_inodes[NINODE]; ip++) {
-			if (ip->i_count > 0 and ip->i_dev == dev and
-			    ip->i_no == i_no) {
+			if (ip->i_dev == dev and ip->i_no == i_no) {
 				ip->i_count++;
 				release(&inode_table.lock);
 				return ip;
@@ -173,6 +190,7 @@ static struct m_inode_t *iget(uint32_t dev, uint32_t i_no, int32_t clean)
 	assert(empty->i_count == 0);
 
 	empty->i_dev = dev, empty->i_no = i_no;
+	empty->i_block_group = (i_no - 1) / m_sb.d_sb_ctnt.s_inodes_per_group;
 	empty->i_count++;
 	empty->i_valid = clean;
 	release(&inode_table.lock);
@@ -192,7 +210,7 @@ struct m_inode_t *ialloc(dev_t dev)
 	int64_t inum = 0;
 	struct blkbuf_t *bb;
 
-	for (uint32_t g_idx = 0; g_idx < EXT2_GRP_NUM; g_idx++) {
+	for (int64_t g_idx = 0; g_idx < EXT2_GRP_NUM; g_idx++) {
 		bb = blk_read(dev, group_descs[g_idx].bg_inode_bitmap);
 		int64_t freeno = search_free_bit(bb->b_data, BLKSIZE);
 		if (freeno != -1) {
@@ -282,8 +300,9 @@ void iput(struct m_inode_t *ip)
 	if (ip->i_count == 1 and ip->i_valid and
 	    ip->d_inode_ctnt.i_links_count == 0) {
 		/**
-		 * @brief ip->i_count == 1 means no other process can have ip
-		 * locked, so this mutex_acquire() won't block (or deadlock).
+		 * @brief `ip->i_count == 1` means no other process can have
+		 * `ip` locked, so this `mutex_acquire()` won't block (or
+		 * deadlock).
 		 */
 		mutex_acquire(&ip->i_mtx);
 
@@ -294,7 +313,7 @@ void iput(struct m_inode_t *ip)
 		 * and mark it as free in inode bitmap.
 		 */
 		ifree(ip->i_dev, ip->i_no);
-		itruncate(ip);
+		itruncate(ip, 0);
 		ip->i_valid = 0;
 
 		mutex_release(&ip->i_mtx);
@@ -315,12 +334,14 @@ void iunlockput(struct m_inode_t *ip)
 }
 
 /**
- * @brief Copy a modified in-memory inode to disk block. Must be called after
- * every change to an `ip->xxx` field that lives on corresponding disk block.
- * Caller must hold `ip->lock`.
+ * @brief Copy a modified in-memory inode to block of block device(in-memory
+ * buffer or write through to disk). Must be called after every change to an
+ * `ip->xxx` field that lives on corresponding block. Caller must hold
+ * `ip->i_mtx`.
  * @param ip
+ * @param wthrough
  */
-void iupdate(struct m_inode_t *ip)
+void iupdate(struct m_inode_t *ip, int64_t wthrough)
 {
 	assert(ip->i_valid == 1);
 
@@ -329,8 +350,10 @@ void iupdate(struct m_inode_t *ip)
 	void *tar_ip = ((struct ext2_inode_t *)bb->b_data +
 			EXT2_IOFFSET_OFGRP(ip->i_no, m_sb.d_sb_ctnt) % IPB);
 	memcpy(tar_ip, ip, sizeof(ip->d_inode_ctnt));
-	blk_release(bb);
-	ip->i_valid = 0;
+	if (wthrough)
+		device_write(bb->b_dev, 0, bb, PGSIZE);
+	else
+		blk_write_over(bb);
 }
 
 
@@ -341,11 +364,11 @@ void iupdate(struct m_inode_t *ip)
  * is no such block, bmap allocates one. returns 0 if out of disk space.
  * @param ip
  * @param blk_no
- * @return uint32_t
+ * @return uint64_t
  */
-uint32_t bmap(struct m_inode_t *ip, uint32_t blk_no)
+uint64_t bmap(struct m_inode_t *ip, uint32_t blk_no)
 {
-	uint32_t baddr;
+	uint64_t baddr;
 	struct blkbuf_t *bb;
 
 	assert(blk_no < EXT2_TIND_LIMIT);
@@ -401,48 +424,115 @@ uint32_t bmap(struct m_inode_t *ip, uint32_t blk_no)
 	return baddr;
 }
 
-static void recursively_release(int32_t layer, struct m_inode_t *ip,
-				uint32_t blk_no)
+static int32_t recursively_release(int32_t level, struct m_inode_t *ip,
+				   uint32_t blk_no, uint64_t baddr)
 {
-	struct blkbuf_t *bb = blk_read(ip->i_dev, blk_no);
-	uint32_t *index = (uint32_t *)bb->b_data;
-	for (int32_t i = 0; i < EXT2_IND_PER_BLK; i++) {
-		// hint: DO NOT support file hole now
-		if (index[i] == 0)   // DFS pruning
-			break;
-		if (layer != 0)
-			recursively_release(layer - 1, ip, index[i]);
-		else {
-			bfree(ip->i_dev, index[i]);
+	static const int32_t divisors[] = {1, EXT2_IND_PER_BLK,
+					   EXT2_IND_PER_BLK * EXT2_IND_PER_BLK};
+	struct blkbuf_t *bb = blk_read(ip->i_dev, baddr);
+	uint32_t *index = (uint32_t *)bb->b_data, i = blk_no / divisors[level];
+	int32_t res;
+
+	assert(index[i] != 0);
+	if (level != 0) {
+		res = recursively_release(level - 1, ip,
+					  blk_no % divisors[level], index[i]);
+		if (!res)
+			goto leaf;
+		else
+			blk_release(bb);
+	} else {
+leaf:
+		bfree(ip->i_dev, index[i]);
+		index[i] = res = 0;
+		ip->d_inode_ctnt.i_blocks -= BLKSIZE / SECTORSIZE;
+		for (int64_t i = 0; i < EXT2_IND_PER_BLK; i++) {
+			if (index[i] != 0) {
+				res = 1;
+				break;
+			}
+		}
+		blk_write_over(bb);
+	}
+
+	return res;
+}
+
+void bunmap(struct m_inode_t *ip, uint32_t blk_no)
+{
+	assert(blk_no < EXT2_TIND_LIMIT);
+
+	if (blk_no < EXT2_NDIR_BLOCKS) {
+		assert(ip->d_inode_ctnt.i_block[blk_no] != 0);
+		bfree(ip->i_dev, ip->d_inode_ctnt.i_block[blk_no]);
+		ip->d_inode_ctnt.i_blocks -= BLKSIZE / SECTORSIZE;
+		ip->d_inode_ctnt.i_block[blk_no] = 0;
+		return;
+	}
+
+	if (blk_no < EXT2_IND_LIMIT) {
+		if (recursively_release(
+			    0, ip, blk_no - EXT2_NDIR_BLOCKS,
+			    ip->d_inode_ctnt.i_block[EXT2_IND_BLOCK]) == 0) {
+			bfree(ip->i_dev,
+			      ip->d_inode_ctnt.i_block[EXT2_IND_BLOCK]);
+			ip->d_inode_ctnt.i_block[EXT2_IND_BLOCK] = 0;
+			ip->d_inode_ctnt.i_blocks -= BLKSIZE / SECTORSIZE;
+		}
+	} else if (blk_no < EXT2_DIND_LIMIT) {
+		if (recursively_release(
+			    1, ip, blk_no - EXT2_IND_LIMIT,
+			    ip->d_inode_ctnt.i_block[EXT2_DIND_BLOCK]) == 0) {
+			bfree(ip->i_dev,
+			      ip->d_inode_ctnt.i_block[EXT2_DIND_BLOCK]);
+			ip->d_inode_ctnt.i_block[EXT2_DIND_BLOCK] = 0;
+			ip->d_inode_ctnt.i_blocks -= BLKSIZE / SECTORSIZE;
+		}
+	} else {
+		if (recursively_release(
+			    2, ip, blk_no - EXT2_DIND_LIMIT,
+			    ip->d_inode_ctnt.i_block[EXT2_TIND_BLOCK]) == 0) {
+			bfree(ip->i_dev,
+			      ip->d_inode_ctnt.i_block[EXT2_TIND_BLOCK]);
+			ip->d_inode_ctnt.i_block[EXT2_TIND_BLOCK] = 0;
 			ip->d_inode_ctnt.i_blocks -= BLKSIZE / SECTORSIZE;
 		}
 	}
-	bfree(ip->i_dev, blk_no);
-	ip->d_inode_ctnt.i_blocks -= BLKSIZE / SECTORSIZE;
-	blk_release(bb);
 }
 
-// Truncate inode (discard contents). Caller must hold `ip->lock`.
-void itruncate(struct m_inode_t *ip)
+// Truncate inode (discard contents). Caller must hold `ip->i_mtx`.
+int64_t itruncate(struct m_inode_t *ip, size_t length)
 {
-	for (int32_t i = 0; i < EXT2_NDIR_BLOCKS; i++) {
-		if (ip->d_inode_ctnt.i_block[i]) {
-			bfree(ip->i_dev, ip->d_inode_ctnt.i_block[i]);
-			ip->d_inode_ctnt.i_block[i] = 0;
+	assert(mutex_holding(&ip->i_mtx));
+	if (length > ip->d_inode_ctnt.i_size) {
+		// Fill with '\0', and call `writei()` for simplicity
+		uint64_t res, off = ip->d_inode_ctnt.i_size;
+		while (off < length) {
+			if ((res = writei(ip, 0, zero_blk, off,
+					  MIN(BLKSIZE, length - off))) > 0)
+				off += res;
+			else {
+				ip->d_inode_ctnt.i_size = off;
+				return -1;
+			}
 		}
+		assert(off == length);
+		ip->d_inode_ctnt.i_size = off;
+	} else if (length < ip->d_inode_ctnt.i_size) {
+		uint32_t lower_bound = alignaddr_up(length, PGSIZE);
+		for (int64_t i = ip->d_inode_ctnt.i_size; i > lower_bound;
+		     i -= BLKSIZE) {
+			bunmap(ip, (i - 1) / BLKSIZE);
+		}
+		assert(ip->d_inode_ctnt.i_blocks == (length == 0)
+			       ? 0
+			       : (((length - 1) / BLKSIZE + 1) *
+				  (BLKSIZE / SECTORSIZE)));
+		ip->d_inode_ctnt.i_size = length;
+		iupdate(ip, 0);
 	}
 
-	// multi-level indirect index
-	for (int32_t i = 0; i < 3; i++) {
-		uint32_t blk_no =
-			ip->d_inode_ctnt.i_block[EXT2_NDIR_BLOCKS + i];
-		if (blk_no != 0)
-			recursively_release(i, ip, blk_no);
-	}
-
-	assert(ip->d_inode_ctnt.i_blocks == 0);
-	ip->d_inode_ctnt.i_size = 0;
-	iupdate(ip);
+	return 0;
 }
 
 void stati(struct m_inode_t *ip, struct stat_t *st)
@@ -462,8 +552,15 @@ void stati(struct m_inode_t *ip, struct stat_t *st)
 	st->st_ctime = ip->d_inode_ctnt.i_ctime;
 }
 
+#define rwi_common() \
+	if (atomic_load(&syncing) > 0) \
+		return -EBUSY; \
+	atomic_fetch_add(&rw_operating, 1); \
+	size_t tot, m; \
+	struct blkbuf_t *bb;
+
 /**
- * @brief Read data from inode. Caller must hold `ip->lock`. If `user_dst==1`,
+ * @brief Read data from inode. Caller must hold `ip->i_mtx`. If `user_dst==1`,
  * then `dst` is a user virtual address; otherwise, `dst` is a kernel address.
  * @param ip
  * @param user_dst
@@ -475,8 +572,7 @@ void stati(struct m_inode_t *ip, struct stat_t *st)
 int64_t readi(struct m_inode_t *ip, int32_t user_dst, char *dst, uint64_t off,
 	      size_t n)
 {
-	size_t tot, m;
-	struct blkbuf_t *bb;
+	rwi_common();
 
 	if (off > ip->d_inode_ctnt.i_size or off + n < off)
 		return 0;
@@ -487,16 +583,67 @@ int64_t readi(struct m_inode_t *ip, int32_t user_dst, char *dst, uint64_t off,
 		uint64_t addr = bmap(ip, off / BLKSIZE);
 		if (addr == 0)
 			break;
-		bb = blk_read(ip->i_dev, addr);
+		if ((bb = blk_read(ip->i_dev, addr)) == NULL)
+			break;
 		m = MIN(n - tot, BLKSIZE - off % BLKSIZE);
 		assert(either_copyout(user_dst, dst,
 				      bb->b_data + (off % BLKSIZE), m) != -1);
 		blk_release(bb);
 	}
 
+	atomic_fetch_sub(&rw_operating, 1);
 	return tot;
 }
 
+/**
+ * @brief Write data to inode. Caller must hold `ip->i_mtx`. If `user_src==1`,
+ * then `src` is a user virtual address; otherwise, `src` is a kernel address.
+ * @param ip
+ * @param user_src
+ * @param src
+ * @param off
+ * @param n
+ * @return int64_t: Returns the number of bytes successfully written. If the
+ * return value is less than the requested `n`, there was an error of some kind.
+ */
+int64_t writei(struct m_inode_t *ip, int32_t user_src, char *src, uint64_t off,
+	       size_t n)
+{
+	rwi_common();
+
+	if (off > ip->d_inode_ctnt.i_size or off + n < off)
+		return -1;
+	if (off + n > EXT2_MAX_FBLKS * BLKSIZE)
+		return -1;
+
+	for (tot = 0; tot < n; tot += m, off += m, src += m) {
+		uint64_t addr = bmap(ip, off / BLKSIZE);
+		if (addr == 0)
+			break;
+		if ((bb = blk_read(ip->i_dev, addr)) == NULL)
+			break;
+		m = MIN(n - tot, BLKSIZE - off % BLKSIZE);
+		assert(either_copyin(user_src, bb->b_data + (off % BLKSIZE),
+				     src, m) != -1);
+		blk_write_over(bb);
+	}
+
+	if (off > ip->d_inode_ctnt.i_size) {
+		ip->d_inode_ctnt.i_size = off;
+		ip->d_inode_ctnt.i_blocks =
+			(off / BLKSIZE + 1) * (BLKSIZE / SECTORSIZE);
+	}
+
+	/**
+	 * @brief  write the i-node back to block buffer(or external storage)
+	 * even if the size didn't change because the loop above might have
+	 * called `bmap()` and added a new block to `ip->addrs[]`.
+	 */
+	iupdate(ip, 0);
+
+	atomic_fetch_sub(&rw_operating, 1);
+	return tot ? tot : -EIO;
+}
 
 // Directories
 
@@ -530,6 +677,63 @@ struct m_inode_t *dirlookup(struct m_inode_t *ip, char *name, uint64_t *poff)
 	}
 
 	return NULL;
+}
+
+/**
+ * @brief Write a new directory entry into the directory `dp`.
+ * Returns 0 on success, -1 on failure (e.g. out of disk blocks).
+ * @param dp
+ * @param name
+ * @param i_no
+ * @return int32_t
+ */
+int32_t dirlink(struct m_inode_t *dp, char *name, uint64_t i_no)
+{
+	uint64_t off, namelen = strlen(name), de1_len, de2_len;
+	assert(namelen <= EXT2_NAME_LEN);
+	char tmp_de[EXT2_DIRENTRY_MAXSIZE], new_de[EXT2_DIRENTRY_MAXSIZE];
+	struct ext2_dir_entry_t *de1 = (struct ext2_dir_entry_t *)tmp_de,
+				*de2 = (struct ext2_dir_entry_t *)new_de;
+	struct m_inode_t *ip;
+
+	// Check that name is not present.
+	if ((ip = dirlookup(dp, name, 0)) != NULL) {
+		iput(ip);
+		return -1;
+	}
+
+	// Look for an empty directory entry.
+	for (off = 0; off < dp->d_inode_ctnt.i_size; off += de1->rec_len) {
+		readi(dp, 0, tmp_de, off, EXT2_DIRENTRY_MAXSIZE);
+		if (de1->inode == 0)
+			continue;
+		// The distance between two entries is enough to insert new one
+		if (de1->rec_len - (sizeof(*de1) + de1->name_len) >=
+		    sizeof(*de1) + namelen)
+			break;
+	}
+
+	de2->inode = i_no;
+	de2->name_len = namelen;
+	strncpy(de2->name, name, namelen);
+	if (dp->d_inode_ctnt.i_size == 0) {
+		de2->rec_len = BLKSIZE;
+		if (writei(dp, 0, new_de, off, de2->rec_len) != de2->rec_len)
+			return -1;
+	} else {
+		de1_len = alignaddr_up(sizeof(*de1) + de1->name_len, 4);
+		de2_len = alignaddr_up(sizeof(*de2) + de2->name_len, 4);
+		// 4-byte alignment is required according to the ext2fs' manual.
+		de2->rec_len = de1->rec_len - de1_len;
+		if (writei(dp, 0, new_de, off + de1_len, de2_len) != de2_len)
+			return -1;
+
+		de1->rec_len = de1_len;
+		if (writei(dp, 0, tmp_de, off, de1_len) != de1_len)
+			return -1;
+	}
+
+	return 0;
 }
 
 

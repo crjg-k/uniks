@@ -1,7 +1,9 @@
+#include <device/blkbuf.h>
 #include <device/clock.h>
 #include <file/file.h>
 #include <loader/elfloader.h>
 #include <mm/vm.h>
+#include <platform/sbi.h>
 #include <process/proc.h>
 #include <sys/ksyscall.h>
 #include <uniks/defs.h>
@@ -168,6 +170,14 @@ ret:
 void sys_exit()
 {
 	do_exit(argufetch(myproc(), 0));
+}
+
+// `void sys_shutdown(void);`
+void sys_shutdown()
+{
+	sync_sb_and_gdt();
+	blk_sync_all(1);
+	sbi_shutdown();
 }
 
 int64_t sys_kill()

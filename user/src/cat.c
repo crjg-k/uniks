@@ -16,7 +16,7 @@ void cat(int fd)
 	int n;
 
 	while ((n = read(fd, buf, sizeof(buf))) > 0) {
-		if (write(1, buf, n) != n) {
+		if (write(STDOUT_FILENO, buf, n) != n) {
 			fprintf(STDERR_FILENO, "cat: write error\n");
 			_exit(-1);
 		}
@@ -25,7 +25,6 @@ void cat(int fd)
 		fprintf(STDERR_FILENO, "cat: read error\n");
 		_exit(-1);
 	}
-	printf("\n");
 }
 
 int main(int argc, char *argv[])

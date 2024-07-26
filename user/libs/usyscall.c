@@ -1,4 +1,5 @@
 #include <stdarg.h>
+#include <ufcntl.h>
 #include <usyscall.h>
 
 
@@ -39,9 +40,25 @@ pid_t getppid()
 	return syscall(SYS_getppid);
 }
 
-int open(const char *pathname, int flags)
+int open(const char *pathname, int flags, ...)
 {
-	return syscall(SYS_open, pathname, flags);
+	if (flags & O_CREAT) {
+		va_list ap;
+		va_start(ap, flags);
+		return syscall(SYS_open, pathname, flags, va_arg(ap, int));
+		va_end(ap);
+	} else
+		return syscall(SYS_open, pathname, flags);
+}
+
+int creat(const char *pathname, mode_t mode)
+{
+	return syscall(SYS_creat, pathname, mode);
+}
+
+int truncate(const char *path, size_t length)
+{
+	return syscall(SYS_truncate, path, length);
 }
 
 int close(int fd)
@@ -57,6 +74,16 @@ int read(int fd, char *buf, size_t count)
 int write(int fd, const char *buf, size_t count)
 {
 	return syscall(SYS_write, fd, buf, count);
+}
+
+void sync()
+{
+	syscall(SYS_sync);
+}
+
+void shutdown()
+{
+	syscall(SYS_shutdown);
 }
 
 int msleep(int msec)
@@ -94,9 +121,29 @@ int pipe(int pipefd[2])
 	return syscall(SYS_pipe, pipefd);
 }
 
+int mkdir(const char *pathname, mode_t mode)
+{
+	return syscall(SYS_mkdir, pathname, mode);
+}
+
+int link(const char *oldpath, const char *newpath)
+{
+	return syscall(SYS_link, oldpath, newpath);
+}
+
+int symlink(const char *target, const char *linkpath)
+{
+	return syscall(SYS_symlink, target, linkpath);
+}
+
 int chdir(const char *path)
 {
 	return syscall(SYS_chdir, path);
+}
+
+int chmod(const char *pathname, mode_t mode)
+{
+	return syscall(SYS_chmod, pathname, mode);
 }
 
 uintptr_t brk(void *addr)

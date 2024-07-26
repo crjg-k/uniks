@@ -69,5 +69,5 @@ ${INITCODE}: init src/${INITCODE}.S
 
 .PHONY: clean
 clean:
-	rm ${BIN_DIR}/*
-	rm ${ABSM_DIR}/*
+	rm -rf ${BIN_DIR}/*
+	rm -rf ${ABSM_DIR}/*

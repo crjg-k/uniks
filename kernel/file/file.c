@@ -9,19 +9,19 @@
 #include <uniks/errno.h>
 
 
-// system open files table
-struct fcbtable_t fcbtable;
+// hint: DO NOT support file hole now
+struct fcbtable_t fcbtable;   // system open files table
 
 
 void sys_ftable_init()
 {
 	initlock(&fcbtable.lock, "fcbtable");
 	INIT_LIST_HEAD(&fcbtable.wait_list);
-	for (int32_t i = 0; i < NFILE; i++)
+	for (int64_t i = 0; i < NFILE; i++)
 		fcbtable.files[i].f_count = 0;
 
 	queue_init(&fcbtable.qm, NFILE, fcbtable.idle_fcb_queue_array);
-	for (int32_t i = 0; i < NFILE; i++)
+	for (int64_t i = 0; i < NFILE; i++)
 		queue_push_int32type(&fcbtable.qm, i);
 }
 
@@ -120,15 +120,15 @@ int64_t file_read(struct file_t *f, void *addr, size_t cnt)
 	}
 	// else if block DEVICE
 	else if (S_ISBLK(inode->d_inode_ctnt.i_mode)) {
-		res = blkdev_read(inode->d_inode_ctnt.i_block[0], addr,
-				  f->f_pos, cnt);
-		f->f_pos += res;
+		if ((res = blkdev_read(inode->d_inode_ctnt.i_block[0], addr,
+				       f->f_pos, cnt)) > 0)
+			f->f_pos += res;
 	}
 	// else if ordinary file or directory
 	else if (S_ISREG(inode->d_inode_ctnt.i_mode) or
 		 S_ISDIR(inode->d_inode_ctnt.i_mode)) {
-		res = readi(inode, 1, addr, f->f_pos, cnt);
-		f->f_pos += res;
+		if ((res = readi(inode, 1, addr, f->f_pos, cnt)) > 0)
+			f->f_pos += res;
 	}
 
 	iunlock(inode);
@@ -165,14 +165,15 @@ int64_t file_write(struct file_t *f, void *addr, size_t cnt)
 	}
 	// else if block DEVICE
 	else if (S_ISBLK(inode->d_inode_ctnt.i_mode)) {
-		res = blkdev_write(inode->d_inode_ctnt.i_block[0], addr,
-				   f->f_pos, cnt);
-		f->f_pos += res;
+		if ((res = blkdev_write(inode->d_inode_ctnt.i_block[0], addr,
+					f->f_pos, cnt)) > 0)
+			f->f_pos += res;
 	}
 	// else if ordinary file or directory
 	else if (S_ISREG(inode->d_inode_ctnt.i_mode) or
 		 S_ISDIR(inode->d_inode_ctnt.i_mode)) {
-		BUG();
+		if ((res = writei(inode, 1, addr, f->f_pos, cnt)) > 0)
+			f->f_pos += res;
 	}
 
 	iunlock(inode);

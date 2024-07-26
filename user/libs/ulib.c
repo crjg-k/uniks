@@ -13,35 +13,75 @@ void _start(int argc, char *argv[], char *envp[])
 	_exit(exitcode);
 }
 
-#define is_digit(c) ((c) >= '0' and (c) <= '9')
-#define is_space(c) ((c) == ' ' or (c) == '\n' or (c) == '\t')
 
-int atoi(const char *str)
+long strtol(const char *str, char **endptr, int base)
 {
-	if (str == NULL or *str == '\0') {
+	const char *ptr = str;
+	long res = 0, sign = 1;
+
+	// Skip leading whitespace
+	while (isspace(*ptr)) {
+		ptr++;
+	}
+
+	// Handle optional sign
+	if (*ptr == '-') {
+		sign = -1;
+		ptr++;
+	} else if (*ptr == '+') {
+		ptr++;
+	}
+
+	// Determine the base if not specified
+	if (base == 0) {
+		if (*ptr == '0') {
+			if (tolower(*(ptr + 1)) == 'x') {
+				base = 16;
+				ptr += 2;
+			} else {
+				base = 8;
+				ptr++;
+			}
+		} else {
+			base = 10;
+		}
+	} else if (base == 16 and *ptr == '0' and tolower(*(ptr + 1)) == 'x') {
+		ptr += 2;
+	}
+
+	// Check for valid base range
+	if (base < 2 or base > 36) {
+		if (endptr)
+			*endptr = (char *)str;
 		return 0;
 	}
-	while (is_space(*str)) {
-		str++;
-	}
-	int flag = 1;
-	if (*str == '+') {
-		flag = 1;
-		str++;
-	} else if (*str == '-') {
-		flag = -1;
-		str++;
-	}
-	long ret = 0;
-	while (is_digit(*str)) {
-		ret = ret * 10 + (*str - '0') * flag;
-		if (ret < INT_MIN or ret > INT_MAX) {
-			return 0;
-		}
-		str++;
+
+	// Convert each character
+	while (*ptr) {
+		int digit;
+		if (isdigit(*ptr)) {
+			digit = *ptr - '0';
+		} else if (isalpha(*ptr)) {
+			digit = tolower(*ptr) - 'a' + 10;
+		} else
+			break;
+
+		if (digit >= base)
+			break;
+
+		res = res * base + digit;
+		ptr++;
 	}
 
-	return (int)ret;
+	if (endptr)
+		*endptr = (char *)ptr;
+
+	return sign * res;
+}
+
+int atoi(const char *nptr)
+{
+	return (int)strtol(nptr, NULL, 10);
 }
 
 uintptr_t last_brk = 0;

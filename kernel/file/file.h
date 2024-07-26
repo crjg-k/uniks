@@ -13,7 +13,7 @@
 
 struct file_t {
 	uint32_t f_count;
-	int32_t f_flags;   // access mode(R/W bit)
+	uint32_t f_flags;   // access mode(R/W bit)
 
 	uint64_t f_pos;	  // offset for an FD_INODE file
 	struct m_inode_t *f_inode;

@@ -65,7 +65,6 @@ extern int64_t sys_kill();
 extern int64_t sys_execve();
 extern int64_t sys_stat();
 extern int64_t sys_fstat();
-extern int64_t sys_lstat();
 extern int64_t sys_chdir();
 extern int64_t sys_dup();
 extern int64_t sys_getpid();
@@ -73,13 +72,23 @@ extern int64_t sys_getppid();
 extern int64_t sys_msleep();
 extern int64_t sys_open();
 extern int64_t sys_write();
-extern int64_t sys_unlink();
 extern int64_t sys_link();
+extern int64_t sys_unlink();
 extern int64_t sys_mkdir();
 extern int64_t sys_close();
 extern int64_t sys_brk();
 extern int64_t sys_getcwd();
 extern int64_t sys_getdents();
+extern int64_t sys_lseek();
+extern int64_t sys_truncate();
+extern int64_t sys_rename();
+extern int64_t sys_rmdir();
+extern int64_t sys_creat();
+extern int64_t sys_symlink();
+extern int64_t sys_readlink();
+extern int64_t sys_chmod();
+extern int64_t sys_sync();
+extern int64_t sys_shutdown();
 
 static int64_t (*syscalls[])() = {
 	[SYS_fork] sys_fork,	 [SYS_execve] sys_execve,
@@ -91,8 +100,12 @@ static int64_t (*syscalls[])() = {
 	[SYS_fstat] sys_fstat,	 [SYS_getdents] sys_getdents,
 	[SYS_chdir] sys_chdir,	 [SYS_brk] sys_brk,
 	[SYS_getcwd] sys_getcwd, [SYS_stat] sys_stat,
-	[SYS_lstat] sys_lstat,	 [SYS_getppid] sys_getppid,
-	[SYS_kill] sys_kill,
+	[SYS_kill] sys_kill,	 [SYS_getppid] sys_getppid,
+	[SYS_lseek] sys_lseek,	 [SYS_mkdir] sys_mkdir,
+	[SYS_sync] sys_sync,	 [SYS_shutdown] sys_shutdown,
+	[SYS_creat] sys_creat,	 [SYS_truncate] sys_truncate,
+	[SYS_chmod] sys_chmod,	 [SYS_unlink] sys_unlink,
+	[SYS_link] sys_link,	 [SYS_rmdir] sys_rmdir,
 };
 
 #define NUM_SYSCALLS ((sizeof(syscalls)) / (sizeof(syscalls[0])))

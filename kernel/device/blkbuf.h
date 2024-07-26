@@ -36,7 +36,10 @@ struct blk_cache_t {
 	struct list_node_t hash_bucket_table[HASH_TABLE_PRIME];
 };
 
+
+extern volatile atomic_uint_least32_t syncing, rw_operating;
 extern struct blk_cache_t blk_cache;
+extern char zero_blk[];
 
 
 void blk_init();
@@ -44,7 +47,7 @@ struct blkbuf_t *getblk(dev_t dev, uint32_t blkno);
 void blk_release(struct blkbuf_t *bb);
 struct blkbuf_t *blk_read(dev_t dev, uint32_t blockno);
 void blk_write_over(struct blkbuf_t *bb);
-void blk_sync_all();
+void blk_sync_all(int32_t still_block);
 
 
 #endif /* !__KERNEL_DEVICE_BLKBUF_H__ */

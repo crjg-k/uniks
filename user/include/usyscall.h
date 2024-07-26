@@ -23,6 +23,7 @@
 #define SYS_brk	     (12)
 #define SYS_pipe     (22)
 #define SYS_yield    (24)
+#define SYS_msync    (26)
 #define SYS_dup	     (32)
 #define SYS_dup2     (33)
 #define SYS_msleep   (35)
@@ -58,10 +59,14 @@
 
 // system call
 pid_t fork();
-int open(const char *pathname, int flags);
+int open(const char *pathname, int flags, ...);
+int creat(const char *pathname, mode_t mode);
+int truncate(const char *path, size_t length);
 int close(int fd);
 int read(int fd, char *buf, size_t count);
 int write(int fd, const char *buf, size_t count);
+void sync();
+void shutdown();
 pid_t getpid();
 int msleep(int msec);
 pid_t wait(int *status);
@@ -70,7 +75,11 @@ int execve(const char *path, char *argv[], char *envp[]);
 void _exit(int status);
 int dup(int oldfd);
 int pipe(int pipefd[2]);
+int mkdir(const char *pathname, mode_t mode);
+int link(const char *oldpath, const char *newpath);
+int symlink(const char *target, const char *linkpath);
 int chdir(const char *path);
+int chmod(const char *pathname, mode_t mode);
 uintptr_t brk(void *addr);
 long getdents(int fd, struct dirent *dirp, size_t count);
 int stat(const char *pathname, struct stat *statbuf);

@@ -7,6 +7,9 @@
 
 
 #define blkdev_rw_common1() \
+	if (atomic_load(&syncing) > 0) \
+		return -EBUSY; \
+	atomic_fetch_add(&rw_operating, 1); \
 	int64_t blk_no = pos / BLKSIZE, offset = OFFSETPAGE(pos), bytes, \
 		n = 0; \
 	struct blkbuf_t *bb; \
@@ -39,6 +42,7 @@ int64_t blkdev_read(dev_t dev, char *buf, int64_t pos, size_t cnt)
 		blk_release(bb);
 	}
 
+	atomic_fetch_sub(&rw_operating, 1);
 	return n;
 }
 
@@ -70,5 +74,6 @@ int64_t blkdev_write(dev_t dev, char *buf, int64_t pos, size_t cnt)
 		blk_write_over(bb);
 	}
 
+	atomic_fetch_sub(&rw_operating, 1);
 	return n;
 }

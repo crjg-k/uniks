@@ -8,7 +8,10 @@
 #include <uniks/param.h>
 
 
+volatile atomic_uint_least32_t syncing = ATOMIC_VAR_INIT(0),
+			       rw_operating = ATOMIC_VAR_INIT(0);
 struct blk_cache_t blk_cache;
+char zero_blk[BLKSIZE] = {0};
 
 #define _hashfn(dev, block) (((uint32_t)((dev) ^ (block))) % HASH_TABLE_PRIME)
 #define hash(dev, block)    (blk_cache.hash_bucket_table[_hashfn((dev), (block))])
@@ -17,7 +20,7 @@ void blk_init()
 {
 	initlock(&blk_cache.lock, "blk_cache");
 
-	for (int32_t i = 0; i < HASH_TABLE_PRIME; i++) {
+	for (int64_t i = 0; i < HASH_TABLE_PRIME; i++) {
 		INIT_LIST_HEAD(&blk_cache.hash_bucket_table[i]);
 	}
 	INIT_LIST_HEAD(&blk_cache.free_list);
@@ -144,7 +147,7 @@ struct blkbuf_t *blk_read(dev_t dev, uint32_t blockno)
 	if (bb == NULL)
 		goto ret;
 
-	if (bb->b_dirty) {
+	if (bb->b_dirty and (bb->b_dev != dev and bb->b_blkno != blockno)) {
 		// write-back strategy
 		assert(bb->b_data != NULL);
 		device_write(dev, 0, bb, PGSIZE);
@@ -174,8 +177,12 @@ void blk_write_over(struct blkbuf_t *bb)
 	blk_release(bb);
 }
 
-void blk_sync_all()
+void blk_sync_all(int32_t still_block)
 {
+	atomic_fetch_add(&syncing, 1);
+	while (atomic_load(&rw_operating) > 0)
+		;
+
 	for (struct blkbuf_t *bb = blk_cache.blkbuf;
 	     bb < &blk_cache.blkbuf[NBBUF]; bb++) {
 		mutex_acquire(&bb->b_mtx);
@@ -186,4 +193,7 @@ void blk_sync_all()
 		}
 		mutex_release(&bb->b_mtx);
 	}
+
+	if (!still_block)
+		atomic_fetch_sub(&syncing, 1);
 }

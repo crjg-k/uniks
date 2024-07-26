@@ -28,7 +28,7 @@ void wc(int fd, char *name)
 	}
 	if (n < 0) {
 		fprintf(STDERR_FILENO, "wc: Read error\n");
-		_exit(1);
+		_exit(-1);
 	}
 	printf("\t%d\t%d\t%d %s\n", l, w, c, name);
 }
@@ -45,7 +45,7 @@ int main(int argc, char *argv[])
 	for (int i = 1; i < argc; i++) {
 		if ((fd = open(argv[i], 0)) < 0) {
 			fprintf(STDERR_FILENO, "wc: Cannot open %s\n", argv[i]);
-			_exit(1);
+			_exit(-1);
 		}
 		wc(fd, argv[i]);
 		close(fd);

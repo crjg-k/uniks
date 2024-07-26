@@ -1,5 +1,6 @@
 #include <stdarg.h>
 #include <udefs.h>
+#include <ulib.h>
 #include <ustdio.h>
 #include <ustring.h>
 #include <usyscall.h>
@@ -27,7 +28,6 @@ void ustdioinit()
 #define SPECIAL 0x20
 #define SMALL	0x40
 
-#define is_digit(c) ((c) >= '0' and (c) <= '9')
 
 #define BUFSIZE 1024
 static char output_buf[BUFSIZE];
@@ -35,7 +35,7 @@ static char output_buf[BUFSIZE];
 static int skip_atoi(const char **s)
 {
 	int i = 0;
-	while (is_digit(**s))
+	while (isdigit(**s))
 		i = i * 10 + *((*s)++) - '0';
 	return i;
 }
@@ -155,7 +155,7 @@ repeat:
 		}
 
 		field_width = -1;
-		if (is_digit(*fmt))
+		if (isdigit(*fmt))
 			field_width = skip_atoi(&fmt);
 		else if (*fmt == '*') {
 			++fmt;
@@ -169,7 +169,7 @@ repeat:
 		precision = -1;
 		if (*fmt == '.') {
 			++fmt;
-			if (is_digit(*fmt))
+			if (isdigit(*fmt))
 				precision = skip_atoi(&fmt);
 			else if (*fmt == '*') {
 				precision = va_arg(args, int);
@@ -406,9 +406,9 @@ int getline(char *s, int n)
 
 static char matchchar(int radix, char ch)
 {
-	if (is_digit(ch))
+	if (isdigit(ch))
 		ch -= '0';
-	else if (ch >= 'a' and ch <= 'f')
+	else if (ch >= 'a' and ch <= 'z')
 		ch -= ('a' - 10);
 	else
 		return -1;

@@ -2,6 +2,7 @@
 #include <ufcntl.h>
 #include <ulimits.h>
 #include <umalloc.h>
+#include <ustat.h>
 #include <ustdio.h>
 #include <ustring.h>
 #include <usyscall.h>
@@ -274,7 +275,8 @@ struct cmd *parseredirs(struct cmd *cmd, char **ps, char *es)
 				       1);
 			break;
 		case '+':   // >>
-			cmd = redircmd(cmd, q, eq, O_WRONLY | O_CREAT, 1);
+			cmd = redircmd(cmd, q, eq,
+				       O_WRONLY | O_CREAT | O_APPEND, 1);
 			break;
 		}
 	}
@@ -445,7 +447,7 @@ void runcmd(struct cmd *cmd)
 	case REDIR:
 		rcmd = (struct redircmd *)cmd;
 		close(rcmd->fd);
-		if (open(rcmd->file, rcmd->mode) < 0) {
+		if (open(rcmd->file, rcmd->mode, S_IRUSR | S_IWUSR) < 0) {
 			fprintf(STDERR_FILENO,
 				"ksh: Cannot access '%s': No such file or directory\n",
 				rcmd->file);

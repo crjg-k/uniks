@@ -65,7 +65,7 @@ uint64_t load_elf(struct mm_struct *mm, struct m_inode_t *inode)
 		goto ret;
 
 	struct Elf64_Phdr_t prgm_header;
-	for (int32_t i = 0; i < elf_header.e_phnum; i++) {
+	for (int64_t i = 0; i < elf_header.e_phnum; i++) {
 		if (readi(inode, 0, (void *)&prgm_header,
 			  elf_header.e_phoff + i * sizeof(prgm_header),
 			  sizeof(prgm_header)) != sizeof(prgm_header))

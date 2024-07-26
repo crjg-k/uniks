@@ -56,22 +56,27 @@ void map_user_stack(struct proc_t *p, int32_t page_num, uintptr_t ustack_pa)
 
 int64_t do_execve(struct proc_t *p, char *path, char *argv[], char *envp[])
 {
-	int64_t res = -EINVAL;
+	int64_t res;
 	uint64_t entry;
 
 	struct m_inode_t *inode = namei(path, 1);
-	if (inode == NULL)
+	if (inode == NULL) {
+		res = -ENOENT;
 		goto ret3;
+	}
 
 	struct mm_struct *new_mm = new_mm_struct();
-	if (new_mm == NULL)
+	if (new_mm == NULL) {
+		res = -ENOMEM;
 		goto ret3;
+	}
 
 	char **tmp_envp, **tmp_argv;
 	uint16_t *envp_len, *argv_len;
 	if ((entry = load_elf(new_mm, inode)) == -1) {
 		// load ELF failed then free new vm_area_list
 		free_mm_struct(new_mm);
+		res = -ENOEXEC;
 		goto ret3;
 	} else {
 		/**
@@ -95,8 +100,10 @@ int64_t do_execve(struct proc_t *p, char *path, char *argv[], char *envp[])
 			char *envp_va = kmalloc(MAXARGLEN);
 			// fetch string by vaddr copyed into tmp_envp[envc]
 			if ((len = argstrfetch((uintptr_t)tmp_envp[envc],
-					       envp_va, MAXARGLEN)) < 0)
+					       envp_va, MAXARGLEN)) < 0) {
+				res = -EINVAL;
 				goto ret2;
+			}
 			tmp_envp[envc] = envp_va;
 			envp_len[envc] = len + 1;
 			totalen += envp_len[envc];
@@ -121,8 +128,10 @@ int64_t do_execve(struct proc_t *p, char *path, char *argv[], char *envp[])
 			char *argv_va = kmalloc(MAXARGLEN);
 			// fetch string by vaddr copyed into tmp_argv[argc]
 			if ((len = argstrfetch((uintptr_t)tmp_argv[argc],
-					       argv_va, MAXARGLEN)) < 0)
+					       argv_va, MAXARGLEN)) < 0) {
+				res = -EINVAL;
 				goto ret1;
+			}
 			tmp_argv[argc] = argv_va;
 			argv_len[argc] = len + 1;
 			totalen += argv_len[argc];
@@ -158,11 +167,11 @@ int64_t do_execve(struct proc_t *p, char *path, char *argv[], char *envp[])
 
 ret1:
 	kfree(argv_len);
-	for (int32_t i = 0; tmp_argv[i]; i++)
+	for (int64_t i = 0; tmp_argv[i]; i++)
 		kfree(tmp_argv[i]);
 ret2:
 	kfree(envp_len);
-	for (int32_t i = 0; tmp_envp[i]; i++)
+	for (int64_t i = 0; tmp_envp[i]; i++)
 		kfree(tmp_envp[i]);
 ret3:
 	iput(inode);

@@ -195,6 +195,7 @@ struct ext2_group_desc_t {
 #define EXT2_TIND_LIMIT \
 	(EXT2_DIND_LIMIT + \
 	 EXT2_IND_PER_BLK * EXT2_IND_PER_BLK * EXT2_IND_PER_BLK)
+#define EXT2_MAX_FBLKS EXT2_TIND_LIMIT
 
 // Inode flags
 #define EXT2_SECRM_FL	  0x00000001 /* Secure deletion */
@@ -206,18 +207,26 @@ struct ext2_group_desc_t {
 #define EXT2_NODUMP_FL	  0x00000040 /* do not dump file */
 #define EXT2_NOATIME_FL	  0x00000080 /* do not update atime */
 
+/**
+ * @brief each bit of `i_mode` field:
+ * Bit position:  15 14 13 12 |      11 10 9  | 8 7 6 | 5 4 3 | 2 1 0
+ *        Field:   t  t  t  t |       .  . .  | R W X | R W X | R W X
+ *         Desc:    File Type | Special perms |  User | Group | Other
+ */
+
 // Structure of an inode on the disk
 struct ext2_inode_t {
-	uint16_t i_mode;		 /* File mode */
-	uint16_t i_uid;			 /* Low 16 bits of Owner Uid */
-	uint32_t i_size;		 /* Size in bytes */
-	uint32_t i_atime;		 /* Access time */
-	uint32_t i_ctime;		 /* Creation time */
-	uint32_t i_mtime;		 /* Modification time */
-	uint32_t i_dtime;		 /* Deletion Time */
-	uint16_t i_gid;			 /* Low 16 bits of Group Id */
-	uint16_t i_links_count;		 /* Links count */
-	uint32_t i_blocks;		 /* Blocks count of 512-bytes blocks */
+	uint16_t i_mode;	/* File mode */
+	uint16_t i_uid;		/* Low 16 bits of Owner Uid */
+	uint32_t i_size;	/* Size in bytes */
+	uint32_t i_atime;	/* Access time */
+	uint32_t i_ctime;	/* Creation time */
+	uint32_t i_mtime;	/* Modification time */
+	uint32_t i_dtime;	/* Deletion Time */
+	uint16_t i_gid;		/* Low 16 bits of Group Id */
+	uint16_t i_links_count; /* Links count */
+	/* Blocks count of 512-bytes blocks include indirect index block */
+	uint32_t i_blocks;
 	uint32_t i_flags;		 /* File flags */
 	uint32_t i_osd1;		 /* OS dependent 1 */
 	uint32_t i_block[EXT2_N_BLOCKS]; /* Pointers to blocks */
@@ -229,14 +238,14 @@ struct ext2_inode_t {
 } __packed;
 
 // File_type: this value must match the type defined in the related inode entry
-#define EXT2_FT_UNKNOWN	 0 /* Unknown File Type */
-#define EXT2_FT_REG_FILE 1 /* Regular File */
-#define EXT2_FT_DIR	 2 /* Directory File */
-#define EXT2_FT_CHRDEV	 3 /* Character Device */
-#define EXT2_FT_BLKDEV	 4 /* Block Device */
-#define EXT2_FT_FIFO	 5 /*  Buffer File */
-#define EXT2_FT_SOCK	 6 /* Socket File */
-#define EXT2_FT_SYMLINK	 7 /*  Symbolic Lin */
+#define EXT2_FT_UNKNOWN 0 /* Unknown File Type */
+#define EXT2_FT_REGFILE 1 /* Regular File */
+#define EXT2_FT_DIR	2 /* Directory File */
+#define EXT2_FT_CHRDEV	3 /* Character Device */
+#define EXT2_FT_BLKDEV	4 /* Block Device */
+#define EXT2_FT_FIFO	5 /*  Buffer File */
+#define EXT2_FT_SOCK	6 /* Socket File */
+#define EXT2_FT_SYMLINK 7 /*  Symbolic Lin */
 
 // Structure of a directory entry
 struct ext2_dir_entry_t {
@@ -308,10 +317,12 @@ struct inode_table_t {
 
 extern struct m_super_block_t m_sb;
 extern struct inode_table_t inode_table;
+extern struct ext2_group_desc_t *group_descs;
 
 
 void inode_table_init();
 void ext2fs_init(dev_t dev);
+void sync_sb_and_gdt();
 
 // Inodes
 struct m_inode_t *ialloc(dev_t dev);
@@ -320,20 +331,26 @@ void ilock(struct m_inode_t *ip);
 void iunlock(struct m_inode_t *ip);
 void iput(struct m_inode_t *ip);
 void iunlockput(struct m_inode_t *ip);
-void iupdate(struct m_inode_t *ip);
+void iupdate(struct m_inode_t *ip, int64_t wthrough);
 
 // Inode content
-void itruncate(struct m_inode_t *ip);
+int64_t itruncate(struct m_inode_t *ip, size_t length);
 void stati(struct m_inode_t *ip, struct stat_t *st);
 int64_t readi(struct m_inode_t *ip, int32_t user_dst, char *dst, uint64_t off,
 	      size_t n);
+int64_t writei(struct m_inode_t *ip, int32_t user_src, char *src, uint64_t off,
+	       size_t n);
+
+// Directories
+struct m_inode_t *dirlookup(struct m_inode_t *ip, char *name, uint64_t *poff);
+int32_t dirlink(struct m_inode_t *dp, char *name, uint64_t i_no);
 
 // Paths
 struct m_inode_t *namei(char *path, int32_t copy);
 struct m_inode_t *nameiparent(char *path, char *name);
 
 
-uint32_t bmap(struct m_inode_t *ip, uint32_t blk_no);
+uint64_t bmap(struct m_inode_t *ip, uint32_t blk_no);
 
 
 #endif /* !__KERNEL_FS_EXT2FS_H__ */

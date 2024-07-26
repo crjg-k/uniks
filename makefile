@@ -147,16 +147,27 @@ ${DISKIMG}:
 # below command acquire Linux's root user
 .PHONY: fs
 fs:
-	make disk.img
+	make ${DISKIMG}
 	$(shell if [ ! -e uniksfs ]; then mkdir uniksfs; fi)
-	sudo mount disk.img uniksfs
+	sudo mount ${DISKIMG} uniksfs
 	mkdir ./uniksfs/dev ./uniksfs/bin  ./uniksfs/root
 	mknod ./uniksfs/dev/tty0 c 00 36
 	mknod ./uniksfs/dev/vda0 b 00 01
 	mknod ./uniksfs/dev/null c 00 00
+	cp README.md ./uniksfs/root
+	cp LICENSE ./uniksfs/root
 	make user
 	find ./user/bin/ -type f -not -name 'initcode' -exec cp {} ./uniksfs/bin/ \;
 	umount uniksfs
+
+.PHONY: m
+m:
+	$(shell if [ ! -e uniksfs ]; then mkdir uniksfs; fi)
+	sudo mount ${DISKIMG} uniksfs
+
+.PHONY: um
+um:
+	sudo umount uniksfs
 
 .PHONY: user
 user:
@@ -233,4 +244,4 @@ vscode:
 
 .PHONY: clean
 clean:
-	$(shell if [ -d bin -a "`ls -A bin`" != "" ]; then rm -r bin/*; fi)
+	$(shell if [ -d bin -a "`ls -A bin`" != "" ]; then rm -rf bin/*; fi)
