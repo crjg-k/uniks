@@ -38,7 +38,7 @@ __always_inline static void up(struct priority_queue_meta_t *pq,
 	       __pair_less_than(&pq->priority_queue_heap[root_no],
 				&pq->priority_queue_heap[half])) {
 		SWAP(pq->priority_queue_heap[root_no],
-		     pq->priority_queue_heap[half], struct pair_t);
+		     pq->priority_queue_heap[half]);
 		root_no = half;
 	}
 }
@@ -55,7 +55,7 @@ __always_inline static void down(struct priority_queue_meta_t *pq,
 		if (__pair_less_than(&pq->priority_queue_heap[doub],
 				     &pq->priority_queue_heap[root_no]))
 			SWAP(pq->priority_queue_heap[doub],
-			     pq->priority_queue_heap[root_no], struct pair_t);
+			     pq->priority_queue_heap[root_no]);
 		else
 			break;
 		root_no = doub;

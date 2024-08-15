@@ -5,11 +5,19 @@
 #include <uniks/defs.h>
 
 
-#define MAX(a, b) ((a) < (b) ? (b) : (a))
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
-#define SWAP(a, b, type) \
+#define MAX(a, b) \
 	({ \
-		type temp = a; \
+		typeof(a) tmp_a = (a), tmp_b = (b); \
+		(tmp_a) < (tmp_b) ? (tmp_b) : (tmp_a); \
+	})
+#define MIN(a, b) \
+	({ \
+		typeof(a) tmp_a = (a), tmp_b = (b); \
+		(tmp_a) < (tmp_b) ? (tmp_a) : (tmp_b); \
+	})
+#define SWAP(a, b) \
+	({ \
+		typeof(a) temp = a; \
 		a = b; \
 		b = temp; \
 	})

@@ -40,8 +40,8 @@ static int skip_atoi(const char **s)
 	return i;
 }
 
-static char *number(char *str, unsigned long num, int base, int size,
-		    int precision, int flags)
+static char *number(char *str, long num, int base, int size, int precision,
+		    int flags)
 {
 	char pad, sign, tmp[36];
 	const char *digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
